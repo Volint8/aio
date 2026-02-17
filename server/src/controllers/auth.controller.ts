@@ -11,10 +11,10 @@ export const signup = async (req: Request, res: Response) => {
         const { email, password, name } = req.body;
 
         // Validate email domain
-        const validDomains = ['volint.com', 'formatio.com'];
+        const validDomains = ['volintpas.com', 'fformatio.org'];
         const domain = email.split('@')[1];
         if (!validDomains.includes(domain)) {
-            return res.status(400).json({ error: 'Only Volint or Formatio email addresses are allowed' });
+            return res.status(400).json({ error: 'Only Volintpas or Formatio email addresses are allowed' });
         }
 
         // Check if user already exists
@@ -113,8 +113,8 @@ export const verifyOtp = async (req: Request, res: Response) => {
         // Ideally we should have seeded this or check strictly
 
         let orgName = '';
-        if (domain === 'volint.com') orgName = 'Volint Operations';
-        if (domain === 'formatio.com') orgName = 'Formatio Design';
+        if (domain === 'volintpas.com') orgName = 'Volint Operations';
+        if (domain === 'fformatio.org') orgName = 'Formatio Operations';
 
         if (orgName) {
             // Find org by domain, create if not exists (or find by name for backward compat)

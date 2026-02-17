@@ -66,7 +66,7 @@ const LoginPage = () => {
                             type="email"
                             value={email}
                             onChange={(e) => setEmail(e.target.value)}
-                            placeholder="user@volint.com or user@formatio.com"
+                            placeholder="user@volintpas.com or user@fformatio.org"
                             required
                         />
                     </div>
@@ -107,7 +107,7 @@ const LoginPage = () => {
                 </div>
 
                 <div className="domain-notice">
-                    <small>Only @volint.com and @formatio.com emails are allowed</small>
+                    <small>Only @volintpas.com and @fformatio.org emails are allowed</small>
                 </div>
             </div>
         </div>
