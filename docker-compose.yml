@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  server:
+    build: ./server
+    ports:
+      - "3030:3000"
+    env_file:
+      - ./server/.env
+    environment:
+      - PORT=3000
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/allinone?schema=public
+    restart: always
+    depends_on:
+      - db
+    volumes:
+        - ./server:/app
+        - /app/node_modules
+
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: allinone
+    ports:
+      - "127.0.0.1:5533:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:

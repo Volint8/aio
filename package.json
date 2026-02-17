@@ -1,0 +1,13 @@
+{
+    "name": "all-in-one-platform",
+    "version": "1.0.0",
+    "private": true,
+    "scripts": {
+        "start:client": "cd client && npm run dev",
+        "start:server": "cd server && npm run dev",
+        "dev": "concurrently \"npm run start:server\" \"npm run start:client\""
+    },
+    "devDependencies": {
+        "concurrently": "^8.0.0"
+    }
+}

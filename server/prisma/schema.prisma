@@ -1,0 +1,82 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String               @id @default(uuid())
+  email         String               @unique
+  passwordHash  String
+  name          String?
+  role          String               @default("USER") // USER, ADMIN
+  isVerified    Boolean              @default(false)
+  otp           String?
+  otpExpiresAt  DateTime?
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+  organizations OrganizationMember[]
+  tasks         Task[]               @relation("AssignedTasks")
+  comments      Comment[]
+}
+
+model Organization {
+  id        String               @id @default(uuid())
+  name      String
+  domain    String?              @unique
+  createdAt DateTime             @default(now())
+  updatedAt DateTime             @updatedAt
+  members   OrganizationMember[]
+  tasks     Task[]
+}
+
+model OrganizationMember {
+  id             String       @id @default(uuid())
+  userId         String
+  organizationId String
+  role           String       @default("MEMBER") // MEMBER, ADMIN
+  user           User         @relation(fields: [userId], references: [id])
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  @@unique([userId, organizationId])
+}
+
+model Task {
+  id             String       @id @default(uuid())
+  title          String
+  description    String?
+  status         String       @default("CREATED") // CREATED, IN_PROGRESS, COMPLETED
+  priority       String       @default("LOW") // LOW, MEDIUM, HIGH
+  dueDate        DateTime?
+  organizationId String
+  assigneeId     String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  assignee       User?        @relation("AssignedTasks", fields: [assigneeId], references: [id])
+  comments       Comment[]
+  attachments    Attachment[]
+}
+
+model Comment {
+  id        String   @id @default(uuid())
+  content   String
+  taskId    String
+  userId    String
+  createdAt DateTime @default(now())
+  task      Task     @relation(fields: [taskId], references: [id])
+  user      User     @relation(fields: [userId], references: [id])
+}
+
+model Attachment {
+  id        String   @id @default(uuid())
+  filePath  String
+  fileName  String
+  fileType  String
+  taskId    String
+  createdAt DateTime @default(now())
+  task      Task     @relation(fields: [taskId], references: [id])
+}
