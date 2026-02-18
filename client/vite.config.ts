@@ -6,15 +6,10 @@ export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
-      '/api': {
-        target: 'http://localhost:3000',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api/, ''),
-      },
-      // If backend routes don't start with /api, proxy directly:
       '/auth': 'http://localhost:3000',
       '/orgs': 'http://localhost:3000',
       '/tasks': 'http://localhost:3000',
+      '/uploads': 'http://localhost:3000',
     },
   },
 });
