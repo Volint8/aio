@@ -132,7 +132,9 @@ const DashboardPage = () => {
             setShowCreateModal(false);
             fetchData();
         } catch (error: any) {
-            alert(error.response?.data?.error || 'Failed to create task');
+            const errorData = error.response?.data?.error;
+            const message = typeof errorData === 'object' ? errorData.message : errorData;
+            alert(message || 'Failed to create task');
         }
     };
 
@@ -141,7 +143,9 @@ const DashboardPage = () => {
             await api.put(`/tasks/${taskId}`, { status: newStatus });
             fetchData();
         } catch (error: any) {
-            alert(error.response?.data?.error || 'Failed to update task');
+            const errorData = error.response?.data?.error;
+            const message = typeof errorData === 'object' ? errorData.message : errorData;
+            alert(message || 'Failed to update task');
         }
     };
 
@@ -301,7 +305,7 @@ const DashboardPage = () => {
                                                     <ul>
                                                         {task.attachments.map((att: any) => (
                                                             <li key={att.id} className="attachment-item">
-                                                                <a href={`http://localhost:3000/${att.filePath}`} target="_blank" rel="noreferrer">
+                                                                <a href={`${api.defaults.baseURL}/${att.filePath}`} target="_blank" rel="noreferrer">
                                                                     📄 {att.fileName}
                                                                 </a>
                                                                 {isAdmin && (
@@ -426,7 +430,7 @@ const DashboardPage = () => {
                                                     <ul>
                                                         {task.attachments.map((att) => (
                                                             <li key={att.id} className="attachment-item">
-                                                                <a href={`http://localhost:3000/${att.filePath}`} target="_blank" rel="noopener noreferrer">
+                                                                <a href={`${api.defaults.baseURL}/${att.filePath}`} target="_blank" rel="noopener noreferrer">
                                                                     📄 {att.fileName}
                                                                 </a>
                                                                 {organization?.userRole === 'ADMIN' && (

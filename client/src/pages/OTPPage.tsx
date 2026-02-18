@@ -31,7 +31,9 @@ const OTPPage = () => {
             localStorage.removeItem('pendingAuthEmail');
             navigate('/organizations');
         } catch (err: any) {
-            setError(err.response?.data?.error || 'Verification failed. Please try again.');
+            const errorData = err.response?.data?.error;
+            const message = typeof errorData === 'object' ? errorData.message : errorData;
+            setError(message || err.message || 'Verification failed. Please try again.');
         } finally {
             setLoading(false);
         }

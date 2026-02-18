@@ -46,7 +46,9 @@ const OrgSelectionPage = () => {
             setShowCreateModal(false);
             fetchOrganizations();
         } catch (error: any) {
-            alert(error.response?.data?.error || 'Failed to create organization');
+            const errorData = error.response?.data?.error;
+            const message = typeof errorData === 'object' ? errorData.message : errorData;
+            alert(message || 'Failed to create organization');
         } finally {
             setCreating(false);
         }

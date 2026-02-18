@@ -31,7 +31,9 @@ const LoginPage = () => {
                 navigate('/');
             }
         } catch (err: any) {
-            setError(err.response?.data?.error || err.message || 'Authentication failed');
+            const errorData = err.response?.data?.error;
+            const message = typeof errorData === 'object' ? errorData.message : errorData;
+            setError(message || err.message || 'Authentication failed');
         } finally {
             setLoading(false);
         }
