@@ -21,6 +21,8 @@ interface Task {
         name: string;
     };
     createdAt: string;
+    deletedAt?: string | null;
+    deletedById?: string | null;
     comments?: any[];
     attachments?: {
         id: string;
@@ -57,6 +59,8 @@ interface Organization {
 }
 
 const COMMENTS_PREVIEW_COUNT = 4;
+const RETENTION_DAYS = 30;
+type TaskFilter = 'all' | 'my' | 'created' | 'in_progress' | 'completed' | 'recently_deleted';
 
 const DashboardPage = () => {
     const [tasks, setTasks] = useState<Task[]>([]);
@@ -65,7 +69,7 @@ const DashboardPage = () => {
     const [organization, setOrganization] = useState<Organization | null>(null);
     const [viewMode, setViewMode] = useState<'my' | 'team'>('my');
     const [loading, setLoading] = useState(true);
-    const [filter, setFilter] = useState<'all' | 'my' | 'created' | 'in_progress' | 'completed'>('all');
+    const [filter, setFilter] = useState<TaskFilter>('all');
     const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [expandedCommentThreads, setExpandedCommentThreads] = useState<Record<string, boolean>>({});
@@ -93,8 +97,14 @@ const DashboardPage = () => {
 
     const fetchData = async () => {
         try {
+            const isDeletedView = filter === 'recently_deleted';
             const [tasksRes, statsRes, orgRes] = await Promise.all([
-                api.get('/tasks', { params: { organizationId: orgId } }),
+                api.get('/tasks', {
+                    params: {
+                        organizationId: orgId,
+                        view: isDeletedView ? 'deleted' : 'active'
+                    }
+                }),
                 api.get('/tasks/stats', { params: { organizationId: orgId } }),
                 api.get(`/orgs/${orgId}`)
             ]);
@@ -107,7 +117,7 @@ const DashboardPage = () => {
             let filteredTasks = tasksRes.data;
             if (filter === 'my') {
                 filteredTasks = filteredTasks.filter((t: Task) => t.assignee?.id === user?.id);
-            } else if (filter !== 'all') {
+            } else if (filter !== 'all' && filter !== 'recently_deleted') {
                 const statusMap: any = {
                     created: 'CREATED',
                     in_progress: 'IN_PROGRESS',
@@ -155,6 +165,45 @@ const DashboardPage = () => {
         }
     };
 
+    const handleDeleteTask = async (taskId: string) => {
+        if (!window.confirm('Move this task to Recently Deleted?')) {
+            return;
+        }
+
+        try {
+            await api.delete(`/tasks/${taskId}`);
+            setSelectedTaskId(null);
+            await fetchData();
+        } catch (error: any) {
+            const errorData = error.response?.data?.error;
+            const message = typeof errorData === 'object' ? errorData.message : errorData;
+            alert(message || 'Failed to delete task');
+        }
+    };
+
+    const handleRestoreTask = async (taskId: string) => {
+        try {
+            await api.post(`/tasks/${taskId}/restore`);
+            setSelectedTaskId(null);
+            await fetchData();
+        } catch (error: any) {
+            const errorData = error.response?.data?.error;
+            const message = typeof errorData === 'object' ? errorData.message : errorData;
+            alert(message || 'Failed to restore task');
+        }
+    };
+
+    const getDaysUntilPurge = (deletedAt: string | null | undefined) => {
+        if (!deletedAt) {
+            return RETENTION_DAYS;
+        }
+
+        const deletedTime = new Date(deletedAt).getTime();
+        const purgeTime = deletedTime + RETENTION_DAYS * 24 * 60 * 60 * 1000;
+        const remainingMs = purgeTime - Date.now();
+        return Math.max(0, Math.ceil(remainingMs / (24 * 60 * 60 * 1000)));
+    };
+
     const handleAddComment = async (taskId: string) => {
         const content = (commentDrafts[taskId] || '').trim();
         if (!content) {
@@ -190,6 +239,7 @@ const DashboardPage = () => {
     }
 
     const isAdmin = organization?.userRole === 'ADMIN';
+    const isDeletedView = filter === 'recently_deleted';
     const selectedTask = tasks.find((task) => task.id === selectedTaskId) || null;
 
     return (
@@ -292,17 +342,46 @@ const DashboardPage = () => {
                                     {filter === 'created' && 'Pending Triage'}
                                     {filter === 'in_progress' && 'Operations in Growth'}
                                     {filter === 'completed' && 'Archive & History'}
+                                    {filter === 'recently_deleted' && 'Recently Deleted (auto purged after 30 days)'}
                                 </h2>
+                                <div className="filter-group">
+                                    <button type="button" className={`btn-filter ${filter === 'all' ? 'active' : ''}`} onClick={() => setFilter('all')}>
+                                        All
+                                    </button>
+                                    <button type="button" className={`btn-filter ${filter === 'my' ? 'active' : ''}`} onClick={() => setFilter('my')}>
+                                        My Tasks
+                                    </button>
+                                    <button type="button" className={`btn-filter ${filter === 'created' ? 'active' : ''}`} onClick={() => setFilter('created')}>
+                                        Created
+                                    </button>
+                                    <button type="button" className={`btn-filter ${filter === 'in_progress' ? 'active' : ''}`} onClick={() => setFilter('in_progress')}>
+                                        In Progress
+                                    </button>
+                                    <button type="button" className={`btn-filter ${filter === 'completed' ? 'active' : ''}`} onClick={() => setFilter('completed')}>
+                                        Completed
+                                    </button>
+                                    {isAdmin && (
+                                        <button
+                                            type="button"
+                                            className={`btn-filter ${filter === 'recently_deleted' ? 'active' : ''}`}
+                                            onClick={() => setFilter('recently_deleted')}
+                                        >
+                                            Recently Deleted
+                                        </button>
+                                    )}
+                                </div>
                             </div>
 
                             <div className="tasks-workspace">
                                 <div className="tasks-list">
                                     {tasks.length === 0 ? (
                                         <div className="empty-state">
-                                            <p>No tasks found</p>
-                                            <button onClick={() => setShowCreateModal(true)} className="btn-primary">
-                                                Create your first task
-                                            </button>
+                                            <p>{isDeletedView ? 'No deleted tasks' : 'No tasks found'}</p>
+                                            {!isDeletedView && (
+                                                <button onClick={() => setShowCreateModal(true)} className="btn-primary">
+                                                    Create your first task
+                                                </button>
+                                            )}
                                         </div>
                                     ) : (
                                         tasks.map((task) => (
@@ -329,15 +408,28 @@ const DashboardPage = () => {
                                                 )}
 
                                                 <div className="task-meta">
-                                                    <div className="meta-item">
-                                                        <strong>Owner:</strong> {task.assignee?.name || task.assignee?.email.split('@')[0] || 'Unassigned'}
-                                                    </div>
-                                                    <div className="meta-item">
-                                                        <strong>Comments:</strong> {task.comments?.length || 0}
-                                                    </div>
-                                                    <div className="meta-item">
-                                                        <strong>Attachments:</strong> {task.attachments?.length || 0}
-                                                    </div>
+                                                    {isDeletedView ? (
+                                                        <>
+                                                            <div className="meta-item">
+                                                                <strong>Deleted:</strong> {task.deletedAt ? new Date(task.deletedAt).toLocaleDateString() : 'Unknown'}
+                                                            </div>
+                                                            <div className="meta-item">
+                                                                <strong>Purge In:</strong> {getDaysUntilPurge(task.deletedAt)} day(s)
+                                                            </div>
+                                                        </>
+                                                    ) : (
+                                                        <>
+                                                            <div className="meta-item">
+                                                                <strong>Owner:</strong> {task.assignee?.name || task.assignee?.email.split('@')[0] || 'Unassigned'}
+                                                            </div>
+                                                            <div className="meta-item">
+                                                                <strong>Comments:</strong> {task.comments?.length || 0}
+                                                            </div>
+                                                            <div className="meta-item">
+                                                                <strong>Attachments:</strong> {task.attachments?.length || 0}
+                                                            </div>
+                                                        </>
+                                                    )}
                                                 </div>
                                             </button>
                                         ))
@@ -364,63 +456,96 @@ const DashboardPage = () => {
                                             )}
 
                                             <div className="task-meta">
-                                                <div className="meta-item">
-                                                    <strong>Owner:</strong> {selectedTask.assignee?.name || selectedTask.assignee?.email.split('@')[0] || 'Unassigned'}
-                                                </div>
-                                                {selectedTask.dueDate && (
-                                                    <div className="meta-item">
-                                                        <strong>Deadline:</strong> {new Date(selectedTask.dueDate).toLocaleDateString()}
-                                                    </div>
+                                                {isDeletedView ? (
+                                                    <>
+                                                        <div className="meta-item">
+                                                            <strong>Deleted:</strong> {selectedTask.deletedAt ? new Date(selectedTask.deletedAt).toLocaleDateString() : 'Unknown'}
+                                                        </div>
+                                                        <div className="meta-item">
+                                                            <strong>Purge In:</strong> {getDaysUntilPurge(selectedTask.deletedAt)} day(s)
+                                                        </div>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <div className="meta-item">
+                                                            <strong>Owner:</strong> {selectedTask.assignee?.name || selectedTask.assignee?.email.split('@')[0] || 'Unassigned'}
+                                                        </div>
+                                                        {selectedTask.dueDate && (
+                                                            <div className="meta-item">
+                                                                <strong>Deadline:</strong> {new Date(selectedTask.dueDate).toLocaleDateString()}
+                                                            </div>
+                                                        )}
+                                                    </>
                                                 )}
                                             </div>
 
                                             <div className="task-actions">
-                                                {selectedTask.status !== 'IN_PROGRESS' && selectedTask.status !== 'COMPLETED' && (
+                                                {isDeletedView ? (
                                                     <button
-                                                        onClick={() => handleUpdateTaskStatus(selectedTask.id, 'IN_PROGRESS')}
-                                                        className="btn-action"
-                                                    >
-                                                        Start Work
-                                                    </button>
-                                                )}
-                                                {selectedTask.status === 'IN_PROGRESS' && (
-                                                    <button
-                                                        onClick={() => handleUpdateTaskStatus(selectedTask.id, 'COMPLETED')}
+                                                        onClick={() => handleRestoreTask(selectedTask.id)}
                                                         className="btn-action success"
                                                     >
-                                                        Complete
+                                                        Restore Task
                                                     </button>
-                                                )}
-                                                {selectedTask.status === 'COMPLETED' && (
-                                                    <button
-                                                        onClick={() => handleUpdateTaskStatus(selectedTask.id, 'IN_PROGRESS')}
-                                                        className="btn-action"
-                                                    >
-                                                        Re-open
-                                                    </button>
-                                                )}
+                                                ) : (
+                                                    <>
+                                                        {selectedTask.status !== 'IN_PROGRESS' && selectedTask.status !== 'COMPLETED' && (
+                                                            <button
+                                                                onClick={() => handleUpdateTaskStatus(selectedTask.id, 'IN_PROGRESS')}
+                                                                className="btn-action"
+                                                            >
+                                                                Start Work
+                                                            </button>
+                                                        )}
+                                                        {selectedTask.status === 'IN_PROGRESS' && (
+                                                            <button
+                                                                onClick={() => handleUpdateTaskStatus(selectedTask.id, 'COMPLETED')}
+                                                                className="btn-action success"
+                                                            >
+                                                                Complete
+                                                            </button>
+                                                        )}
+                                                        {selectedTask.status === 'COMPLETED' && (
+                                                            <button
+                                                                onClick={() => handleUpdateTaskStatus(selectedTask.id, 'IN_PROGRESS')}
+                                                                className="btn-action"
+                                                            >
+                                                                Re-open
+                                                            </button>
+                                                        )}
 
-                                                <label className="btn-action secondary upload-btn">
-                                                    📎 Attach
-                                                    <input
-                                                        type="file"
-                                                        style={{ display: 'none' }}
-                                                        onChange={async (e) => {
-                                                            if (e.target.files && e.target.files[0]) {
-                                                                const formData = new FormData();
-                                                                formData.append('file', e.target.files[0]);
-                                                                try {
-                                                                    await api.post(`/tasks/${selectedTask.id}/attachments`, formData, {
-                                                                        headers: { 'Content-Type': 'multipart/form-data' }
-                                                                    });
-                                                                    fetchData();
-                                                                } catch (err) {
-                                                                    alert('Upload failed');
-                                                                }
-                                                            }
-                                                        }}
-                                                    />
-                                                </label>
+                                                        <label className="btn-action secondary upload-btn">
+                                                            📎 Attach
+                                                            <input
+                                                                type="file"
+                                                                style={{ display: 'none' }}
+                                                                onChange={async (e) => {
+                                                                    if (e.target.files && e.target.files[0]) {
+                                                                        const formData = new FormData();
+                                                                        formData.append('file', e.target.files[0]);
+                                                                        try {
+                                                                            await api.post(`/tasks/${selectedTask.id}/attachments`, formData, {
+                                                                                headers: { 'Content-Type': 'multipart/form-data' }
+                                                                            });
+                                                                            fetchData();
+                                                                        } catch (err) {
+                                                                            alert('Upload failed');
+                                                                        }
+                                                                    }
+                                                                }}
+                                                            />
+                                                        </label>
+
+                                                        {isAdmin && (
+                                                            <button
+                                                                onClick={() => handleDeleteTask(selectedTask.id)}
+                                                                className="btn-action danger"
+                                                            >
+                                                                Move to Recently Deleted
+                                                            </button>
+                                                        )}
+                                                    </>
+                                                )}
                                             </div>
 
                                             {selectedTask.attachments && selectedTask.attachments.length > 0 && (
@@ -432,7 +557,7 @@ const DashboardPage = () => {
                                                                 <a href={`${api.defaults.baseURL}/${att.filePath}`} target="_blank" rel="noopener noreferrer">
                                                                     📄 {att.fileName}
                                                                 </a>
-                                                                {organization?.userRole === 'ADMIN' && (
+                                                                {organization?.userRole === 'ADMIN' && !isDeletedView && (
                                                                     <button
                                                                         className="btn-delete-small"
                                                                         onClick={async () => {
@@ -468,7 +593,7 @@ const DashboardPage = () => {
                                                                 <strong>{comment.user.name || comment.user.email}</strong>
                                                                 <div className="comment-meta">
                                                                     <span>{new Date(comment.createdAt).toLocaleString()}</span>
-                                                                    {(user?.id === comment.userId || organization?.userRole === 'ADMIN') && (
+                                                                    {!isDeletedView && (user?.id === comment.userId || organization?.userRole === 'ADMIN') && (
                                                                         <button
                                                                             className="btn-delete-small"
                                                                             onClick={async () => {
@@ -501,38 +626,40 @@ const DashboardPage = () => {
                                                             : `Show all ${selectedTask.comments?.length} comments`}
                                                     </button>
                                                 )}
-                                                <form
-                                                    className="add-comment"
-                                                    onSubmit={async (e) => {
-                                                        e.preventDefault();
-                                                        await handleAddComment(selectedTask.id);
-                                                    }}
-                                                >
-                                                    <textarea
-                                                        value={commentDrafts[selectedTask.id] || ''}
-                                                        placeholder="Write a comment..."
-                                                        rows={2}
-                                                        onChange={(e) =>
-                                                            setCommentDrafts((prev) => ({
-                                                                ...prev,
-                                                                [selectedTask.id]: e.target.value
-                                                            }))
-                                                        }
-                                                        onKeyDown={async (e) => {
-                                                            if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-                                                                e.preventDefault();
-                                                                await handleAddComment(selectedTask.id);
-                                                            }
+                                                {!isDeletedView && (
+                                                    <form
+                                                        className="add-comment"
+                                                        onSubmit={async (e) => {
+                                                            e.preventDefault();
+                                                            await handleAddComment(selectedTask.id);
                                                         }}
-                                                    />
-                                                    <button
-                                                        type="submit"
-                                                        className="btn-action success"
-                                                        disabled={submittingCommentTaskId === selectedTask.id || !(commentDrafts[selectedTask.id] || '').trim()}
                                                     >
-                                                        {submittingCommentTaskId === selectedTask.id ? 'Posting...' : 'Post'}
-                                                    </button>
-                                                </form>
+                                                        <textarea
+                                                            value={commentDrafts[selectedTask.id] || ''}
+                                                            placeholder="Write a comment..."
+                                                            rows={2}
+                                                            onChange={(e) =>
+                                                                setCommentDrafts((prev) => ({
+                                                                    ...prev,
+                                                                    [selectedTask.id]: e.target.value
+                                                                }))
+                                                            }
+                                                            onKeyDown={async (e) => {
+                                                                if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+                                                                    e.preventDefault();
+                                                                    await handleAddComment(selectedTask.id);
+                                                                }
+                                                            }}
+                                                        />
+                                                        <button
+                                                            type="submit"
+                                                            className="btn-action success"
+                                                            disabled={submittingCommentTaskId === selectedTask.id || !(commentDrafts[selectedTask.id] || '').trim()}
+                                                        >
+                                                            {submittingCommentTaskId === selectedTask.id ? 'Posting...' : 'Post'}
+                                                        </button>
+                                                    </form>
+                                                )}
                                             </div>
                                         </div>
                                     ) : (

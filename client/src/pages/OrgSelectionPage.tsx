@@ -11,12 +11,30 @@ interface Organization {
     createdAt: string;
 }
 
+interface OrganizationMember {
+    id: string;
+    userId: string;
+    role: string;
+    user: {
+        id: string;
+        email: string;
+        name: string | null;
+    };
+}
+
 const OrgSelectionPage = () => {
     const [organizations, setOrganizations] = useState<Organization[]>([]);
     const [loading, setLoading] = useState(true);
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [newOrgName, setNewOrgName] = useState('');
     const [creating, setCreating] = useState(false);
+
+    const [selectedOrgForTeam, setSelectedOrgForTeam] = useState<Organization | null>(null);
+    const [teamMembers, setTeamMembers] = useState<OrganizationMember[]>([]);
+    const [loadingMembers, setLoadingMembers] = useState(false);
+    const [updatingMemberId, setUpdatingMemberId] = useState<string | null>(null);
+    const [teamError, setTeamError] = useState('');
+
     const { user, logout } = useAuth();
     const navigate = useNavigate();
 
@@ -59,6 +77,59 @@ const OrgSelectionPage = () => {
         navigate('/dashboard');
     };
 
+    const openManageTeam = async (org: Organization) => {
+        try {
+            setTeamError('');
+            setLoadingMembers(true);
+            setSelectedOrgForTeam(org);
+
+            const res = await api.get(`/orgs/${org.id}`);
+            setTeamMembers(res.data.members || []);
+        } catch (error: any) {
+            const errorData = error.response?.data?.error;
+            const message = typeof errorData === 'object' ? errorData.message : errorData;
+            setTeamError(message || 'Failed to load team members');
+        } finally {
+            setLoadingMembers(false);
+        }
+    };
+
+    const closeManageTeam = async () => {
+        setSelectedOrgForTeam(null);
+        setTeamMembers([]);
+        setTeamError('');
+        await fetchOrganizations();
+    };
+
+    const handleRoleChange = async (memberId: string, newRole: string) => {
+        if (!selectedOrgForTeam) return;
+
+        try {
+            setTeamError('');
+            setUpdatingMemberId(memberId);
+
+            const res = await api.patch(`/orgs/${selectedOrgForTeam.id}/members/${memberId}/role`, {
+                role: newRole
+            });
+
+            setTeamMembers((prev) =>
+                prev.map((member) => (member.id === memberId ? { ...member, role: res.data.role } : member))
+            );
+            await fetchOrganizations();
+
+            const changedMember = teamMembers.find((member) => member.id === memberId);
+            if (changedMember?.userId === user?.id && res.data.role !== 'ADMIN') {
+                await closeManageTeam();
+            }
+        } catch (error: any) {
+            const errorData = error.response?.data?.error;
+            const message = typeof errorData === 'object' ? errorData.message : errorData;
+            setTeamError(message || 'Failed to update role');
+        } finally {
+            setUpdatingMemberId(null);
+        }
+    };
+
     if (loading) {
         return (
             <div className="org-selection-page">
@@ -94,6 +165,19 @@ const OrgSelectionPage = () => {
                             <span className={`role-badge ${org.userRole.toLowerCase()}`}>
                                 {org.userRole}
                             </span>
+
+                            {org.userRole === 'ADMIN' && (
+                                <button
+                                    type="button"
+                                    className="btn-manage-team"
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        openManageTeam(org);
+                                    }}
+                                >
+                                    Manage Team
+                                </button>
+                            )}
                         </div>
                     ))}
 
@@ -144,6 +228,52 @@ const OrgSelectionPage = () => {
                                 </button>
                             </div>
                         </form>
+                    </div>
+                </div>
+            )}
+
+            {selectedOrgForTeam && (
+                <div className="modal-overlay" onClick={closeManageTeam}>
+                    <div className="modal team-modal" onClick={(e) => e.stopPropagation()}>
+                        <div className="team-modal-header">
+                            <h2>Manage Team</h2>
+                            <p>{selectedOrgForTeam.name}</p>
+                        </div>
+
+                        {teamError && <p className="team-error">{teamError}</p>}
+
+                        {loadingMembers ? (
+                            <div className="team-loading">Loading team members...</div>
+                        ) : (
+                            <div className="team-members-list">
+                                {teamMembers.map((member) => (
+                                    <div key={member.id} className="team-member-row">
+                                        <div className="team-member-info">
+                                            <strong>{member.user.name || member.user.email}</strong>
+                                            <span>{member.user.email}</span>
+                                        </div>
+
+                                        <div className="team-member-role">
+                                            <span className={`role-badge ${member.role.toLowerCase()}`}>{member.role}</span>
+                                            <select
+                                                value={member.role}
+                                                disabled={updatingMemberId === member.id}
+                                                onChange={(e) => handleRoleChange(member.id, e.target.value)}
+                                            >
+                                                <option value="MEMBER">MEMBER</option>
+                                                <option value="ADMIN">ADMIN</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+
+                        <div className="modal-actions">
+                            <button type="button" className="btn-secondary" onClick={closeManageTeam}>
+                                Close
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}

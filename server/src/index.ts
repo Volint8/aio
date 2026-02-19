@@ -29,6 +29,7 @@ app.get('/', (req, res) => {
 import authRoutes from './routes/auth.routes';
 import orgRoutes from './routes/org.routes';
 import taskRoutes from './routes/task.routes';
+import { startTaskPurgeJob } from './jobs/taskPurge.job';
 
 // Routes
 app.use('/auth', authRoutes);
@@ -37,4 +38,5 @@ app.use('/tasks', taskRoutes);
 
 app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
+    startTaskPurgeJob();
 });

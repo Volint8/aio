@@ -159,3 +159,85 @@ export const addMember = async (req: Request, res: Response) => {
         res.status(500).json({ error: 'Internal server error' });
     }
 };
+
+export const updateMemberRole = async (req: Request, res: Response) => {
+    try {
+        const requesterUserId = (req as any).user.userId;
+        const organizationId = req.params.id as string;
+        const memberId = req.params.memberId as string;
+        const { role } = req.body as { role?: string };
+
+        if (!role || !['ADMIN', 'MEMBER'].includes(role)) {
+            return res.status(400).json({ error: 'Role must be ADMIN or MEMBER' });
+        }
+
+        const requesterMembership = await prisma.organizationMember.findUnique({
+            where: {
+                userId_organizationId: {
+                    userId: requesterUserId,
+                    organizationId
+                }
+            }
+        });
+
+        if (!requesterMembership || requesterMembership.role !== 'ADMIN') {
+            return res.status(403).json({ error: 'Only admins can update member roles' });
+        }
+
+        const targetMembership = await prisma.organizationMember.findUnique({
+            where: { id: memberId }
+        });
+
+        if (!targetMembership || targetMembership.organizationId !== organizationId) {
+            return res.status(404).json({ error: 'Member not found in this organization' });
+        }
+
+        if (targetMembership.role === role) {
+            const existingMembership = await prisma.organizationMember.findUnique({
+                where: { id: memberId },
+                include: {
+                    user: {
+                        select: {
+                            id: true,
+                            email: true,
+                            name: true
+                        }
+                    }
+                }
+            });
+            return res.status(200).json(existingMembership);
+        }
+
+        if (targetMembership.role === 'ADMIN' && role === 'MEMBER') {
+            const adminCount = await prisma.organizationMember.count({
+                where: {
+                    organizationId,
+                    role: 'ADMIN'
+                }
+            });
+
+            if (adminCount <= 1) {
+                return res.status(400).json({ error: 'Cannot remove the last admin from this organization' });
+            }
+        }
+
+        const updatedMembership = await prisma.organizationMember.update({
+            where: { id: memberId },
+            data: { role },
+            include: {
+                user: {
+                    select: {
+                        id: true,
+                        email: true,
+                        name: true
+                    }
+                }
+            }
+        });
+
+        res.json(updatedMembership);
+    } catch (error) {
+        console.error('Update member role error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+};

@@ -20,6 +20,7 @@ model User {
   updatedAt     DateTime             @updatedAt
   organizations OrganizationMember[]
   tasks         Task[]               @relation("AssignedTasks")
+  deletedTasks  Task[]               @relation("DeletedTasks")
   comments      Comment[]
 }
 
@@ -53,12 +54,18 @@ model Task {
   dueDate        DateTime?
   organizationId String
   assigneeId     String?
+  deletedAt      DateTime?
+  deletedById    String?
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
   organization   Organization @relation(fields: [organizationId], references: [id])
   assignee       User?        @relation("AssignedTasks", fields: [assigneeId], references: [id])
+  deletedBy      User?        @relation("DeletedTasks", fields: [deletedById], references: [id])
   comments       Comment[]
   attachments    Attachment[]
+
+  @@index([organizationId, deletedAt])
+  @@index([deletedAt])
 }
 
 model Comment {

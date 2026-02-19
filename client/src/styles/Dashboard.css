@@ -160,6 +160,8 @@
 .filter-group {
     display: flex;
     gap: 8px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
 }
 
 .btn-filter {
@@ -389,6 +391,18 @@
     background: var(--primary-hover);
     border-color: var(--primary-hover);
     color: white;
+}
+
+.btn-action.danger {
+    background: #FFF1F2;
+    color: #BE123C;
+    border-color: #FECDD3;
+}
+
+.btn-action.danger:hover {
+    background: #FFE4E6;
+    color: #9F1239;
+    border-color: #FDA4AF;
 }
 
 .upload-btn {

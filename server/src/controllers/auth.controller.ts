@@ -147,13 +147,24 @@ export const verifyOtp = async (req: Request, res: Response) => {
                 }
             });
 
+            const memberCount = await prisma.organizationMember.count({
+                where: { organizationId: org.id }
+            });
+            const roleForUser = memberCount === 0 ? 'ADMIN' : 'MEMBER';
+
             if (!existingMember) {
                 await prisma.organizationMember.create({
                     data: {
                         userId: user.id,
                         organizationId: org.id,
-                        role: 'MEMBER'
+                        role: roleForUser
                     }
+                });
+            } else if (memberCount === 1 && existingMember.role !== 'ADMIN') {
+                // Safety net: if this is the only member, ensure they are admin.
+                await prisma.organizationMember.update({
+                    where: { id: existingMember.id },
+                    data: { role: 'ADMIN' }
                 });
             }
         }

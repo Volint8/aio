@@ -4,6 +4,12 @@ import { sendTaskAssignmentEmail } from '../services/email.service';
 
 const prisma = new PrismaClient();
 
+type TaskView = 'active' | 'deleted';
+
+const resolveTaskView = (view: unknown): TaskView => {
+    return view === 'deleted' ? 'deleted' : 'active';
+};
+
 const notifyTaskAssignment = async (params: {
     assigneeId: string;
     assignerId: string;
@@ -48,15 +54,19 @@ const notifyTaskAssignment = async (params: {
     }
 };
 
+const ensureTaskIsActive = (task: { deletedAt: Date | null }) => {
+    return !task.deletedAt;
+};
+
 export const getTasks = async (req: Request, res: Response) => {
     try {
         const userId = (req as any).user.userId;
-        const { organizationId, status, assigneeId } = req.query;
+        const { organizationId, status, assigneeId, view } = req.query;
+        const taskView = resolveTaskView(view);
 
         const where: any = {};
 
         if (organizationId) {
-            // Verify user is member of organization
             const membership = await prisma.organizationMember.findUnique({
                 where: {
                     userId_organizationId: {
@@ -70,18 +80,35 @@ export const getTasks = async (req: Request, res: Response) => {
                 return res.status(403).json({ error: 'Access denied' });
             }
 
+            if (taskView === 'deleted' && membership.role !== 'ADMIN') {
+                return res.status(403).json({ error: 'Only admins can view recently deleted tasks' });
+            }
+
             where.organizationId = organizationId;
         } else {
-            // Get all tasks from user's organizations
             const memberships = await prisma.organizationMember.findMany({
                 where: { userId }
             });
-            where.organizationId = {
-                in: memberships.map(m => m.organizationId)
-            };
+
+            if (taskView === 'deleted') {
+                const adminOrgIds = memberships.filter((m) => m.role === 'ADMIN').map((m) => m.organizationId);
+                where.organizationId = {
+                    in: adminOrgIds
+                };
+            } else {
+                where.organizationId = {
+                    in: memberships.map((m) => m.organizationId)
+                };
+            }
         }
 
-        if (status) {
+        if (taskView === 'deleted') {
+            where.deletedAt = { not: null };
+        } else {
+            where.deletedAt = null;
+        }
+
+        if (status && taskView === 'active') {
             where.status = status;
         }
 
@@ -121,9 +148,9 @@ export const getTasks = async (req: Request, res: Response) => {
                 },
                 attachments: true
             },
-            orderBy: {
-                createdAt: 'desc'
-            }
+            orderBy: taskView === 'deleted'
+                ? { deletedAt: 'desc' }
+                : { createdAt: 'desc' }
         });
 
         res.json(tasks);
@@ -143,7 +170,6 @@ export const createTask = async (req: Request, res: Response) => {
             return res.status(400).json({ error: 'Title and organization are required' });
         }
 
-        // Verify user is member of organization
         const membership = await prisma.organizationMember.findUnique({
             where: {
                 userId_organizationId: {
@@ -157,7 +183,6 @@ export const createTask = async (req: Request, res: Response) => {
             return res.status(403).json({ error: 'Access denied' });
         }
 
-        // If assigneeId is provided, verify they're a member
         if (normalizedAssigneeId) {
             const assigneeMembership = await prisma.organizationMember.findUnique({
                 where: {
@@ -255,11 +280,10 @@ export const getTaskById = async (req: Request, res: Response) => {
             }
         });
 
-        if (!task) {
+        if (!task || task.deletedAt) {
             return res.status(404).json({ error: 'Task not found' });
         }
 
-        // Verify user is member of organization
         const membership = await prisma.organizationMember.findUnique({
             where: {
                 userId_organizationId: {
@@ -296,7 +320,10 @@ export const updateTask = async (req: Request, res: Response) => {
             return res.status(404).json({ error: 'Task not found' });
         }
 
-        // Verify user is member of organization
+        if (!ensureTaskIsActive(task)) {
+            return res.status(400).json({ error: 'Task is in Recently Deleted' });
+        }
+
         const membership = await prisma.organizationMember.findUnique({
             where: {
                 userId_organizationId: {
@@ -383,7 +410,6 @@ export const deleteTask = async (req: Request, res: Response) => {
             return res.status(404).json({ error: 'Task not found' });
         }
 
-        // Verify user is admin of organization
         const membership = await prisma.organizationMember.findUnique({
             where: {
                 userId_organizationId: {
@@ -397,13 +423,96 @@ export const deleteTask = async (req: Request, res: Response) => {
             return res.status(403).json({ error: 'Only admins can delete tasks' });
         }
 
-        await prisma.task.delete({
-            where: { id: id }
+        if (task.deletedAt) {
+            return res.status(400).json({ error: 'Task already deleted' });
+        }
+
+        await prisma.task.update({
+            where: { id: id },
+            data: {
+                deletedAt: new Date(),
+                deletedById: userId
+            }
         });
 
-        res.json({ message: 'Task deleted successfully' });
+        res.json({ message: 'Task moved to Recently Deleted' });
     } catch (error) {
         console.error('Delete task error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+};
+
+export const restoreTask = async (req: Request, res: Response) => {
+    try {
+        const userId = (req as any).user.userId;
+        const id = req.params.id as string;
+
+        const task = await prisma.task.findUnique({
+            where: { id }
+        });
+
+        if (!task) {
+            return res.status(404).json({ error: 'Task not found' });
+        }
+
+        const membership = await prisma.organizationMember.findUnique({
+            where: {
+                userId_organizationId: {
+                    userId,
+                    organizationId: task.organizationId
+                }
+            }
+        });
+
+        if (!membership || membership.role !== 'ADMIN') {
+            return res.status(403).json({ error: 'Only admins can restore tasks' });
+        }
+
+        if (!task.deletedAt) {
+            return res.status(400).json({ error: 'Task is not deleted' });
+        }
+
+        const restoredTask = await prisma.task.update({
+            where: { id },
+            data: {
+                deletedAt: null,
+                deletedById: null
+            },
+            include: {
+                assignee: {
+                    select: {
+                        id: true,
+                        email: true,
+                        name: true
+                    }
+                },
+                organization: {
+                    select: {
+                        id: true,
+                        name: true
+                    }
+                },
+                comments: {
+                    include: {
+                        user: {
+                            select: {
+                                id: true,
+                                email: true,
+                                name: true
+                            }
+                        }
+                    },
+                    orderBy: {
+                        createdAt: 'desc'
+                    }
+                },
+                attachments: true
+            }
+        });
+
+        res.json(restoredTask);
+    } catch (error) {
+        console.error('Restore task error:', error);
         res.status(500).json({ error: 'Internal server error' });
     }
 };
@@ -426,7 +535,10 @@ export const addComment = async (req: Request, res: Response) => {
             return res.status(404).json({ error: 'Task not found' });
         }
 
-        // Verify user is member of organization
+        if (!ensureTaskIsActive(task)) {
+            return res.status(400).json({ error: 'Task is in Recently Deleted' });
+        }
+
         const membership = await prisma.organizationMember.findUnique({
             where: {
                 userId_organizationId: {
@@ -469,10 +581,9 @@ export const getStats = async (req: Request, res: Response) => {
         const userId = (req as any).user.userId;
         const { organizationId } = req.query;
 
-        let where: any = {};
+        let where: any = { deletedAt: null };
 
         if (organizationId) {
-            // Verify user is member of organization
             const membership = await prisma.organizationMember.findUnique({
                 where: {
                     userId_organizationId: {
@@ -488,7 +599,6 @@ export const getStats = async (req: Request, res: Response) => {
 
             where.organizationId = organizationId;
         } else {
-            // Get all tasks from user's organizations
             const memberships = await prisma.organizationMember.findMany({
                 where: { userId }
             });
@@ -534,7 +644,10 @@ export const uploadAttachment = async (req: Request, res: Response) => {
             return res.status(404).json({ error: 'Task not found' });
         }
 
-        // Verify user is member of organization
+        if (!ensureTaskIsActive(task)) {
+            return res.status(400).json({ error: 'Task is in Recently Deleted' });
+        }
+
         const membership = await prisma.organizationMember.findUnique({
             where: {
                 userId_organizationId: {
@@ -573,7 +686,6 @@ export const getMemberStats = async (req: Request, res: Response) => {
             return res.status(400).json({ error: 'Organization ID is required' });
         }
 
-        // Verify requester is admin
         const membership = await prisma.organizationMember.findUnique({
             where: {
                 userId_organizationId: {
@@ -602,9 +714,9 @@ export const getMemberStats = async (req: Request, res: Response) => {
 
         const memberStats = await Promise.all(members.map(async (m) => {
             const [created, inProgress, completed] = await Promise.all([
-                prisma.task.count({ where: { organizationId: organizationId as string, assigneeId: m.userId, status: 'CREATED' } }),
-                prisma.task.count({ where: { organizationId: organizationId as string, assigneeId: m.userId, status: 'IN_PROGRESS' } }),
-                prisma.task.count({ where: { organizationId: organizationId as string, assigneeId: m.userId, status: 'COMPLETED' } })
+                prisma.task.count({ where: { organizationId: organizationId as string, assigneeId: m.userId, status: 'CREATED', deletedAt: null } }),
+                prisma.task.count({ where: { organizationId: organizationId as string, assigneeId: m.userId, status: 'IN_PROGRESS', deletedAt: null } }),
+                prisma.task.count({ where: { organizationId: organizationId as string, assigneeId: m.userId, status: 'COMPLETED', deletedAt: null } })
             ]);
 
             return {
@@ -640,7 +752,10 @@ export const deleteComment = async (req: Request, res: Response) => {
             return res.status(404).json({ error: 'Comment not found' });
         }
 
-        // Check if user is the author OR an admin of the organization
+        if (!ensureTaskIsActive(comment.task)) {
+            return res.status(400).json({ error: 'Task is in Recently Deleted' });
+        }
+
         const membership = await prisma.organizationMember.findUnique({
             where: {
                 userId_organizationId: {
@@ -683,7 +798,10 @@ export const deleteAttachment = async (req: Request, res: Response) => {
             return res.status(404).json({ error: 'Attachment not found' });
         }
 
-        // Check if user is admin of the organization
+        if (!ensureTaskIsActive(attachment.task)) {
+            return res.status(400).json({ error: 'Task is in Recently Deleted' });
+        }
+
         const membership = await prisma.organizationMember.findUnique({
             where: {
                 userId_organizationId: {

@@ -83,6 +83,25 @@
     font-size: 0.875em;
 }
 
+.btn-manage-team {
+    margin-top: 16px;
+    padding: 8px 14px;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    background: #F8FAFC;
+    color: var(--text-main);
+    font-size: 0.8em;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.btn-manage-team:hover {
+    border-color: var(--accent-color);
+    color: var(--accent-color);
+    background: #EFF6FF;
+}
+
 .role-badge {
     display: inline-block;
     padding: 4px 12px;
@@ -157,4 +176,87 @@
 
 .btn-secondary:hover {
     background: #E2E8F0;
+}
+
+.team-modal {
+    max-width: 720px;
+}
+
+.team-modal-header h2 {
+    margin: 0 0 4px 0;
+}
+
+.team-modal-header p {
+    margin: 0 0 20px 0;
+    color: var(--text-muted);
+}
+
+.team-error {
+    margin: 0 0 16px 0;
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: #FEF2F2;
+    border: 1px solid #FECACA;
+    color: #B91C1C;
+    font-size: 0.9em;
+}
+
+.team-loading {
+    padding: 24px 0;
+    color: var(--text-muted);
+}
+
+.team-members-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-height: 420px;
+    overflow-y: auto;
+    padding-right: 4px;
+}
+
+.team-member-row {
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    background: #F8FAFC;
+}
+
+.team-member-info {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+}
+
+.team-member-info strong {
+    color: var(--text-main);
+    font-size: 0.95em;
+}
+
+.team-member-info span {
+    color: var(--text-muted);
+    font-size: 0.82em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.team-member-role {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.team-member-role select {
+    border: 1px solid var(--border-color);
+    background: white;
+    border-radius: 8px;
+    padding: 6px 10px;
+    font-weight: 600;
+    color: var(--text-main);
 }
