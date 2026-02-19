@@ -56,6 +56,8 @@ interface Organization {
     members?: any[];
 }
 
+const COMMENTS_PREVIEW_COUNT = 4;
+
 const DashboardPage = () => {
     const [tasks, setTasks] = useState<Task[]>([]);
     const [stats, setStats] = useState<Stats | null>(null);
@@ -64,7 +66,11 @@ const DashboardPage = () => {
     const [viewMode, setViewMode] = useState<'my' | 'team'>('my');
     const [loading, setLoading] = useState(true);
     const [filter, setFilter] = useState<'all' | 'my' | 'created' | 'in_progress' | 'completed'>('all');
+    const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
     const [showCreateModal, setShowCreateModal] = useState(false);
+    const [expandedCommentThreads, setExpandedCommentThreads] = useState<Record<string, boolean>>({});
+    const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});
+    const [submittingCommentTaskId, setSubmittingCommentTaskId] = useState<string | null>(null);
     const [newTask, setNewTask] = useState({
         title: '',
         description: '',
@@ -72,7 +78,7 @@ const DashboardPage = () => {
         dueDate: '',
         assigneeId: ''
     });
-    const { user, logout } = useAuth();
+    const { user } = useAuth();
     const navigate = useNavigate();
 
     const orgId = localStorage.getItem('selectedOrgId');
@@ -149,11 +155,42 @@ const DashboardPage = () => {
         }
     };
 
+    const handleAddComment = async (taskId: string) => {
+        const content = (commentDrafts[taskId] || '').trim();
+        if (!content) {
+            return;
+        }
+
+        try {
+            setSubmittingCommentTaskId(taskId);
+            await api.post(`/tasks/${taskId}/comments`, { content });
+            setCommentDrafts((prev) => ({ ...prev, [taskId]: '' }));
+            await fetchData();
+        } catch (err) {
+            alert('Failed to add comment');
+        } finally {
+            setSubmittingCommentTaskId(null);
+        }
+    };
+
+    useEffect(() => {
+        if (tasks.length === 0) {
+            setSelectedTaskId(null);
+            return;
+        }
+
+        const selectedStillVisible = selectedTaskId && tasks.some((task) => task.id === selectedTaskId);
+        if (!selectedStillVisible) {
+            setSelectedTaskId(null);
+        }
+    }, [tasks, selectedTaskId]);
+
     if (loading) {
         return <div className="dashboard loading">Loading...</div>;
     }
 
     const isAdmin = organization?.userRole === 'ADMIN';
+    const selectedTask = tasks.find((task) => task.id === selectedTaskId) || null;
 
     return (
         <div className="dashboard">
@@ -168,9 +205,6 @@ const DashboardPage = () => {
                     <div className="header-actions">
                         <button onClick={() => setShowCreateModal(true)} className="btn-primary">
                             + New Task
-                        </button>
-                        <button onClick={logout} className="btn-logout">
-                            Logout
                         </button>
                     </div>
                 </div>
@@ -261,92 +295,105 @@ const DashboardPage = () => {
                                 </h2>
                             </div>
 
-                            <div className="tasks-list">
-                                {tasks.length === 0 ? (
-                                    <div className="empty-state">
-                                        <p>No tasks found</p>
-                                        <button onClick={() => setShowCreateModal(true)} className="btn-primary">
-                                            Create your first task
-                                        </button>
-                                    </div>
-                                ) : (
-                                    tasks.map((task) => (
-                                        <div key={task.id} className="task-card">
-                                            <div className="task-header">
-                                                <h3>{task.title}</h3>
+                            <div className="tasks-workspace">
+                                <div className="tasks-list">
+                                    {tasks.length === 0 ? (
+                                        <div className="empty-state">
+                                            <p>No tasks found</p>
+                                            <button onClick={() => setShowCreateModal(true)} className="btn-primary">
+                                                Create your first task
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        tasks.map((task) => (
+                                            <button
+                                                key={task.id}
+                                                type="button"
+                                                className={`task-card task-card-compact ${selectedTaskId === task.id ? 'active' : ''}`}
+                                                onClick={() => setSelectedTaskId(task.id)}
+                                            >
+                                                <div className="task-header">
+                                                    <h3>{task.title}</h3>
+                                                    <div className="task-badges">
+                                                        <span className={`priority-badge ${task.priority.toLowerCase()}`}>
+                                                            {task.priority}
+                                                        </span>
+                                                        <span className={`status-badge ${task.status.toLowerCase()}`}>
+                                                            {task.status.replace('_', ' ')}
+                                                        </span>
+                                                    </div>
+                                                </div>
+
+                                                {task.description && (
+                                                    <p className="task-description task-description-compact">{task.description}</p>
+                                                )}
+
+                                                <div className="task-meta">
+                                                    <div className="meta-item">
+                                                        <strong>Owner:</strong> {task.assignee?.name || task.assignee?.email.split('@')[0] || 'Unassigned'}
+                                                    </div>
+                                                    <div className="meta-item">
+                                                        <strong>Comments:</strong> {task.comments?.length || 0}
+                                                    </div>
+                                                    <div className="meta-item">
+                                                        <strong>Attachments:</strong> {task.attachments?.length || 0}
+                                                    </div>
+                                                </div>
+                                            </button>
+                                        ))
+                                    )}
+                                </div>
+
+                                <aside className={`task-detail-panel ${selectedTask ? 'open' : ''}`}>
+                                    {selectedTask ? (
+                                        <div className="task-detail-content" key={selectedTask.id}>
+                                            <div className="task-detail-header">
+                                                <h3>{selectedTask.title}</h3>
                                                 <div className="task-badges">
-                                                    <span className={`priority-badge ${task.priority.toLowerCase()}`}>
-                                                        {task.priority}
+                                                    <span className={`priority-badge ${selectedTask.priority.toLowerCase()}`}>
+                                                        {selectedTask.priority}
                                                     </span>
-                                                    <span className={`status-badge ${task.status.toLowerCase()}`}>
-                                                        {task.status.replace('_', ' ')}
+                                                    <span className={`status-badge ${selectedTask.status.toLowerCase()}`}>
+                                                        {selectedTask.status.replace('_', ' ')}
                                                     </span>
                                                 </div>
                                             </div>
 
-                                            {task.description && (
-                                                <p className="task-description">{task.description}</p>
+                                            {selectedTask.description && (
+                                                <p className="task-description">{selectedTask.description}</p>
                                             )}
 
                                             <div className="task-meta">
                                                 <div className="meta-item">
-                                                    <strong>Owner:</strong> {task.assignee?.name || task.assignee?.email.split('@')[0] || 'Unassigned'}
+                                                    <strong>Owner:</strong> {selectedTask.assignee?.name || selectedTask.assignee?.email.split('@')[0] || 'Unassigned'}
                                                 </div>
-                                                {task.dueDate && (
+                                                {selectedTask.dueDate && (
                                                     <div className="meta-item">
-                                                        <strong>Deadline:</strong> {new Date(task.dueDate).toLocaleDateString()}
+                                                        <strong>Deadline:</strong> {new Date(selectedTask.dueDate).toLocaleDateString()}
                                                     </div>
                                                 )}
                                             </div>
 
-                                            {task.attachments && task.attachments.length > 0 && (
-                                                <div className="task-attachments">
-                                                    <h4>Documents</h4>
-                                                    <ul>
-                                                        {task.attachments.map((att: any) => (
-                                                            <li key={att.id} className="attachment-item">
-                                                                <a href={`${api.defaults.baseURL}/${att.filePath}`} target="_blank" rel="noreferrer">
-                                                                    📄 {att.fileName}
-                                                                </a>
-                                                                {isAdmin && (
-                                                                    <button
-                                                                        className="btn-delete-small"
-                                                                        onClick={async () => {
-                                                                            if (window.confirm('Delete this attachment?')) {
-                                                                                await api.delete(`/tasks/attachments/${att.id}`);
-                                                                                fetchData();
-                                                                            }
-                                                                        }}
-                                                                    >
-                                                                        Remove
-                                                                    </button>
-                                                                )}
-                                                            </li>
-                                                        ))}
-                                                    </ul>
-                                                </div>
-                                            )}
-
                                             <div className="task-actions">
-                                                {task.status !== 'IN_PROGRESS' && task.status !== 'COMPLETED' && (
+                                                {selectedTask.status !== 'IN_PROGRESS' && selectedTask.status !== 'COMPLETED' && (
                                                     <button
-                                                        onClick={() => handleUpdateTaskStatus(task.id, 'IN_PROGRESS')}
+                                                        onClick={() => handleUpdateTaskStatus(selectedTask.id, 'IN_PROGRESS')}
                                                         className="btn-action"
                                                     >
                                                         Start Work
                                                     </button>
                                                 )}
-                                                {task.status === 'IN_PROGRESS' && (
+                                                {selectedTask.status === 'IN_PROGRESS' && (
                                                     <button
-                                                        onClick={() => handleUpdateTaskStatus(task.id, 'COMPLETED')}
+                                                        onClick={() => handleUpdateTaskStatus(selectedTask.id, 'COMPLETED')}
                                                         className="btn-action success"
                                                     >
                                                         Complete
                                                     </button>
                                                 )}
-                                                {task.status === 'COMPLETED' && (
+                                                {selectedTask.status === 'COMPLETED' && (
                                                     <button
-                                                        onClick={() => handleUpdateTaskStatus(task.id, 'IN_PROGRESS')}
+                                                        onClick={() => handleUpdateTaskStatus(selectedTask.id, 'IN_PROGRESS')}
                                                         className="btn-action"
                                                     >
                                                         Re-open
@@ -363,7 +410,7 @@ const DashboardPage = () => {
                                                                 const formData = new FormData();
                                                                 formData.append('file', e.target.files[0]);
                                                                 try {
-                                                                    await api.post(`/tasks/${task.id}/attachments`, formData, {
+                                                                    await api.post(`/tasks/${selectedTask.id}/attachments`, formData, {
                                                                         headers: { 'Content-Type': 'multipart/form-data' }
                                                                     });
                                                                     fetchData();
@@ -376,59 +423,11 @@ const DashboardPage = () => {
                                                 </label>
                                             </div>
 
-                                            <div className="task-comments">
-                                                <h4>Timeline & Comments</h4>
-                                                <div className="comments-list">
-                                                    {task.comments?.map((comment: any) => (
-                                                        <div key={comment.id} className="comment-item">
-                                                            <div className="comment-header">
-                                                                <strong>{comment.user.name || comment.user.email}</strong>
-                                                                <div className="comment-meta">
-                                                                    <span>{new Date(comment.createdAt).toLocaleString()}</span>
-                                                                    {(user?.id === comment.userId || organization?.userRole === 'ADMIN') && (
-                                                                        <button
-                                                                            className="btn-delete-small"
-                                                                            onClick={async () => {
-                                                                                if (window.confirm('Delete this comment?')) {
-                                                                                    await api.delete(`/tasks/comments/${comment.id}`);
-                                                                                    fetchData();
-                                                                                }
-                                                                            }}
-                                                                        >
-                                                                            Delete
-                                                                        </button>
-                                                                    )}
-                                                                </div>
-                                                            </div>
-                                                            <p>{comment.content}</p>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                                <div className="add-comment">
-                                                    <input
-                                                        type="text"
-                                                        placeholder="Write a comment..."
-                                                        onKeyDown={async (e) => {
-                                                            if (e.key === 'Enter' && (e.target as HTMLInputElement).value.trim()) {
-                                                                const content = (e.target as HTMLInputElement).value;
-                                                                try {
-                                                                    await api.post(`/tasks/${task.id}/comments`, { content });
-                                                                    (e.target as HTMLInputElement).value = '';
-                                                                    fetchData();
-                                                                } catch (err) {
-                                                                    alert('Failed to add comment');
-                                                                }
-                                                            }
-                                                        }}
-                                                    />
-                                                </div>
-                                            </div>
-
-                                            {task.attachments && task.attachments.length > 0 && (
+                                            {selectedTask.attachments && selectedTask.attachments.length > 0 && (
                                                 <div className="task-attachments">
                                                     <h4>Attachments</h4>
                                                     <ul>
-                                                        {task.attachments.map((att) => (
+                                                        {selectedTask.attachments.map((att) => (
                                                             <li key={att.id} className="attachment-item">
                                                                 <a href={`${api.defaults.baseURL}/${att.filePath}`} target="_blank" rel="noopener noreferrer">
                                                                     📄 {att.fileName}
@@ -451,9 +450,97 @@ const DashboardPage = () => {
                                                     </ul>
                                                 </div>
                                             )}
+
+                                            <div className="task-comments">
+                                                <div className="task-comments-header">
+                                                    <h4>Timeline & Comments</h4>
+                                                    <span className="comments-count">
+                                                        {selectedTask.comments?.length || 0} {(selectedTask.comments?.length || 0) === 1 ? 'entry' : 'entries'}
+                                                    </span>
+                                                </div>
+                                                <div className="comments-list">
+                                                    {(expandedCommentThreads[selectedTask.id]
+                                                        ? (selectedTask.comments || [])
+                                                        : (selectedTask.comments || []).slice(0, COMMENTS_PREVIEW_COUNT)
+                                                    ).map((comment: any) => (
+                                                        <div key={comment.id} className="comment-item">
+                                                            <div className="comment-header">
+                                                                <strong>{comment.user.name || comment.user.email}</strong>
+                                                                <div className="comment-meta">
+                                                                    <span>{new Date(comment.createdAt).toLocaleString()}</span>
+                                                                    {(user?.id === comment.userId || organization?.userRole === 'ADMIN') && (
+                                                                        <button
+                                                                            className="btn-delete-small"
+                                                                            onClick={async () => {
+                                                                                if (window.confirm('Delete this comment?')) {
+                                                                                    await api.delete(`/tasks/comments/${comment.id}`);
+                                                                                    fetchData();
+                                                                                }
+                                                                            }}
+                                                                        >
+                                                                            Delete
+                                                                        </button>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                            <p className="comment-content">{comment.content}</p>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                                {(selectedTask.comments?.length || 0) > COMMENTS_PREVIEW_COUNT && (
+                                                    <button
+                                                        type="button"
+                                                        className="btn-thread-toggle"
+                                                        onClick={() => setExpandedCommentThreads((prev) => ({
+                                                            ...prev,
+                                                            [selectedTask.id]: !prev[selectedTask.id]
+                                                        }))}
+                                                    >
+                                                        {expandedCommentThreads[selectedTask.id]
+                                                            ? `Show recent ${COMMENTS_PREVIEW_COUNT}`
+                                                            : `Show all ${selectedTask.comments?.length} comments`}
+                                                    </button>
+                                                )}
+                                                <form
+                                                    className="add-comment"
+                                                    onSubmit={async (e) => {
+                                                        e.preventDefault();
+                                                        await handleAddComment(selectedTask.id);
+                                                    }}
+                                                >
+                                                    <textarea
+                                                        value={commentDrafts[selectedTask.id] || ''}
+                                                        placeholder="Write a comment..."
+                                                        rows={2}
+                                                        onChange={(e) =>
+                                                            setCommentDrafts((prev) => ({
+                                                                ...prev,
+                                                                [selectedTask.id]: e.target.value
+                                                            }))
+                                                        }
+                                                        onKeyDown={async (e) => {
+                                                            if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+                                                                e.preventDefault();
+                                                                await handleAddComment(selectedTask.id);
+                                                            }
+                                                        }}
+                                                    />
+                                                    <button
+                                                        type="submit"
+                                                        className="btn-action success"
+                                                        disabled={submittingCommentTaskId === selectedTask.id || !(commentDrafts[selectedTask.id] || '').trim()}
+                                                    >
+                                                        {submittingCommentTaskId === selectedTask.id ? 'Posting...' : 'Post'}
+                                                    </button>
+                                                </form>
+                                            </div>
                                         </div>
-                                    ))
-                                )}
+                                    ) : (
+                                        <div className="task-detail-empty">
+                                            <p>Select a task to view full details</p>
+                                        </div>
+                                    )}
+                                </aside>
                             </div>
                         </div>
 
@@ -505,7 +592,7 @@ const DashboardPage = () => {
                                             </div>
                                         </div>
 
-                                        {isAdmin && organization?.members && (
+                                        {organization?.members && (
                                             <div className="form-group">
                                                 <label>Assign To</label>
                                                 <select

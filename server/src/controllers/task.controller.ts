@@ -1,7 +1,52 @@
 import { Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
+import { sendTaskAssignmentEmail } from '../services/email.service';
 
 const prisma = new PrismaClient();
+
+const notifyTaskAssignment = async (params: {
+    assigneeId: string;
+    assignerId: string;
+    taskTitle: string;
+    organizationName: string;
+    dueDate?: Date | null;
+    priority?: string | null;
+}) => {
+    const { assigneeId, assignerId, taskTitle, organizationName, dueDate, priority } = params;
+
+    if (!assigneeId || assigneeId === assignerId) {
+        return;
+    }
+
+    try {
+        const [assignee, assigner] = await Promise.all([
+            prisma.user.findUnique({
+                where: { id: assigneeId },
+                select: { email: true, name: true }
+            }),
+            prisma.user.findUnique({
+                where: { id: assignerId },
+                select: { email: true, name: true }
+            })
+        ]);
+
+        if (!assignee?.email) {
+            return;
+        }
+
+        await sendTaskAssignmentEmail({
+            to: assignee.email,
+            assigneeName: assignee.name,
+            taskTitle,
+            organizationName,
+            assignerName: assigner?.name || assigner?.email,
+            dueDate,
+            priority
+        });
+    } catch (error) {
+        console.error('Task assignment email failed:', error);
+    }
+};
 
 export const getTasks = async (req: Request, res: Response) => {
     try {
@@ -92,6 +137,7 @@ export const createTask = async (req: Request, res: Response) => {
     try {
         const userId = (req as any).user.userId;
         const { title, description, organizationId, assigneeId, dueDate, priority } = req.body;
+        const normalizedAssigneeId = assigneeId === '' ? null : assigneeId;
 
         if (!title || !organizationId) {
             return res.status(400).json({ error: 'Title and organization are required' });
@@ -112,11 +158,11 @@ export const createTask = async (req: Request, res: Response) => {
         }
 
         // If assigneeId is provided, verify they're a member
-        if (assigneeId) {
+        if (normalizedAssigneeId) {
             const assigneeMembership = await prisma.organizationMember.findUnique({
                 where: {
                     userId_organizationId: {
-                        userId: assigneeId,
+                        userId: normalizedAssigneeId,
                         organizationId
                     }
                 }
@@ -132,7 +178,7 @@ export const createTask = async (req: Request, res: Response) => {
                 title,
                 description,
                 organizationId,
-                assigneeId,
+                assigneeId: normalizedAssigneeId,
                 dueDate: dueDate ? new Date(dueDate) : null,
                 priority: priority || 'LOW',
                 status: 'CREATED'
@@ -152,6 +198,15 @@ export const createTask = async (req: Request, res: Response) => {
                     }
                 }
             }
+        });
+
+        await notifyTaskAssignment({
+            assigneeId: task.assignee?.id || '',
+            assignerId: userId,
+            taskTitle: task.title,
+            organizationName: task.organization.name,
+            dueDate: task.dueDate,
+            priority: task.priority
         });
 
         res.status(201).json(task);
@@ -230,6 +285,8 @@ export const updateTask = async (req: Request, res: Response) => {
         const userId = (req as any).user.userId;
         const id = req.params.id as string;
         const { title, description, status, assigneeId, dueDate, priority } = req.body;
+        const hasAssigneeUpdate = assigneeId !== undefined;
+        const normalizedAssigneeId = assigneeId === '' ? null : assigneeId;
 
         const task = await prisma.task.findUnique({
             where: { id: id }
@@ -253,13 +310,28 @@ export const updateTask = async (req: Request, res: Response) => {
             return res.status(403).json({ error: 'Access denied' });
         }
 
+        if (hasAssigneeUpdate && normalizedAssigneeId) {
+            const assigneeMembership = await prisma.organizationMember.findUnique({
+                where: {
+                    userId_organizationId: {
+                        userId: normalizedAssigneeId,
+                        organizationId: task.organizationId
+                    }
+                }
+            });
+
+            if (!assigneeMembership) {
+                return res.status(400).json({ error: 'Assignee is not a member of this organization' });
+            }
+        }
+
         const updatedTask = await prisma.task.update({
             where: { id: id },
             data: {
                 ...(title && { title }),
                 ...(description !== undefined && { description }),
                 ...(status && { status }),
-                ...(assigneeId !== undefined && { assigneeId }),
+                ...(hasAssigneeUpdate && { assigneeId: normalizedAssigneeId }),
                 ...(dueDate !== undefined && { dueDate: dueDate ? new Date(dueDate) : null }),
                 ...(priority && { priority })
             },
@@ -279,6 +351,17 @@ export const updateTask = async (req: Request, res: Response) => {
                 }
             }
         });
+
+        if (hasAssigneeUpdate && normalizedAssigneeId && normalizedAssigneeId !== task.assigneeId) {
+            await notifyTaskAssignment({
+                assigneeId: normalizedAssigneeId,
+                assignerId: userId,
+                taskTitle: updatedTask.title,
+                organizationName: updatedTask.organization.name,
+                dueDate: updatedTask.dueDate,
+                priority: updatedTask.priority
+            });
+        }
 
         res.json(updatedTask);
     } catch (error) {

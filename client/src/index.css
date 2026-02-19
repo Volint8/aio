@@ -303,7 +303,7 @@ code {
 .avatar {
   width: 28px;
   height: 28px;
-  background-color: var(--accent-color);
+  background: linear-gradient(180deg, var(--primary-color) 0%, #0F172A 100%);
   color: white;
   border-radius: 50%;
   display: flex;

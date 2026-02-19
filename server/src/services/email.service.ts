@@ -45,3 +45,49 @@ export const sendOtpEmail = async (to: string, otp: string) => {
 
     return sendEmail(to, subject, html);
 };
+
+export const sendTaskAssignmentEmail = async (params: {
+    to: string;
+    assigneeName?: string | null;
+    taskTitle: string;
+    organizationName: string;
+    assignerName?: string | null;
+    dueDate?: Date | null;
+    priority?: string | null;
+}) => {
+    const {
+        to,
+        assigneeName,
+        taskTitle,
+        organizationName,
+        assignerName,
+        dueDate,
+        priority
+    } = params;
+
+    const subject = `New Task Assignment: ${taskTitle}`;
+    const dueDateText = dueDate ? dueDate.toLocaleDateString() : 'No due date';
+    const priorityText = priority || 'LOW';
+    const displayName = assigneeName || to;
+    const assignedBy = assignerName || 'A team member';
+
+    const html = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 10px;">
+            <h2 style="color: #333; text-align: center;">You Have a New Task</h2>
+            <p style="color: #666; font-size: 16px;">Hi ${displayName},</p>
+            <p style="color: #666; font-size: 16px;">
+                ${assignedBy} assigned you a task in <strong>${organizationName}</strong>.
+            </p>
+            <div style="background-color: #f4f4f4; padding: 15px; border-radius: 5px; margin: 20px 0;">
+                <p style="margin: 0 0 8px 0;"><strong>Task:</strong> ${taskTitle}</p>
+                <p style="margin: 0 0 8px 0;"><strong>Priority:</strong> ${priorityText}</p>
+                <p style="margin: 0;"><strong>Due Date:</strong> ${dueDateText}</p>
+            </div>
+            <p style="color: #666; font-size: 14px;">Please log in to the AIO platform to review and update this task.</p>
+            <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
+            <p style="text-align: center; color: #999; font-size: 12px;">&copy; ${new Date().getFullYear()} AIO Platform. All rights reserved.</p>
+        </div>
+    `;
+
+    return sendEmail(to, subject, html);
+};

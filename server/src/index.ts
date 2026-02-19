@@ -23,7 +23,7 @@ app.use('/uploads', express.static('uploads'));
 
 // Basic health check
 app.get('/', (req, res) => {
-    res.send('All-in-One API is running');
+    res.send('AIO API is running');
 });
 
 import authRoutes from './routes/auth.routes';
