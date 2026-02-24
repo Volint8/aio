@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useNavigate, useLocation } from 'react-router-dom';
+import api from '../../services/api';
 
 interface LayoutProps {
     children: React.ReactNode;
@@ -10,35 +11,57 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     const { user, logout } = useAuth();
     const navigate = useNavigate();
     const location = useLocation();
+    const [currentOrgRole, setCurrentOrgRole] = useState(localStorage.getItem('selectedOrgRole') || '');
+
+    useEffect(() => {
+        const orgId = localStorage.getItem('selectedOrgId');
+        if (location.pathname !== '/dashboard' || !orgId) {
+            return;
+        }
+
+        api.get(`/orgs/${orgId}`)
+            .then((res) => {
+                const role = res.data?.userRole || '';
+                setCurrentOrgRole(role);
+                localStorage.setItem('selectedOrgRole', role);
+            })
+            .catch(() => {
+                setCurrentOrgRole(localStorage.getItem('selectedOrgRole') || '');
+            });
+    }, [location.pathname]);
+
+    const isAdminInCurrentOrg = currentOrgRole === 'ADMIN';
+    const isTeamLeadInCurrentOrg = currentOrgRole === 'TEAM_LEAD';
+    const isMemberInCurrentOrg = currentOrgRole === 'MEMBER';
+    const params = new URLSearchParams(location.search);
+    const dashboardSection = params.get('section') || 'tracker';
+
+    const adminDashboardItems = useMemo(() => ([
+        { label: 'OKRs', section: 'okrs' },
+        { label: 'Tracker', section: 'tracker' },
+        { label: 'Tags', section: 'tags' },
+        { label: 'Team', section: 'team' },
+        { label: 'Appraisals', section: 'appraisals' }
+    ]), []);
+    const teamLeadDashboardItems = useMemo(() => ([
+        { label: 'OKRs', section: 'okrs' },
+        { label: 'Tracker', section: 'tracker' },
+        { label: 'Team', section: 'team' }
+    ]), []);
+    const memberDashboardItems = useMemo(() => ([
+        { label: 'OKRs', section: 'okrs' },
+        { label: 'Tracker', section: 'tracker' }
+    ]), []);
 
     const menuItems = [
         {
             label: 'Operations Board',
-            path: '/dashboard',
-            icon: (
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-                    <line x1="3" y1="9" x2="21" y2="9" />
-                    <line x1="9" y1="21" x2="9" y2="9" />
-                </svg>
-            )
+            path: '/dashboard'
         },
         {
             label: 'Organization',
-            path: '/organizations',
-            icon: (
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M3 21h18" />
-                    <path d="M9 8h1" />
-                    <path d="M9 12h1" />
-                    <path d="M9 16h1" />
-                    <path d="M14 8h1" />
-                    <path d="M14 12h1" />
-                    <path d="M14 16h1" />
-                    <path d="M5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16" />
-                </svg>
-            )
-        },
+            path: '/organizations'
+        }
     ];
 
     const getInitials = (name: string) => {
@@ -62,14 +85,65 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                         {menuItems.map((item) => (
                             <li key={item.path}>
                                 <div
-                                    className={`sidebar-link ${location.pathname === item.path ? 'active' : ''}`}
+                                    className={`sidebar-link ${location.pathname === item.path && (item.path !== '/dashboard' || !location.search) ? 'active' : ''}`}
                                     onClick={() => navigate(item.path)}
                                 >
-                                    <span className="sidebar-icon">{item.icon}</span>
                                     <span>{item.label}</span>
                                 </div>
                             </li>
                         ))}
+
+                        {isAdminInCurrentOrg && location.pathname === '/dashboard' && (
+                            <>
+                                <li style={{ marginTop: 12, marginBottom: 6, color: '#94A3B8', fontSize: '0.75em', textTransform: 'uppercase', padding: '0 16px' }}>
+                                    Admin
+                                </li>
+                                {adminDashboardItems.map((item) => (
+                                    <li key={item.section}>
+                                        <div
+                                            className={`sidebar-link ${dashboardSection === item.section ? 'active' : ''}`}
+                                            onClick={() => navigate(`/dashboard?section=${item.section}`)}
+                                        >
+                                            <span>{item.label}</span>
+                                        </div>
+                                    </li>
+                                ))}
+                            </>
+                        )}
+                        {isTeamLeadInCurrentOrg && location.pathname === '/dashboard' && (
+                            <>
+                                <li style={{ marginTop: 12, marginBottom: 6, color: '#94A3B8', fontSize: '0.75em', textTransform: 'uppercase', padding: '0 16px' }}>
+                                    Team Lead
+                                </li>
+                                {teamLeadDashboardItems.map((item) => (
+                                    <li key={item.section}>
+                                        <div
+                                            className={`sidebar-link ${dashboardSection === item.section ? 'active' : ''}`}
+                                            onClick={() => navigate(`/dashboard?section=${item.section}`)}
+                                        >
+                                            <span>{item.label}</span>
+                                        </div>
+                                    </li>
+                                ))}
+                            </>
+                        )}
+                        {isMemberInCurrentOrg && location.pathname === '/dashboard' && (
+                            <>
+                                <li style={{ marginTop: 12, marginBottom: 6, color: '#94A3B8', fontSize: '0.75em', textTransform: 'uppercase', padding: '0 16px' }}>
+                                    Member
+                                </li>
+                                {memberDashboardItems.map((item) => (
+                                    <li key={item.section}>
+                                        <div
+                                            className={`sidebar-link ${dashboardSection === item.section ? 'active' : ''}`}
+                                            onClick={() => navigate(`/dashboard?section=${item.section}`)}
+                                        >
+                                            <span>{item.label}</span>
+                                        </div>
+                                    </li>
+                                ))}
+                            </>
+                        )}
                     </ul>
                 </nav>
 

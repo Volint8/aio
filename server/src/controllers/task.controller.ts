@@ -58,6 +58,76 @@ const ensureTaskIsActive = (task: { deletedAt: Date | null }) => {
     return !task.deletedAt;
 };
 
+const resolveTaskTeamContext = async (params: {
+    organizationId: string;
+    assigneeId: string;
+    supporterId?: string | null;
+}) => {
+    const { organizationId, assigneeId, supporterId } = params;
+
+    const assigneeMembership = await prisma.organizationMember.findUnique({
+        where: {
+            userId_organizationId: {
+                userId: assigneeId,
+                organizationId
+            }
+        }
+    });
+
+    if (!assigneeMembership) {
+        throw new Error('Assignee is not a member of this organization');
+    }
+    if (assigneeMembership.role === 'ADMIN') {
+        throw new Error('Admin users cannot be assigned as primary assignee');
+    }
+    if (!assigneeMembership.teamId) {
+        throw new Error('Primary assignee must belong to a team');
+    }
+
+    let supporterMembership: any = null;
+    if (supporterId) {
+        if (supporterId === assigneeId) {
+            throw new Error('Supporter cannot be the same as primary assignee');
+        }
+
+        supporterMembership = await prisma.organizationMember.findUnique({
+            where: {
+                userId_organizationId: {
+                    userId: supporterId,
+                    organizationId
+                }
+            }
+        });
+
+        if (!supporterMembership) {
+            throw new Error('Supporter is not a member of this organization');
+        }
+        if (supporterMembership.role === 'ADMIN') {
+            throw new Error('Admin users cannot be supporters');
+        }
+    }
+
+    const teamIds = [assigneeMembership.teamId];
+    if (supporterMembership?.teamId && supporterMembership.teamId !== assigneeMembership.teamId) {
+        teamIds.push(supporterMembership.teamId);
+    }
+
+    return {
+        assigneeMembership,
+        supporterMembership,
+        teamIds: Array.from(new Set(teamIds))
+    };
+};
+
+const syncTaskTeams = async (taskId: string, teamIds: string[]) => {
+    await prisma.taskTeam.deleteMany({ where: { taskId } });
+    if (teamIds.length > 0) {
+        await prisma.taskTeam.createMany({
+            data: teamIds.map((teamId) => ({ taskId, teamId }))
+        });
+    }
+};
+
 export const getTasks = async (req: Request, res: Response) => {
     try {
         const userId = (req as any).user.userId;
@@ -65,9 +135,10 @@ export const getTasks = async (req: Request, res: Response) => {
         const taskView = resolveTaskView(view);
 
         const where: any = {};
+        let membership: { role: string; teamId: string | null } | null = null;
 
         if (organizationId) {
-            const membership = await prisma.organizationMember.findUnique({
+            membership = await prisma.organizationMember.findUnique({
                 where: {
                     userId_organizationId: {
                         userId,
@@ -85,6 +156,14 @@ export const getTasks = async (req: Request, res: Response) => {
             }
 
             where.organizationId = organizationId;
+
+            if (taskView === 'active' && ['TEAM_LEAD', 'MEMBER'].includes(membership.role)) {
+                where.OR = [
+                    { assigneeId: userId },
+                    { supporterId: userId },
+                    ...(membership.teamId ? [{ taskTeams: { some: { teamId: membership.teamId } } }] : [])
+                ];
+            }
         } else {
             const memberships = await prisma.organizationMember.findMany({
                 where: { userId }
@@ -126,6 +205,13 @@ export const getTasks = async (req: Request, res: Response) => {
                         name: true
                     }
                 },
+                supporter: {
+                    select: {
+                        id: true,
+                        email: true,
+                        name: true
+                    }
+                },
                 organization: {
                     select: {
                         id: true,
@@ -147,6 +233,18 @@ export const getTasks = async (req: Request, res: Response) => {
                     }
                 },
                 attachments: true
+                ,
+                tag: true,
+                taskTeams: {
+                    include: {
+                        team: {
+                            select: {
+                                id: true,
+                                name: true
+                            }
+                        }
+                    }
+                }
             },
             orderBy: taskView === 'deleted'
                 ? { deletedAt: 'desc' }
@@ -163,11 +261,12 @@ export const getTasks = async (req: Request, res: Response) => {
 export const createTask = async (req: Request, res: Response) => {
     try {
         const userId = (req as any).user.userId;
-        const { title, description, organizationId, assigneeId, dueDate, priority } = req.body;
+        const { title, description, organizationId, assigneeId, supporterId, dueDate, priority, tagId } = req.body;
         const normalizedAssigneeId = assigneeId === '' ? null : assigneeId;
+        const normalizedSupporterId = supporterId === '' ? null : supporterId;
 
-        if (!title || !organizationId) {
-            return res.status(400).json({ error: 'Title and organization are required' });
+        if (!title || !organizationId || !tagId || !normalizedAssigneeId) {
+            return res.status(400).json({ error: 'Title, organization, tag and assignee are required' });
         }
 
         const membership = await prisma.organizationMember.findUnique({
@@ -183,55 +282,57 @@ export const createTask = async (req: Request, res: Response) => {
             return res.status(403).json({ error: 'Access denied' });
         }
 
-        if (normalizedAssigneeId) {
-            const assigneeMembership = await prisma.organizationMember.findUnique({
-                where: {
-                    userId_organizationId: {
-                        userId: normalizedAssigneeId,
-                        organizationId
-                    }
+        const tag = await prisma.tag.findUnique({ where: { id: tagId } });
+        if (!tag || tag.organizationId !== organizationId) {
+            return res.status(400).json({ error: 'Selected tag is invalid for this organization' });
+        }
+
+        const { teamIds } = await resolveTaskTeamContext({
+            organizationId,
+            assigneeId: normalizedAssigneeId,
+            supporterId: normalizedSupporterId
+        });
+
+        const task = await prisma.$transaction(async (tx) => {
+            const created = await tx.task.create({
+                data: {
+                    title,
+                    description,
+                    organizationId,
+                    assigneeId: normalizedAssigneeId,
+                    supporterId: normalizedSupporterId,
+                    tagId,
+                    dueDate: dueDate ? new Date(dueDate) : null,
+                    priority: priority || 'LOW',
+                    status: 'CREATED'
                 }
             });
 
-            if (!assigneeMembership) {
-                return res.status(400).json({ error: 'Assignee is not a member of this organization' });
+            if (teamIds.length > 0) {
+                await tx.taskTeam.createMany({
+                    data: teamIds.map((teamId) => ({ taskId: created.id, teamId }))
+                });
             }
-        }
 
-        const task = await prisma.task.create({
-            data: {
-                title,
-                description,
-                organizationId,
-                assigneeId: normalizedAssigneeId,
-                dueDate: dueDate ? new Date(dueDate) : null,
-                priority: priority || 'LOW',
-                status: 'CREATED'
-            },
-            include: {
-                assignee: {
-                    select: {
-                        id: true,
-                        email: true,
-                        name: true
-                    }
-                },
-                organization: {
-                    select: {
-                        id: true,
-                        name: true
-                    }
+            return tx.task.findUnique({
+                where: { id: created.id },
+                include: {
+                    assignee: { select: { id: true, email: true, name: true } },
+                    supporter: { select: { id: true, email: true, name: true } },
+                    organization: { select: { id: true, name: true } },
+                    tag: true,
+                    taskTeams: { include: { team: { select: { id: true, name: true } } } }
                 }
-            }
+            });
         });
 
         await notifyTaskAssignment({
-            assigneeId: task.assignee?.id || '',
+            assigneeId: task?.assignee?.id || '',
             assignerId: userId,
-            taskTitle: task.title,
-            organizationName: task.organization.name,
-            dueDate: task.dueDate,
-            priority: task.priority
+            taskTitle: task?.title || title,
+            organizationName: task?.organization?.name || '',
+            dueDate: task?.dueDate,
+            priority: task?.priority
         });
 
         res.status(201).json(task);
@@ -256,6 +357,13 @@ export const getTaskById = async (req: Request, res: Response) => {
                         name: true
                     }
                 },
+                supporter: {
+                    select: {
+                        id: true,
+                        email: true,
+                        name: true
+                    }
+                },
                 organization: {
                     select: {
                         id: true,
@@ -276,7 +384,18 @@ export const getTaskById = async (req: Request, res: Response) => {
                         createdAt: 'desc'
                     }
                 },
-                attachments: true
+                attachments: true,
+                tag: true,
+                taskTeams: {
+                    include: {
+                        team: {
+                            select: {
+                                id: true,
+                                name: true
+                            }
+                        }
+                    }
+                }
             }
         });
 
@@ -308,9 +427,12 @@ export const updateTask = async (req: Request, res: Response) => {
     try {
         const userId = (req as any).user.userId;
         const id = req.params.id as string;
-        const { title, description, status, assigneeId, dueDate, priority } = req.body;
+        const { title, description, status, assigneeId, supporterId, dueDate, priority, tagId } = req.body;
         const hasAssigneeUpdate = assigneeId !== undefined;
         const normalizedAssigneeId = assigneeId === '' ? null : assigneeId;
+        const hasSupporterUpdate = supporterId !== undefined;
+        const normalizedSupporterId = supporterId === '' ? null : supporterId;
+        const hasTagUpdate = tagId !== undefined;
 
         const task = await prisma.task.findUnique({
             where: { id: id }
@@ -337,56 +459,71 @@ export const updateTask = async (req: Request, res: Response) => {
             return res.status(403).json({ error: 'Access denied' });
         }
 
-        if (hasAssigneeUpdate && normalizedAssigneeId) {
-            const assigneeMembership = await prisma.organizationMember.findUnique({
-                where: {
-                    userId_organizationId: {
-                        userId: normalizedAssigneeId,
-                        organizationId: task.organizationId
-                    }
-                }
-            });
-
-            if (!assigneeMembership) {
-                return res.status(400).json({ error: 'Assignee is not a member of this organization' });
+        if (hasTagUpdate) {
+            if (!tagId) {
+                return res.status(400).json({ error: 'Task tag is required' });
+            }
+            const tag = await prisma.tag.findUnique({ where: { id: tagId } });
+            if (!tag || tag.organizationId !== task.organizationId) {
+                return res.status(400).json({ error: 'Selected tag is invalid for this organization' });
             }
         }
 
-        const updatedTask = await prisma.task.update({
-            where: { id: id },
-            data: {
-                ...(title && { title }),
-                ...(description !== undefined && { description }),
-                ...(status && { status }),
-                ...(hasAssigneeUpdate && { assigneeId: normalizedAssigneeId }),
-                ...(dueDate !== undefined && { dueDate: dueDate ? new Date(dueDate) : null }),
-                ...(priority && { priority })
-            },
-            include: {
-                assignee: {
-                    select: {
-                        id: true,
-                        email: true,
-                        name: true
-                    }
-                },
-                organization: {
-                    select: {
-                        id: true,
-                        name: true
-                    }
+        const nextAssigneeId = hasAssigneeUpdate ? normalizedAssigneeId : task.assigneeId;
+        const nextSupporterId = hasSupporterUpdate ? normalizedSupporterId : task.supporterId;
+
+        if (!nextAssigneeId) {
+            return res.status(400).json({ error: 'Primary assignee is required' });
+        }
+
+        const { teamIds } = await resolveTaskTeamContext({
+            organizationId: task.organizationId,
+            assigneeId: nextAssigneeId,
+            supporterId: nextSupporterId
+        });
+
+        const updatedTask = await prisma.$transaction(async (tx) => {
+            const updated = await tx.task.update({
+                where: { id: id },
+                data: {
+                    ...(title && { title }),
+                    ...(description !== undefined && { description }),
+                    ...(status && { status }),
+                    ...(hasAssigneeUpdate && { assigneeId: normalizedAssigneeId }),
+                    ...(hasSupporterUpdate && { supporterId: normalizedSupporterId }),
+                    ...(hasTagUpdate && { tagId }),
+                    ...(dueDate !== undefined && { dueDate: dueDate ? new Date(dueDate) : null }),
+                    ...(priority && { priority })
                 }
+            });
+
+            await tx.taskTeam.deleteMany({ where: { taskId: updated.id } });
+            if (teamIds.length > 0) {
+                await tx.taskTeam.createMany({
+                    data: teamIds.map((teamId) => ({ taskId: updated.id, teamId }))
+                });
             }
+
+            return tx.task.findUnique({
+                where: { id: updated.id },
+                include: {
+                    assignee: { select: { id: true, email: true, name: true } },
+                    supporter: { select: { id: true, email: true, name: true } },
+                    organization: { select: { id: true, name: true } },
+                    tag: true,
+                    taskTeams: { include: { team: { select: { id: true, name: true } } } }
+                }
+            });
         });
 
         if (hasAssigneeUpdate && normalizedAssigneeId && normalizedAssigneeId !== task.assigneeId) {
             await notifyTaskAssignment({
                 assigneeId: normalizedAssigneeId,
                 assignerId: userId,
-                taskTitle: updatedTask.title,
-                organizationName: updatedTask.organization.name,
-                dueDate: updatedTask.dueDate,
-                priority: updatedTask.priority
+                taskTitle: updatedTask?.title || task.title,
+                organizationName: updatedTask?.organization?.name || '',
+                dueDate: updatedTask?.dueDate,
+                priority: updatedTask?.priority
             });
         }
 
@@ -507,6 +644,18 @@ export const restoreTask = async (req: Request, res: Response) => {
                     }
                 },
                 attachments: true
+                ,
+                tag: true,
+                taskTeams: {
+                    include: {
+                        team: {
+                            select: {
+                                id: true,
+                                name: true
+                            }
+                        }
+                    }
+                }
             }
         });
 
@@ -582,9 +731,10 @@ export const getStats = async (req: Request, res: Response) => {
         const { organizationId } = req.query;
 
         let where: any = { deletedAt: null };
+        let membership: { role: string; teamId: string | null } | null = null;
 
         if (organizationId) {
-            const membership = await prisma.organizationMember.findUnique({
+            membership = await prisma.organizationMember.findUnique({
                 where: {
                     userId_organizationId: {
                         userId,
@@ -598,6 +748,14 @@ export const getStats = async (req: Request, res: Response) => {
             }
 
             where.organizationId = organizationId;
+
+            if (['TEAM_LEAD', 'MEMBER'].includes(membership.role)) {
+                where.OR = [
+                    { assigneeId: userId },
+                    { supporterId: userId },
+                    ...(membership.teamId ? [{ taskTeams: { some: { teamId: membership.teamId } } }] : [])
+                ];
+            }
         } else {
             const memberships = await prisma.organizationMember.findMany({
                 where: { userId }
@@ -663,6 +821,7 @@ export const uploadAttachment = async (req: Request, res: Response) => {
 
         const attachment = await prisma.attachment.create({
             data: {
+                type: 'FILE',
                 fileName: req.file.originalname,
                 filePath: req.file.path,
                 fileType: req.file.mimetype,
@@ -674,6 +833,57 @@ export const uploadAttachment = async (req: Request, res: Response) => {
     } catch (error) {
         console.error('Upload attachment error:', error);
         res.status(500).json({ error: 'Internal server error' });
+    }
+};
+
+export const addLinkAttachment = async (req: Request, res: Response) => {
+    try {
+        const userId = (req as any).user.userId;
+        const id = req.params.id as string;
+        const { url, fileName } = req.body as { url?: string; fileName?: string };
+
+        if (!url) {
+            return res.status(400).json({ error: 'URL is required' });
+        }
+
+        const task = await prisma.task.findUnique({
+            where: { id }
+        });
+
+        if (!task) {
+            return res.status(404).json({ error: 'Task not found' });
+        }
+
+        if (!ensureTaskIsActive(task)) {
+            return res.status(400).json({ error: 'Task is in Recently Deleted' });
+        }
+
+        const membership = await prisma.organizationMember.findUnique({
+            where: {
+                userId_organizationId: {
+                    userId,
+                    organizationId: task.organizationId
+                }
+            }
+        });
+
+        if (!membership) {
+            return res.status(403).json({ error: 'Access denied' });
+        }
+
+        const attachment = await prisma.attachment.create({
+            data: {
+                type: 'LINK',
+                fileName: fileName || null,
+                url,
+                taskId: id
+            }
+        });
+
+        return res.status(201).json(attachment);
+    } catch (error) {
+        console.error('Add link attachment error:', error);
+        return res.status(500).json({ error: 'Internal server error' });
     }
 };
 
@@ -695,8 +905,8 @@ export const getMemberStats = async (req: Request, res: Response) => {
             }
         });
 
-        if (!membership || membership.role !== 'ADMIN') {
-            return res.status(403).json({ error: 'Only admins can access team statistics' });
+        if (!membership || (membership.role !== 'ADMIN' && membership.role !== 'TEAM_LEAD')) {
+            return res.status(403).json({ error: 'Only admins and team leads can access team statistics' });
         }
 
         const members = await prisma.organizationMember.findMany({
@@ -735,6 +945,100 @@ export const getMemberStats = async (req: Request, res: Response) => {
     } catch (error) {
         console.error('Get member stats error:', error);
         res.status(500).json({ error: 'Internal server error' });
+    }
+};
+
+export const getTeamDistribution = async (req: Request, res: Response) => {
+    try {
+        const userId = (req as any).user.userId;
+        const { organizationId } = req.query;
+
+        if (!organizationId) {
+            return res.status(400).json({ error: 'Organization ID is required' });
+        }
+
+        const membership = await prisma.organizationMember.findUnique({
+            where: {
+                userId_organizationId: {
+                    userId,
+                    organizationId: organizationId as string
+                }
+            }
+        });
+
+        if (!membership || (membership.role !== 'ADMIN' && membership.role !== 'TEAM_LEAD')) {
+            return res.status(403).json({ error: 'Only admins and team leads can access team distribution' });
+        }
+
+        if (membership.role === 'TEAM_LEAD' && !membership.teamId) {
+            return res.json([]);
+        }
+
+        const teams = await prisma.team.findMany({
+            where: {
+                organizationId: organizationId as string,
+                ...(membership.role === 'TEAM_LEAD' ? { id: membership.teamId as string } : {})
+            },
+            include: {
+                leadUser: {
+                    select: { id: true, name: true, email: true }
+                },
+                members: {
+                    include: {
+                        user: {
+                            select: { id: true, name: true, email: true }
+                        }
+                    }
+                }
+            },
+            orderBy: { name: 'asc' }
+        });
+
+        const data = await Promise.all(teams.map(async (team) => {
+            const [created, inProgress, completed] = await Promise.all([
+                prisma.task.count({ where: { organizationId: organizationId as string, deletedAt: null, status: 'CREATED', taskTeams: { some: { teamId: team.id } } } }),
+                prisma.task.count({ where: { organizationId: organizationId as string, deletedAt: null, status: 'IN_PROGRESS', taskTeams: { some: { teamId: team.id } } } }),
+                prisma.task.count({ where: { organizationId: organizationId as string, deletedAt: null, status: 'COMPLETED', taskTeams: { some: { teamId: team.id } } } })
+            ]);
+
+            const people = await Promise.all(team.members.map(async (member) => {
+                const [mCreated, mInProgress, mCompleted] = await Promise.all([
+                    prisma.task.count({ where: { organizationId: organizationId as string, deletedAt: null, assigneeId: member.userId, status: 'CREATED' } }),
+                    prisma.task.count({ where: { organizationId: organizationId as string, deletedAt: null, assigneeId: member.userId, status: 'IN_PROGRESS' } }),
+                    prisma.task.count({ where: { organizationId: organizationId as string, deletedAt: null, assigneeId: member.userId, status: 'COMPLETED' } })
+                ]);
+
+                return {
+                    userId: member.user.id,
+                    name: member.user.name || member.user.email,
+                    role: member.role,
+                    stats: {
+                        created: mCreated,
+                        inProgress: mInProgress,
+                        completed: mCompleted,
+                        total: mCreated + mInProgress + mCompleted
+                    }
+                };
+            }));
+
+            return {
+                teamId: team.id,
+                teamName: team.name,
+                leadUser: team.leadUser,
+                stats: {
+                    created,
+                    inProgress,
+                    completed,
+                    total: created + inProgress + completed
+                },
+                people
+            };
+        }));
+
+        return res.json(data);
+    } catch (error) {
+        console.error('Get team distribution error:', error);
+        return res.status(500).json({ error: 'Internal server error' });
     }
 };
 

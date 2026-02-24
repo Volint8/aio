@@ -34,6 +34,10 @@ const OrgSelectionPage = () => {
     const [loadingMembers, setLoadingMembers] = useState(false);
     const [updatingMemberId, setUpdatingMemberId] = useState<string | null>(null);
     const [teamError, setTeamError] = useState('');
+    const [inviteEmail, setInviteEmail] = useState('');
+    const [inviteRole, setInviteRole] = useState('MEMBER');
+    const [inviting, setInviting] = useState(false);
+    const [invites, setInvites] = useState<Array<{ id: string; email: string; role: string; status: string; expiresAt: string }>>([]);
 
     const { user, logout } = useAuth();
     const navigate = useNavigate();
@@ -72,8 +76,9 @@ const OrgSelectionPage = () => {
         }
     };
 
-    const selectOrganization = (orgId: string) => {
+    const selectOrganization = (orgId: string, userRole: string) => {
         localStorage.setItem('selectedOrgId', orgId);
+        localStorage.setItem('selectedOrgRole', userRole);
         navigate('/dashboard');
     };
 
@@ -85,6 +90,8 @@ const OrgSelectionPage = () => {
 
             const res = await api.get(`/orgs/${org.id}`);
             setTeamMembers(res.data.members || []);
+            const invitesRes = await api.get(`/orgs/${org.id}/invites`);
+            setInvites(invitesRes.data || []);
         } catch (error: any) {
             const errorData = error.response?.data?.error;
             const message = typeof errorData === 'object' ? errorData.message : errorData;
@@ -97,6 +104,9 @@ const OrgSelectionPage = () => {
     const closeManageTeam = async () => {
         setSelectedOrgForTeam(null);
         setTeamMembers([]);
+        setInvites([]);
+        setInviteEmail('');
+        setInviteRole('MEMBER');
         setTeamError('');
         await fetchOrganizations();
     };
@@ -130,6 +140,30 @@ const OrgSelectionPage = () => {
         }
     };
 
+    const handleInviteMember = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!selectedOrgForTeam || !inviteEmail.trim()) return;
+
+        try {
+            setTeamError('');
+            setInviting(true);
+            await api.post(`/orgs/${selectedOrgForTeam.id}/invites`, {
+                email: inviteEmail,
+                role: inviteRole
+            });
+            setInviteEmail('');
+            setInviteRole('MEMBER');
+            const invitesRes = await api.get(`/orgs/${selectedOrgForTeam.id}/invites`);
+            setInvites(invitesRes.data || []);
+        } catch (error: any) {
+            const errorData = error.response?.data?.error;
+            const message = typeof errorData === 'object' ? errorData.message : errorData;
+            setTeamError(message || 'Failed to send invite');
+        } finally {
+            setInviting(false);
+        }
+    };
+
     if (loading) {
         return (
             <div className="org-selection-page">
@@ -156,7 +190,7 @@ const OrgSelectionPage = () => {
                         <div
                             key={org.id}
                             className="org-card"
-                            onClick={() => selectOrganization(org.id)}
+                            onClick={() => selectOrganization(org.id, org.userRole)}
                         >
                             <div className="org-icon">
                                 {org.name.charAt(0).toUpperCase()}
@@ -261,11 +295,60 @@ const OrgSelectionPage = () => {
                                                 onChange={(e) => handleRoleChange(member.id, e.target.value)}
                                             >
                                                 <option value="MEMBER">MEMBER</option>
+                                                <option value="TEAM_LEAD">TEAM LEAD</option>
                                                 <option value="ADMIN">ADMIN</option>
                                             </select>
                                         </div>
                                     </div>
                                 ))}
+                            </div>
+                        )}
+
+                        <form onSubmit={handleInviteMember} style={{ marginTop: '18px' }}>
+                            <div className="form-group">
+                                <label>Invite by Work Email</label>
+                                <input
+                                    type="email"
+                                    value={inviteEmail}
+                                    onChange={(e) => setInviteEmail(e.target.value)}
+                                    placeholder="new.member@company.com"
+                                    required
+                                />
+                            </div>
+                            <div className="form-group">
+                                <label>Role</label>
+                                <select
+                                    value={inviteRole}
+                                    onChange={(e) => setInviteRole(e.target.value)}
+                                >
+                                    <option value="MEMBER">MEMBER</option>
+                                    <option value="TEAM_LEAD">TEAM LEAD</option>
+                                </select>
+                            </div>
+                            <div className="modal-actions">
+                                <button type="submit" className="btn-primary" disabled={inviting}>
+                                    {inviting ? 'Sending...' : 'Send Invite'}
+                                </button>
+                            </div>
+                        </form>
+
+                        {invites.length > 0 && (
+                            <div style={{ marginTop: '12px' }}>
+                                <h3 style={{ marginBottom: '8px' }}>Pending/Recent Invites</h3>
+                                <div className="team-members-list">
+                                    {invites.map((invite) => (
+                                        <div key={invite.id} className="team-member-row">
+                                            <div className="team-member-info">
+                                                <strong>{invite.email}</strong>
+                                                <span>Expires {new Date(invite.expiresAt).toLocaleDateString()}</span>
+                                            </div>
+                                            <div className="team-member-role">
+                                                <span className={`role-badge ${invite.role.toLowerCase()}`}>{invite.role}</span>
+                                                <span className={`role-badge ${invite.status.toLowerCase()}`}>{invite.status}</span>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
                             </div>
                         )}
 

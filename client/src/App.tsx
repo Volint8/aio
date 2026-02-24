@@ -3,6 +3,7 @@ import type { ReactElement } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import LoginPage from './pages/LoginPage';
 import OTPPage from './pages/OTPPage';
+import InviteAcceptPage from './pages/InviteAcceptPage';
 import OrgSelectionPage from './pages/OrgSelectionPage';
 import DashboardPage from './pages/DashboardPage';
 import Layout from './components/common/Layout';
@@ -38,6 +39,7 @@ function AppRoutes() {
         user ? <Navigate to="/organizations" replace /> : <LoginPage />
       } />
       <Route path="/confirm-otp" element={<OTPPage />} />
+      <Route path="/accept-invite" element={<InviteAcceptPage />} />
       <Route path="/organizations" element={
         <ProtectedRoute>
           <Layout>

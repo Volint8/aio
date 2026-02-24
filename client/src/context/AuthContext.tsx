@@ -12,7 +12,10 @@ interface User {
 interface AuthContextType {
     user: User | null;
     login: (email: string, pass: string) => Promise<void>;
-    signup: (email: string, pass: string, name?: string) => Promise<boolean>;
+    adminSignupInit: (email: string, pass: string, name?: string) => Promise<{ suggestions: string[] }>;
+    adminSignupComplete: (email: string, pass: string, organizationName: string, name?: string) => Promise<void>;
+    inviteAcceptInit: (token: string, pass: string, name?: string) => Promise<{ mode: string; email: string }>;
+    inviteAcceptComplete: (token: string, pass: string) => Promise<void>;
     verifyOtp: (email: string, otp: string) => Promise<void>;
     logout: () => void;
     loading: boolean;
@@ -53,11 +56,25 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         api.defaults.headers.common['Authorization'] = `Bearer ${res.data.token}`;
     };
 
-    const signup = async (email: string, pass: string, name?: string) => {
-        // Signup now only triggers OTP, doesn't return token yet
-        await api.post('/auth/signup', { email, password: pass, name });
-        // Return true to indicate OTP sent
-        return true;
+    const adminSignupInit = async (email: string, pass: string, name?: string) => {
+        const res = await api.post('/auth/admin-signup/init', { email, password: pass, name });
+        return { suggestions: res.data.suggestions || [] };
+    };
+
+    const adminSignupComplete = async (email: string, pass: string, organizationName: string, name?: string) => {
+        await api.post('/auth/admin-signup/complete', { email, password: pass, name, organizationName });
+    };
+
+    const inviteAcceptInit = async (token: string, pass: string, name?: string) => {
+        const res = await api.post('/auth/invites/accept/init', { token, password: pass, name });
+        return res.data;
+    };
+
+    const inviteAcceptComplete = async (token: string, pass: string) => {
+        const res = await api.post('/auth/invites/accept/complete', { token, password: pass });
+        setUser(res.data.user);
+        localStorage.setItem('token', res.data.token);
+        api.defaults.headers.common['Authorization'] = `Bearer ${res.data.token}`;
     };
 
     const verifyOtp = async (email: string, otp: string) => {
@@ -74,7 +91,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     };
 
     return (
-        <AuthContext.Provider value={{ user, login, signup, verifyOtp, logout, loading }}>
+        <AuthContext.Provider value={{
+            user,
+            login,
+            adminSignupInit,
+            adminSignupComplete,
+            inviteAcceptInit,
+            inviteAcceptComplete,
+            verifyOtp,
+            logout,
+            loading
+        }}>
             {children}
         </AuthContext.Provider>
     );

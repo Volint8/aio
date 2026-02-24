@@ -91,3 +91,36 @@ export const sendTaskAssignmentEmail = async (params: {
 
     return sendEmail(to, subject, html);
 };
+
+export const sendInviteEmail = async (params: {
+    to: string;
+    organizationName: string;
+    role: string;
+    inviteUrl: string;
+    inviterName?: string | null;
+}) => {
+    const { to, organizationName, role, inviteUrl, inviterName } = params;
+    const subject = `Invitation to join ${organizationName} on AIO`;
+    const inviter = inviterName || 'An administrator';
+
+    const html = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 10px;">
+            <h2 style="color: #333; text-align: center;">You're Invited</h2>
+            <p style="color: #666; font-size: 16px;">
+                ${inviter} invited you to join <strong>${organizationName}</strong> as <strong>${role}</strong>.
+            </p>
+            <p style="color: #666; font-size: 16px;">Use the link below to accept this invite:</p>
+            <p style="text-align: center; margin: 24px 0;">
+                <a href="${inviteUrl}" style="display:inline-block;padding:12px 18px;background:#2563eb;color:#fff;text-decoration:none;border-radius:6px;">
+                    Accept Invite
+                </a>
+            </p>
+            <p style="color: #666; font-size: 14px;">If the button does not work, open: ${inviteUrl}</p>
+            <p style="color: #666; font-size: 14px;">This invite expires in 72 hours.</p>
+            <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
+            <p style="text-align: center; color: #999; font-size: 12px;">&copy; ${new Date().getFullYear()} AIO Platform. All rights reserved.</p>
+        </div>
+    `;
+
+    return sendEmail(to, subject, html);
+};

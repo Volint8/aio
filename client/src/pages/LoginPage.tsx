@@ -1,17 +1,47 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import '../styles/LoginPage.css';
 
+type Mode = 'login' | 'admin_signup';
+
 const LoginPage = () => {
-    const [isSignup, setIsSignup] = useState(false);
+    const [mode, setMode] = useState<Mode>('login');
+    const [signupStep, setSignupStep] = useState<1 | 2>(1);
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [name, setName] = useState('');
+    const [orgName, setOrgName] = useState('');
+    const [suggestions, setSuggestions] = useState<string[]>([]);
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
-    const { login, signup } = useAuth();
+
+    const {
+        login,
+        adminSignupInit,
+        adminSignupComplete
+    } = useAuth();
     const navigate = useNavigate();
+
+    const modeLabel = useMemo(() => mode === 'login' ? 'Welcome Back' : 'Admin Sign Up', [mode]);
+
+    const handleLogin = async () => {
+        await login(email, password);
+        navigate('/');
+    };
+
+    const handleAdminSignupStepOne = async () => {
+        const res = await adminSignupInit(email, password, name);
+        setSuggestions(res.suggestions || []);
+        setOrgName((res.suggestions && res.suggestions[0]) || '');
+        setSignupStep(2);
+    };
+
+    const handleAdminSignupStepTwo = async () => {
+        await adminSignupComplete(email, password, orgName, name);
+        localStorage.setItem('pendingAuthEmail', email);
+        navigate('/confirm-otp', { state: { email } });
+    };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -19,16 +49,12 @@ const LoginPage = () => {
         setLoading(true);
 
         try {
-            if (isSignup) {
-                const success = await signup(email, password, name);
-                if (success) {
-                    localStorage.setItem('pendingAuthEmail', email);
-                    navigate('/confirm-otp', { state: { email } });
-                    return;
-                }
+            if (mode === 'login') {
+                await handleLogin();
+            } else if (signupStep === 1) {
+                await handleAdminSignupStepOne();
             } else {
-                await login(email, password);
-                navigate('/');
+                await handleAdminSignupStepTwo();
             }
         } catch (err: any) {
             const errorData = err.response?.data?.error;
@@ -36,6 +62,21 @@ const LoginPage = () => {
             setError(message || err.message || 'Authentication failed');
         } finally {
             setLoading(false);
+        }
+    };
+
+    const resetSignupFlow = () => {
+        setSignupStep(1);
+        setSuggestions([]);
+        setOrgName('');
+        setError('');
+    };
+
+    const switchMode = (next: Mode) => {
+        setMode(next);
+        setError('');
+        if (next === 'admin_signup') {
+            resetSignupFlow();
         }
     };
 
@@ -47,10 +88,27 @@ const LoginPage = () => {
                     <p className="tagline">Organize. Track. Deliver.</p>
                 </div>
 
-                <h2>{isSignup ? 'Create Account' : 'Welcome Back'}</h2>
+                <h2>{modeLabel}</h2>
+
+                <div className="auth-mode-switch">
+                    <button
+                        type="button"
+                        className={mode === 'login' ? 'active' : ''}
+                        onClick={() => switchMode('login')}
+                    >
+                        Sign In
+                    </button>
+                    <button
+                        type="button"
+                        className={mode === 'admin_signup' ? 'active' : ''}
+                        onClick={() => switchMode('admin_signup')}
+                    >
+                        Admin Sign Up
+                    </button>
+                </div>
 
                 <form onSubmit={handleSubmit}>
-                    {isSignup && (
+                    {mode === 'admin_signup' && (
                         <div className="form-group">
                             <label>Name</label>
                             <input
@@ -68,7 +126,7 @@ const LoginPage = () => {
                             type="email"
                             value={email}
                             onChange={(e) => setEmail(e.target.value)}
-                            placeholder="user@volintpas.com or user@fformatio.org"
+                            placeholder="you@company.com"
                             required
                         />
                     </div>
@@ -85,31 +143,59 @@ const LoginPage = () => {
                         />
                     </div>
 
+                    {mode === 'admin_signup' && signupStep === 2 && (
+                        <div className="form-group">
+                            <label>Organization Name</label>
+                            <input
+                                type="text"
+                                value={orgName}
+                                onChange={(e) => setOrgName(e.target.value)}
+                                placeholder="Acme Operations"
+                                required
+                            />
+                            {suggestions.length > 0 && (
+                                <div className="suggestion-list">
+                                    {suggestions.map((suggestion) => (
+                                        <button
+                                            type="button"
+                                            className="suggestion-chip"
+                                            key={suggestion}
+                                            onClick={() => setOrgName(suggestion)}
+                                        >
+                                            {suggestion}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
                     {error && <p className="error-message">{error}</p>}
 
                     <button type="submit" disabled={loading} className="btn-primary">
-                        {loading ? 'Please wait...' : (isSignup ? 'Sign Up' : 'Log In')}
+                        {loading
+                            ? 'Please wait...'
+                            : mode === 'login'
+                                ? 'Log In'
+                                : signupStep === 1
+                                    ? 'Continue'
+                                    : 'Create Organization & Send OTP'}
                     </button>
-                </form>
 
-                <div className="toggle-mode">
-                    <p>
-                        {isSignup ? 'Already have an account?' : "Don't have an account?"}{' '}
+                    {mode === 'admin_signup' && signupStep === 2 && (
                         <button
                             type="button"
-                            onClick={() => {
-                                setIsSignup(!isSignup);
-                                setError('');
-                            }}
-                            className="link-button"
+                            className="btn-secondary"
+                            style={{ width: '100%', marginTop: '12px' }}
+                            onClick={resetSignupFlow}
                         >
-                            {isSignup ? 'Log In' : 'Sign Up'}
+                            Back
                         </button>
-                    </p>
-                </div>
+                    )}
+                </form>
 
                 <div className="domain-notice">
-                    <small>Only @volintpas.com and @fformatio.org emails are allowed</small>
+                    <small>Use a work email address. Personal domains are blocked.</small>
                 </div>
             </div>
         </div>

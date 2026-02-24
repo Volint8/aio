@@ -16,31 +16,48 @@ model User {
   isVerified    Boolean              @default(false)
   otp           String?
   otpExpiresAt  DateTime?
+  pendingInviteId String?
   createdAt     DateTime             @default(now())
   updatedAt     DateTime             @updatedAt
   organizations OrganizationMember[]
   tasks         Task[]               @relation("AssignedTasks")
+  supportedTasks Task[]              @relation("SupportedTasks")
   deletedTasks  Task[]               @relation("DeletedTasks")
+  leadingTeams  Team[]               @relation("TeamLead")
   comments      Comment[]
+  invitedMemberships Invite[]        @relation("Inviter")
+  acceptedInvites Invite[]           @relation("InviteAccepter")
+  createdOkrs Okr[]                  @relation("OKRCreator")
+  createdAppraisals Appraisal[]      @relation("AppraisalCreator")
+  subjectAppraisals Appraisal[]      @relation("AppraisalSubject")
 }
 
 model Organization {
-  id        String               @id @default(uuid())
-  name      String
-  domain    String?              @unique
-  createdAt DateTime             @default(now())
-  updatedAt DateTime             @updatedAt
-  members   OrganizationMember[]
-  tasks     Task[]
+  id             String               @id @default(uuid())
+  name           String
+  normalizedName String               @unique
+  slug           String               @unique
+  domain         String?              @unique
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+  members        OrganizationMember[]
+  teams          Team[]
+  tasks          Task[]
+  invites        Invite[]
+  tags           Tag[]
+  okrs           Okr[]
+  appraisals     Appraisal[]
 }
 
 model OrganizationMember {
   id             String       @id @default(uuid())
   userId         String
   organizationId String
-  role           String       @default("MEMBER") // MEMBER, ADMIN
+  teamId         String?
+  role           String       @default("MEMBER") // MEMBER, TEAM_LEAD, ADMIN
   user           User         @relation(fields: [userId], references: [id])
   organization   Organization @relation(fields: [organizationId], references: [id])
+  team           Team?        @relation(fields: [teamId], references: [id])
 
   @@unique([userId, organizationId])
 }
@@ -54,15 +71,20 @@ model Task {
   dueDate        DateTime?
   organizationId String
   assigneeId     String?
+  supporterId    String?
+  tagId          String?
   deletedAt      DateTime?
   deletedById    String?
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
   organization   Organization @relation(fields: [organizationId], references: [id])
   assignee       User?        @relation("AssignedTasks", fields: [assigneeId], references: [id])
+  supporter      User?        @relation("SupportedTasks", fields: [supporterId], references: [id])
   deletedBy      User?        @relation("DeletedTasks", fields: [deletedById], references: [id])
   comments       Comment[]
   attachments    Attachment[]
+  tag            Tag?         @relation(fields: [tagId], references: [id])
+  taskTeams      TaskTeam[]
 
   @@index([organizationId, deletedAt])
   @@index([deletedAt])
@@ -80,10 +102,127 @@ model Comment {
 
 model Attachment {
   id        String   @id @default(uuid())
-  filePath  String
-  fileName  String
-  fileType  String
+  type      String   @default("FILE") // FILE, LINK
+  filePath  String?
+  fileName  String?
+  fileType  String?
+  url       String?
   taskId    String
   createdAt DateTime @default(now())
   task      Task     @relation(fields: [taskId], references: [id])
+}
+
+model Invite {
+  id              String       @id @default(uuid())
+  organizationId  String
+  email           String
+  role            String       // TEAM_LEAD, MEMBER
+  tokenHash       String
+  status          String       @default("PENDING") // PENDING, ACCEPTED, EXPIRED, REVOKED
+  expiresAt       DateTime
+  invitedByUserId String
+  acceptedByUserId String?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  organization    Organization @relation(fields: [organizationId], references: [id])
+  invitedBy       User         @relation("Inviter", fields: [invitedByUserId], references: [id])
+  acceptedBy      User?        @relation("InviteAccepter", fields: [acceptedByUserId], references: [id])
+
+  @@index([organizationId, email, status])
+}
+
+model Tag {
+  id             String       @id @default(uuid())
+  organizationId String
+  name           String
+  normalizedName String
+  color          String       @default("#2563eb")
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  tasks          Task[]
+  keyResults     OkrKeyResult[]
+
+  @@unique([organizationId, normalizedName])
+}
+
+model Okr {
+  id             String       @id @default(uuid())
+  organizationId String
+  title          String
+  description    String?
+  periodStart    DateTime
+  periodEnd      DateTime
+  createdBy      String
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  creator        User         @relation("OKRCreator", fields: [createdBy], references: [id])
+  assignments    OkrAssignment[]
+  keyResults     OkrKeyResult[]
+}
+
+model OkrAssignment {
+  id         String   @id @default(uuid())
+  okrId      String
+  targetType String   // TEAM, MEMBER
+  targetId   String
+  createdAt  DateTime @default(now())
+  okr        Okr      @relation(fields: [okrId], references: [id], onDelete: Cascade)
+}
+
+model OkrKeyResult {
+  id        String   @id @default(uuid())
+  okrId     String
+  title     String
+  tagId     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  okr       Okr      @relation(fields: [okrId], references: [id], onDelete: Cascade)
+  tag       Tag      @relation(fields: [tagId], references: [id])
+
+  @@unique([tagId])
+}
+
+model Appraisal {
+  id              String       @id @default(uuid())
+  organizationId  String
+  subjectUserId   String
+  createdByUserId String
+  cycle           String
+  summary         String
+  status          String       @default("GENERATED") // GENERATED, PUBLISHED
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  organization    Organization @relation(fields: [organizationId], references: [id])
+  subjectUser     User         @relation("AppraisalSubject", fields: [subjectUserId], references: [id])
+  createdByUser   User         @relation("AppraisalCreator", fields: [createdByUserId], references: [id])
+}
+
+model Team {
+  id             String               @id @default(uuid())
+  organizationId String
+  name           String
+  normalizedName String
+  leadUserId     String
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+  organization   Organization         @relation(fields: [organizationId], references: [id])
+  leadUser       User                 @relation("TeamLead", fields: [leadUserId], references: [id])
+  members        OrganizationMember[]
+  taskLinks      TaskTeam[]
+
+  @@unique([organizationId, normalizedName])
+}
+
+model TaskTeam {
+  id        String   @id @default(uuid())
+  taskId    String
+  teamId    String
+  createdAt DateTime @default(now())
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@unique([taskId, teamId])
+  @@index([teamId])
 }

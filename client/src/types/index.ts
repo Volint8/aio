@@ -2,7 +2,7 @@ export interface User {
     id: string;
     email: string;
     name: string;
-    role: 'USER' | 'ADMIN';
+    role: 'USER' | 'ADMIN' | 'TEAM_LEAD' | 'MEMBER';
 }
 
 export interface Organization {

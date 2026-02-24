@@ -1,0 +1,16 @@
+ALTER TABLE "Task" ADD COLUMN "tagId" TEXT;
+ALTER TABLE "Task" ADD CONSTRAINT "Task_tagId_fkey" FOREIGN KEY ("tagId") REFERENCES "Tag"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+CREATE TABLE "OkrKeyResult" (
+    "id" TEXT NOT NULL,
+    "okrId" TEXT NOT NULL,
+    "title" TEXT NOT NULL,
+    "tagId" TEXT NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+    CONSTRAINT "OkrKeyResult_pkey" PRIMARY KEY ("id")
+);
+
+CREATE UNIQUE INDEX "OkrKeyResult_tagId_key" ON "OkrKeyResult"("tagId");
+ALTER TABLE "OkrKeyResult" ADD CONSTRAINT "OkrKeyResult_okrId_fkey" FOREIGN KEY ("okrId") REFERENCES "Okr"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "OkrKeyResult" ADD CONSTRAINT "OkrKeyResult_tagId_fkey" FOREIGN KEY ("tagId") REFERENCES "Tag"("id") ON DELETE RESTRICT ON UPDATE CASCADE;

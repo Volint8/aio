@@ -51,7 +51,12 @@ const purgeTaskById = async (taskId: string, expiresBefore: Date) => {
         select: { filePath: true }
     });
 
-    await Promise.all(attachments.map((attachment) => safeDeleteFile(attachment.filePath)));
+    await Promise.all(
+        attachments
+            .map((attachment) => attachment.filePath)
+            .filter((filePath): filePath is string => Boolean(filePath))
+            .map((filePath) => safeDeleteFile(filePath))
+    );
 
     await prisma.attachment.deleteMany({ where: { taskId: task.id } });
     await prisma.comment.deleteMany({ where: { taskId: task.id } });
