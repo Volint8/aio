@@ -107,34 +107,213 @@
     color: var(--accent-color);
 }
 
-/* Focus */
-
-/* View Toggle */
-.view-mode-toggle {
-    margin-bottom: 32px;
-    display: inline-flex;
-    background: #F1F5F9;
-    padding: 4px;
-    border-radius: 10px;
-    border: 1px solid var(--border-color);
+/* Tracker Analytics */
+.tracker-analytics {
+    margin-bottom: 28px;
 }
 
-.view-mode-toggle button {
-    padding: 10px 24px;
+.tracker-hero {
+    border-radius: 18px;
+    border: 1px solid var(--border-color);
+    background: linear-gradient(120deg, rgba(248, 250, 252, 0.95), rgba(236, 242, 249, 0.95));
+    box-shadow: var(--shadow);
+    padding: 28px 30px;
+    display: flex;
+    justify-content: space-between;
+    gap: 24px;
+    overflow: hidden;
+    position: relative;
+}
+
+.tracker-hero::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: repeating-linear-gradient(
+        105deg,
+        rgba(255, 255, 255, 0.2) 0px,
+        rgba(255, 255, 255, 0.2) 10px,
+        transparent 10px,
+        transparent 50px
+    );
+    pointer-events: none;
+}
+
+.tracker-hero h2 {
+    margin: 0;
+    font-size: 2em;
+    color: var(--text-main);
+    position: relative;
+    z-index: 1;
+}
+
+.tracker-hero-right {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    align-items: flex-end;
+}
+
+.tracker-hero-right p {
+    margin: 0;
+    color: var(--text-main);
+    font-size: 1.02em;
+}
+
+.tracker-legend {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+.legend-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.92em;
+    font-weight: 600;
+    color: var(--text-main);
+}
+
+.legend-chip::before {
+    content: '';
+    width: 12px;
+    height: 12px;
+    border-radius: 3px;
+    display: inline-block;
+}
+
+.legend-chip.pending::before {
+    background: #ef4444;
+}
+
+.legend-chip.completed::before {
+    background: #f97316;
+}
+
+.legend-chip.ongoing::before {
+    background: #16a34a;
+}
+
+.tracker-view-tabs {
+    margin-top: 16px;
+    margin-bottom: 16px;
+    display: inline-flex;
+    background: #eef2f7;
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 4px;
+}
+
+.tracker-view-tabs button {
     border: none;
     background: transparent;
-    border-radius: 8px;
-    font-weight: 600;
-    cursor: pointer;
-    color: var(--text-muted);
-    transition: all 0.2s;
+    border-radius: 9px;
+    padding: 9px 16px;
     font-size: 0.9em;
+    font-weight: 700;
+    color: var(--text-muted);
+    cursor: pointer;
 }
 
-.view-mode-toggle button.active {
-    background: white;
+.tracker-view-tabs button.active {
+    background: #fff;
     color: var(--primary-color);
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
+}
+
+.tracker-chart-panel {
+    border: 1px solid var(--border-color);
+    border-radius: 16px;
+    background: #f8fafc;
+    box-shadow: var(--shadow);
+    padding: 16px;
+}
+
+.tracker-chart-scroll {
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding-bottom: 4px;
+}
+
+.tracker-chart-grid {
+    position: relative;
+    height: 360px;
+    border-radius: 12px;
+    background: #f1f5f9;
+    border: 1px solid #e2e8f0;
+    padding: 30px 16px 64px;
+}
+
+.tracker-grid-line {
+    position: absolute;
+    left: 50px;
+    right: 12px;
+    border-bottom: 1px dashed #cbd5e1;
+}
+
+.tracker-grid-line span {
+    position: absolute;
+    left: -42px;
+    top: -10px;
+    font-size: 0.78em;
+    color: #64748b;
+}
+
+.tracker-chart-bars {
+    position: absolute;
+    inset: 18px 16px 18px 56px;
+    display: flex;
+    align-items: flex-end;
+    gap: 16px;
+}
+
+.tracker-bar-group {
+    flex: 0 0 92px;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+}
+
+.tracker-bars {
+    height: calc(100% - 40px);
+    display: grid;
+    grid-template-columns: repeat(3, minmax(14px, 1fr));
+    gap: 6px;
+    align-items: end;
+}
+
+.tracker-bar {
+    width: 100%;
+    border-radius: 8px 8px 2px 2px;
+    min-height: 2px;
+}
+
+.tracker-bar.pending {
+    background: #ef4444;
+}
+
+.tracker-bar.completed {
+    background: #f97316;
+}
+
+.tracker-bar.ongoing {
+    background: #16a34a;
+}
+
+.tracker-bar-label {
+    margin-top: 9px;
+    font-size: 0.84em;
+    color: var(--text-main);
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 /* Tasks Grid - Fixed the "Wide and Weird" issue */
@@ -955,6 +1134,16 @@
     .team-invite-form {
         grid-template-columns: 1fr;
     }
+
+    .tracker-hero {
+        flex-direction: column;
+    }
+
+    .tracker-hero-right,
+    .tracker-legend {
+        align-items: flex-start;
+        justify-content: flex-start;
+    }
 }
 
 @media (max-width: 640px) {
@@ -976,6 +1165,26 @@
         align-items: flex-start;
         flex-direction: column;
         gap: 6px;
+    }
+
+    .tracker-hero {
+        padding: 20px;
+    }
+
+    .tracker-hero h2 {
+        font-size: 1.6em;
+    }
+
+    .tracker-view-tabs {
+        width: 100%;
+    }
+
+    .tracker-view-tabs button {
+        flex: 1;
+    }
+
+    .tracker-chart-grid {
+        height: 320px;
     }
 
     .modal {

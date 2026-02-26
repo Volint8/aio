@@ -909,8 +909,15 @@ export const getMemberStats = async (req: Request, res: Response) => {
             return res.status(403).json({ error: 'Only admins and team leads can access team statistics' });
         }
 
+        if (membership.role === 'TEAM_LEAD' && !membership.teamId) {
+            return res.json([]);
+        }
+
         const members = await prisma.organizationMember.findMany({
-            where: { organizationId: organizationId as string },
+            where: {
+                organizationId: organizationId as string,
+                ...(membership.role === 'TEAM_LEAD' ? { teamId: membership.teamId as string } : {})
+            },
             include: {
                 user: {
                     select: {

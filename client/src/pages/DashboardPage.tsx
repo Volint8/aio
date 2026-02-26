@@ -129,6 +129,31 @@ interface InviteRecord {
 
 type DashboardSection = 'tracker' | 'team' | 'tags' | 'okrs' | 'appraisals';
 type TaskFilter = 'all' | 'my' | 'created' | 'in_progress' | 'completed' | 'recently_deleted';
+type TrackerView = 'users' | 'teams';
+
+interface MemberStatRecord {
+    userId: string;
+    name: string;
+    stats: {
+        created: number;
+        inProgress: number;
+        completed: number;
+        total: number;
+    };
+}
+
+interface TeamDistributionRecord {
+    teamId: string;
+    teamName: string;
+    leadUser: { id: string; name: string | null; email: string };
+    stats: { created: number; inProgress: number; completed: number; total: number };
+    people: Array<{
+        userId: string;
+        name: string;
+        role: string;
+        stats: { created: number; inProgress: number; completed: number; total: number };
+    }>;
+}
 
 const COMMENTS_PREVIEW_COUNT = 4;
 const RETENTION_DAYS = 30;
@@ -142,6 +167,8 @@ const DashboardPage = () => {
     const [appraisals, setAppraisals] = useState<Appraisal[]>([]);
     const [teams, setTeams] = useState<Team[]>([]);
     const [invites, setInvites] = useState<InviteRecord[]>([]);
+    const [memberStats, setMemberStats] = useState<MemberStatRecord[]>([]);
+    const [teamDistribution, setTeamDistribution] = useState<TeamDistributionRecord[]>([]);
 
     const [loading, setLoading] = useState(true);
     const [filter, setFilter] = useState<TaskFilter>('all');
@@ -207,10 +234,13 @@ const DashboardPage = () => {
     const orgId = localStorage.getItem('selectedOrgId');
 
     const requestedSection = (new URLSearchParams(location.search).get('section') || 'tracker') as DashboardSection;
+    const requestedTrackerView = (new URLSearchParams(location.search).get('view') || 'users') as TrackerView;
     const isAdmin = organization?.userRole === 'ADMIN';
     const isTeamLead = organization?.userRole === 'TEAM_LEAD';
     const isMember = organization?.userRole === 'MEMBER';
     const canTrackTeam = organization?.userRole === 'ADMIN' || organization?.userRole === 'TEAM_LEAD';
+    const canUseTrackerCharts = isAdmin || isTeamLead;
+    const trackerView: TrackerView = requestedTrackerView === 'teams' ? 'teams' : 'users';
 
     const currentSection: DashboardSection = useMemo(() => {
         if (requestedSection === 'team' && canTrackTeam) return 'team';
@@ -219,6 +249,52 @@ const DashboardPage = () => {
         if (requestedSection === 'appraisals' && isAdmin) return 'appraisals';
         return 'tracker';
     }, [requestedSection, canTrackTeam, isAdmin, isTeamLead, isMember]);
+
+    const userChartData = memberStats.map((item) => ({
+        id: item.userId,
+        label: item.name,
+        pending: item.stats.created,
+        ongoing: item.stats.inProgress,
+        completed: item.stats.completed,
+        total: item.stats.total
+    }));
+
+    const teamChartData = teamDistribution.map((item) => ({
+        id: item.teamId,
+        label: item.teamName,
+        pending: item.stats.created,
+        ongoing: item.stats.inProgress,
+        completed: item.stats.completed,
+        total: item.stats.total
+    }));
+
+    const currentChartData = trackerView === 'teams' ? teamChartData : userChartData;
+    const chartMaxValue = Math.max(
+        1,
+        ...currentChartData.flatMap((item) => [item.pending, item.ongoing, item.completed])
+    );
+
+    const workersActiveCount = useMemo(() => {
+        if (trackerView === 'users') {
+            return userChartData.filter((item) => item.total > 0).length;
+        }
+
+        const activeIds = new Set<string>();
+        teamDistribution.forEach((team) => {
+            team.people
+                .filter((person) => person.stats.total > 0)
+                .forEach((person) => activeIds.add(person.userId));
+        });
+        return activeIds.size;
+    }, [trackerView, userChartData, teamDistribution]);
+
+    const handleTrackerViewChange = (view: TrackerView) => {
+        if (trackerView === view) return;
+        const params = new URLSearchParams(location.search);
+        params.set('section', 'tracker');
+        params.set('view', view);
+        navigate(`/dashboard?${params.toString()}`);
+    };
 
     const assignableUsers = (organization?.members || []).filter((member) => member.role !== 'ADMIN');
     const teamLeadUsers = (organization?.members || []).filter((member) => member.role === 'TEAM_LEAD');
@@ -252,15 +328,23 @@ const DashboardPage = () => {
             localStorage.setItem('selectedOrgRole', role);
 
             if (role === 'ADMIN') {
-                const [teamsRes, invitesRes] = await Promise.all([
+                const [teamsRes, invitesRes, memberStatsRes, distributionRes] = await Promise.all([
                     api.get(`/orgs/${orgId}/teams`),
-                    api.get(`/orgs/${orgId}/invites`)
+                    api.get(`/orgs/${orgId}/invites`),
+                    api.get('/tasks/team-stats', { params: { organizationId: orgId } }),
+                    api.get('/tasks/team-distribution', { params: { organizationId: orgId } })
                 ]);
                 setTeams(teamsRes.data || []);
                 setInvites(invitesRes.data || []);
+                setMemberStats(memberStatsRes.data || []);
+                setTeamDistribution(distributionRes.data || []);
             } else if (role === 'TEAM_LEAD') {
-                const distRes = await api.get('/tasks/team-distribution', { params: { organizationId: orgId } });
-                setTeams((distRes.data || []).map((item: any) => ({
+                const [memberStatsRes, distRes] = await Promise.all([
+                    api.get('/tasks/team-stats', { params: { organizationId: orgId } }),
+                    api.get('/tasks/team-distribution', { params: { organizationId: orgId } })
+                ]);
+                const distributionData = distRes.data || [];
+                setTeams(distributionData.map((item: any) => ({
                     id: item.teamId,
                     name: item.teamName,
                     leadUser: item.leadUser,
@@ -269,9 +353,13 @@ const DashboardPage = () => {
                     people: item.people || []
                 })));
                 setInvites([]);
+                setMemberStats(memberStatsRes.data || []);
+                setTeamDistribution(distributionData);
             } else {
                 setTeams([]);
                 setInvites([]);
+                setMemberStats([]);
+                setTeamDistribution([]);
             }
 
             let filteredTasks = tasksRes.data as Task[];
@@ -789,7 +877,86 @@ const DashboardPage = () => {
 
                 {currentSection === 'tracker' && (
                     <>
-                        {stats && (
+                        {canUseTrackerCharts && (
+                            <section className="tracker-analytics">
+                                <div className="tracker-hero">
+                                    <div>
+                                        <h2>Tracker</h2>
+                                    </div>
+                                    <div className="tracker-hero-right">
+                                        <p><strong>Workers:</strong> {workersActiveCount} people active</p>
+                                        <div className="tracker-legend">
+                                            <span className="legend-chip pending">Pending Task</span>
+                                            <span className="legend-chip completed">Completed Task</span>
+                                            <span className="legend-chip ongoing">Ongoing Task</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="tracker-view-tabs">
+                                    <button
+                                        type="button"
+                                        className={trackerView === 'users' ? 'active' : ''}
+                                        onClick={() => handleTrackerViewChange('users')}
+                                    >
+                                        By Users
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className={trackerView === 'teams' ? 'active' : ''}
+                                        onClick={() => handleTrackerViewChange('teams')}
+                                    >
+                                        By Teams
+                                    </button>
+                                </div>
+
+                                <div className="tracker-chart-panel">
+                                    <div className="tracker-chart-scroll">
+                                        <div
+                                            className="tracker-chart-grid"
+                                            style={{ minWidth: `${Math.max(currentChartData.length * 110, 680)}px` }}
+                                        >
+                                            {[1, 0.75, 0.5, 0.25, 0].map((tick) => (
+                                                <div
+                                                    key={tick}
+                                                    className="tracker-grid-line"
+                                                    style={{ bottom: `${tick * 100}%` }}
+                                                >
+                                                    <span>{Math.round(chartMaxValue * tick)}</span>
+                                                </div>
+                                            ))}
+
+                                            <div className="tracker-chart-bars">
+                                                {currentChartData.map((item) => (
+                                                    <div key={item.id} className="tracker-bar-group">
+                                                        <div className="tracker-bars">
+                                                            <span
+                                                                className="tracker-bar pending"
+                                                                style={{ height: `${(item.pending / chartMaxValue) * 100}%` }}
+                                                                title={`Pending: ${item.pending}`}
+                                                            />
+                                                            <span
+                                                                className="tracker-bar completed"
+                                                                style={{ height: `${(item.completed / chartMaxValue) * 100}%` }}
+                                                                title={`Completed: ${item.completed}`}
+                                                            />
+                                                            <span
+                                                                className="tracker-bar ongoing"
+                                                                style={{ height: `${(item.ongoing / chartMaxValue) * 100}%` }}
+                                                                title={`Ongoing: ${item.ongoing}`}
+                                                            />
+                                                        </div>
+                                                        <div className="tracker-bar-label">{item.label}</div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </section>
+                        )}
+
+                        {!canUseTrackerCharts && stats && (
                             <div className="stats-grid">
                                 <div className="stat-card" onClick={() => setFilter('all')}><h3>Total Workload</h3><p className="stat-value">{stats.total}</p></div>
                                 <div className="stat-card" onClick={() => setFilter('in_progress')}><h3>Active Sprints</h3><p className="stat-value">{stats.inProgress}</p></div>
