@@ -49,8 +49,12 @@ const InviteAcceptPage = () => {
         <div className="login-page">
             <div className="login-card">
                 <div className="login-header">
-                    <h1>Apraizal</h1>
-                    <p className="tagline">Accept your team invitation</p>
+                    <div className="brand-row">
+                        <span className="brand-dot brand-dot-light" aria-hidden="true"></span>
+                        <span className="brand-dot brand-dot-dark" aria-hidden="true"></span>
+                        <h1>Apraizal</h1>
+                    </div>
+                    <p className="tagline">Organize <span aria-hidden="true">•</span> Track <span aria-hidden="true">•</span> Appraise</p>
                 </div>
 
                 <h2>Join Organization</h2>
@@ -84,6 +88,11 @@ const InviteAcceptPage = () => {
                         {loading ? 'Please wait...' : 'Continue'}
                     </button>
                 </form>
+
+                <div className="auth-divider"></div>
+                <div className="auth-footer">
+                    <p>Have a different account? <button type="button" className="link-button" onClick={() => navigate('/login')}>Sign In</button></p>
+                </div>
             </div>
         </div>
     );

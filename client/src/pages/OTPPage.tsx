@@ -43,12 +43,16 @@ const OTPPage = () => {
         <div className="login-page">
             <div className="login-card">
                 <div className="login-header">
-                    <h1>Apraizal</h1>
-                    <p className="tagline">Verify your identity</p>
+                    <div className="brand-row">
+                        <span className="brand-dot brand-dot-light" aria-hidden="true"></span>
+                        <span className="brand-dot brand-dot-dark" aria-hidden="true"></span>
+                        <h1>Apraizal</h1>
+                    </div>
+                    <p className="tagline">Organize <span aria-hidden="true">•</span> Track <span aria-hidden="true">•</span> Appraise</p>
                 </div>
 
-                <h2>Enter Verification Code</h2>
-                <p style={{ textAlign: 'center', color: '#64748B', marginBottom: '24px', fontSize: '0.9em' }}>
+                <h2>Verify Your Account</h2>
+                <p className="otp-helper-text">
                     We've sent a 6-digit code to <strong>{email}</strong>.
                     <br />It expires in 15 minutes.
                 </p>
@@ -63,7 +67,7 @@ const OTPPage = () => {
                             placeholder="123456"
                             required
                             maxLength={6}
-                            style={{ letterSpacing: '8px', textAlign: 'center', fontSize: '1.5em' }}
+                            className="otp-input"
                             autoFocus
                         />
                     </div>
@@ -83,6 +87,11 @@ const OTPPage = () => {
                         Cancel
                     </button>
                 </form>
+
+                <div className="auth-divider"></div>
+                <div className="auth-footer">
+                    <p>Need to change account? <button type="button" className="link-button" onClick={() => navigate('/login')}>Back to Sign In</button></p>
+                </div>
             </div>
         </div>
     );

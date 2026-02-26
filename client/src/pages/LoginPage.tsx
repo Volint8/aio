@@ -95,8 +95,12 @@ const LoginPage = () => {
         <div className="login-page">
             <div className="login-card">
                 <div className="login-header">
-                    <h1>Apraizal</h1>
-                    <p className="tagline">Organize. Track. Deliver.</p>
+                    <div className="brand-row">
+                        <span className="brand-dot brand-dot-light" aria-hidden="true"></span>
+                        <span className="brand-dot brand-dot-dark" aria-hidden="true"></span>
+                        <h1>Apraizal</h1>
+                    </div>
+                    <p className="tagline">Organize <span aria-hidden="true">•</span> Track <span aria-hidden="true">•</span> Appraise</p>
                 </div>
 
                 <h2>{modeLabel}</h2>
@@ -205,6 +209,24 @@ const LoginPage = () => {
                     )}
                 </form>
 
+                <div className="auth-divider"></div>
+                <div className="auth-footer">
+                    {mode === 'login' ? (
+                        <p>
+                            Don&apos;t have an account?{' '}
+                            <button type="button" className="link-button" onClick={() => switchMode('admin_signup')}>
+                                Sign Up
+                            </button>
+                        </p>
+                    ) : (
+                        <p>
+                            Already have an account?{' '}
+                            <button type="button" className="link-button" onClick={() => switchMode('login')}>
+                                Sign In
+                            </button>
+                        </p>
+                    )}
+                </div>
                 <div className="domain-notice">
                     <small>Use a work email address. Personal domains are blocked.</small>
                 </div>

@@ -119,6 +119,14 @@ interface Appraisal {
     subjectUser?: { id: string; name?: string | null; email: string };
 }
 
+interface InviteRecord {
+    id: string;
+    email: string;
+    role: string;
+    status: string;
+    expiresAt: string;
+}
+
 type DashboardSection = 'tracker' | 'team' | 'tags' | 'okrs' | 'appraisals';
 type TaskFilter = 'all' | 'my' | 'created' | 'in_progress' | 'completed' | 'recently_deleted';
 
@@ -133,6 +141,7 @@ const DashboardPage = () => {
     const [okrs, setOkrs] = useState<Okr[]>([]);
     const [appraisals, setAppraisals] = useState<Appraisal[]>([]);
     const [teams, setTeams] = useState<Team[]>([]);
+    const [invites, setInvites] = useState<InviteRecord[]>([]);
 
     const [loading, setLoading] = useState(true);
     const [filter, setFilter] = useState<TaskFilter>('all');
@@ -186,6 +195,10 @@ const DashboardPage = () => {
         leadUserId: '',
         memberUserIds: [] as string[]
     });
+    const [inviteEmail, setInviteEmail] = useState('');
+    const [inviteRole, setInviteRole] = useState('MEMBER');
+    const [inviting, setInviting] = useState(false);
+    const [teamError, setTeamError] = useState('');
 
     const { user } = useAuth();
     const navigate = useNavigate();
@@ -239,8 +252,12 @@ const DashboardPage = () => {
             localStorage.setItem('selectedOrgRole', role);
 
             if (role === 'ADMIN') {
-                const teamsRes = await api.get(`/orgs/${orgId}/teams`);
+                const [teamsRes, invitesRes] = await Promise.all([
+                    api.get(`/orgs/${orgId}/teams`),
+                    api.get(`/orgs/${orgId}/invites`)
+                ]);
                 setTeams(teamsRes.data || []);
+                setInvites(invitesRes.data || []);
             } else if (role === 'TEAM_LEAD') {
                 const distRes = await api.get('/tasks/team-distribution', { params: { organizationId: orgId } });
                 setTeams((distRes.data || []).map((item: any) => ({
@@ -251,8 +268,10 @@ const DashboardPage = () => {
                     members: [],
                     people: item.people || []
                 })));
+                setInvites([]);
             } else {
                 setTeams([]);
+                setInvites([]);
             }
 
             let filteredTasks = tasksRes.data as Task[];
@@ -479,6 +498,30 @@ const DashboardPage = () => {
         }
     };
 
+    const handleInviteMember = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!orgId || !inviteEmail.trim()) return;
+
+        try {
+            setTeamError('');
+            setInviting(true);
+            await api.post(`/orgs/${orgId}/invites`, {
+                email: inviteEmail,
+                role: inviteRole
+            });
+            setInviteEmail('');
+            setInviteRole('MEMBER');
+            const invitesRes = await api.get(`/orgs/${orgId}/invites`);
+            setInvites(invitesRes.data || []);
+        } catch (error: any) {
+            const errorData = error.response?.data?.error;
+            const message = typeof errorData === 'object' ? errorData.message : errorData;
+            setTeamError(message || 'Failed to send invite');
+        } finally {
+            setInviting(false);
+        }
+    };
+
     const handleAddLink = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
@@ -588,6 +631,45 @@ const DashboardPage = () => {
                         <div className="tasks-header">
                             <h2>{isTeamLead ? 'My Team Work Distribution' : 'Team Work Distribution'}</h2>
                         </div>
+                        {isAdmin && (
+                            <div className="team-invite-panel">
+                                <h3>Team Invites</h3>
+                                {teamError && <p className="team-error">{teamError}</p>}
+                                <form className="team-invite-form" onSubmit={handleInviteMember}>
+                                    <input
+                                        type="email"
+                                        value={inviteEmail}
+                                        onChange={(e) => setInviteEmail(e.target.value)}
+                                        placeholder="name@company.com"
+                                        required
+                                    />
+                                    <select value={inviteRole} onChange={(e) => setInviteRole(e.target.value)}>
+                                        <option value="MEMBER">Member</option>
+                                        <option value="TEAM_LEAD">Team Lead</option>
+                                    </select>
+                                    <button type="submit" className="btn-primary" disabled={inviting}>
+                                        {inviting ? 'Sending...' : 'Send Invite'}
+                                    </button>
+                                </form>
+
+                                {invites.length > 0 && (
+                                    <div className="team-invites-list">
+                                        {invites.slice(0, 8).map((invite) => (
+                                            <div key={invite.id} className="team-invite-row">
+                                                <div className="team-member-info">
+                                                    <strong>{invite.email}</strong>
+                                                    <span>Expires {new Date(invite.expiresAt).toLocaleDateString()}</span>
+                                                </div>
+                                                <div className="team-member-role">
+                                                    <span className="role-badge low">{invite.role}</span>
+                                                    <span className={`role-badge ${invite.status.toLowerCase()}`}>{invite.status}</span>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        )}
                         <div className="team-stats-grid">
                             {teams.map((team) => (
                                 <div key={team.id} className="task-card" style={{ padding: '20px' }}>

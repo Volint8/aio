@@ -442,6 +442,67 @@
     gap: 32px;
 }
 
+.team-invite-panel {
+    margin-bottom: 20px;
+    padding: 16px;
+    border-radius: 12px;
+    border: 1px solid var(--border-color);
+    background: #f8fafc;
+}
+
+.team-invite-panel h3 {
+    margin: 0 0 10px;
+}
+
+.team-invite-form {
+    display: grid;
+    grid-template-columns: 1fr 180px 140px;
+    gap: 10px;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.team-invite-form input,
+.team-invite-form select {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    background: #fff;
+}
+
+.team-invite-form .btn-primary {
+    margin: 0;
+    width: 100%;
+}
+
+.team-invites-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.team-invite-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    background: #fff;
+}
+
+.team-error {
+    margin: 0 0 10px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    color: #b91c1c;
+    font-size: 0.9em;
+}
+
 .member-stat-row {
     display: grid;
     grid-template-columns: 240px 1fr 180px;
@@ -889,6 +950,10 @@
     .task-detail-panel {
         position: relative;
         top: 0;
+    }
+
+    .team-invite-form {
+        grid-template-columns: 1fr;
     }
 }
 
