@@ -286,6 +286,8 @@ const DashboardPage = () => {
     };
 
     const selectedTask = tasks.find((task) => task.id === selectedTaskId) || null;
+    const selectedCreateTaskTag = tags.find((tag) => tag.id === newTask.tagId) || null;
+    const selectedEditTaskTag = tags.find((tag) => tag.id === editTask.tagId) || null;
     const isDeletedView = filter === 'recently_deleted';
 
     const getDaysUntilPurge = (deletedAt: string | null | undefined) => {
@@ -937,6 +939,12 @@ const DashboardPage = () => {
                                     <option value="">Select a tag</option>
                                     {tags.map((tag) => <option key={tag.id} value={tag.id}>{tag.name}</option>)}
                                 </select>
+                                {selectedCreateTaskTag && (
+                                    <div className="selected-tag-preview">
+                                        <span className="color-preview-chip" style={{ background: selectedCreateTaskTag.color }} aria-hidden="true"></span>
+                                        <span>Selected tag: <strong>{selectedCreateTaskTag.name}</strong></span>
+                                    </div>
+                                )}
                             </div>
                             <div className="form-row">
                                 <div className="form-group">
@@ -1004,6 +1012,12 @@ const DashboardPage = () => {
                                     <option value="">Select a tag</option>
                                     {tags.map((tag) => <option key={tag.id} value={tag.id}>{tag.name}</option>)}
                                 </select>
+                                {selectedEditTaskTag && (
+                                    <div className="selected-tag-preview">
+                                        <span className="color-preview-chip" style={{ background: selectedEditTaskTag.color }} aria-hidden="true"></span>
+                                        <span>Selected tag: <strong>{selectedEditTaskTag.name}</strong></span>
+                                    </div>
+                                )}
                             </div>
                             <div className="form-row">
                                 <div className="form-group">
@@ -1183,7 +1197,18 @@ const DashboardPage = () => {
                             </div>
                             <div className="form-group">
                                 <label>Color</label>
-                                <input type="color" value={newTag.color} onChange={(e) => setNewTag({ ...newTag, color: e.target.value })} required />
+                                <div className="color-picker-row">
+                                    <input
+                                        className="color-picker-input"
+                                        type="color"
+                                        value={newTag.color}
+                                        onChange={(e) => setNewTag({ ...newTag, color: e.target.value })}
+                                        required
+                                        aria-label="Pick tag color"
+                                    />
+                                    <span className="color-value">{newTag.color.toUpperCase()}</span>
+                                    <span className="color-preview-chip" style={{ background: newTag.color }} aria-hidden="true"></span>
+                                </div>
                             </div>
                             <div className="modal-actions">
                                 <button type="button" onClick={() => setShowCreateTagModal(false)} className="btn-secondary">Cancel</button>

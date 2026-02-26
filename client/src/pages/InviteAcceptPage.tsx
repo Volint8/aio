@@ -49,7 +49,7 @@ const InviteAcceptPage = () => {
         <div className="login-page">
             <div className="login-card">
                 <div className="login-header">
-                    <h1>AIO</h1>
+                    <h1>Apraizal</h1>
                     <p className="tagline">Accept your team invitation</p>
                 </div>
 

@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import '../styles/LoginPage.css';
 
 type Mode = 'login' | 'admin_signup';
@@ -22,6 +22,17 @@ const LoginPage = () => {
         adminSignupComplete
     } = useAuth();
     const navigate = useNavigate();
+    const [searchParams] = useSearchParams();
+    const modeParam = searchParams.get('mode');
+
+    useEffect(() => {
+        if (modeParam === 'admin_signup') {
+            setMode('admin_signup');
+            resetSignupFlow();
+            return;
+        }
+        setMode('login');
+    }, [modeParam]);
 
     const modeLabel = useMemo(() => mode === 'login' ? 'Welcome Back' : 'Admin Sign Up', [mode]);
 
@@ -84,7 +95,7 @@ const LoginPage = () => {
         <div className="login-page">
             <div className="login-card">
                 <div className="login-header">
-                    <h1>AIO</h1>
+                    <h1>Apraizal</h1>
                     <p className="tagline">Organize. Track. Deliver.</p>
                 </div>
 

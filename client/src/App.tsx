@@ -6,6 +6,7 @@ import OTPPage from './pages/OTPPage';
 import InviteAcceptPage from './pages/InviteAcceptPage';
 import OrgSelectionPage from './pages/OrgSelectionPage';
 import DashboardPage from './pages/DashboardPage';
+import LandingPage from './pages/LandingPage';
 import Layout from './components/common/Layout';
 
 const ProtectedRoute = ({ children }: { children: ReactElement }) => {
@@ -54,7 +55,8 @@ function AppRoutes() {
           </Layout>
         </ProtectedRoute>
       } />
-      <Route path="/" element={<Navigate to="/organizations" replace />} />
+      <Route path="/" element={<LandingPage />} />
+      <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
 }

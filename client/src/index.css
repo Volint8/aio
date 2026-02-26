@@ -171,8 +171,8 @@ code {
 
 .sidebar {
   width: 260px;
-  background: linear-gradient(180deg, var(--primary-color) 0%, #0F172A 100%);
-  color: white;
+  background: #ffffff;
+  color: var(--text-main);
   display: flex;
   flex-direction: column;
   position: fixed;
@@ -180,8 +180,8 @@ code {
   left: 0;
   top: 0;
   z-index: 100;
-  border-right: 1px solid rgba(255, 255, 255, 0.05);
-  box-shadow: 4px 0 24px rgba(0, 0, 0, 0.2);
+  border-right: 1px solid var(--border-color);
+  box-shadow: 2px 0 14px rgba(15, 23, 42, 0.06);
 }
 
 .sidebar-header {
@@ -189,13 +189,14 @@ code {
   display: flex;
   align-items: center;
   gap: 12px;
+  border-bottom: 1px solid var(--border-color);
 }
 
 .sidebar-logo {
   font-size: 1.5em;
   font-weight: 800;
   letter-spacing: -1px;
-  color: white;
+  color: #0f172a;
 }
 
 .sidebar-nav {
@@ -206,7 +207,7 @@ code {
 .sidebar-nav ul {
   list-style: none;
   padding: 0;
-  margin: 0;
+  margin: 12px 0 0;
 }
 
 .sidebar-nav li {
@@ -218,26 +219,27 @@ code {
   align-items: center;
   gap: 12px;
   padding: 12px 16px;
-  color: #94A3B8;
+  color: #334155;
   text-decoration: none;
   border-radius: 8px;
-  font-weight: 500;
+  font-weight: 600;
   transition: all 0.2s;
   cursor: pointer;
 }
 
 .sidebar-link:hover {
-  color: white;
-  background-color: rgba(255, 255, 255, 0.05);
+  color: #0f172a;
+  background-color: #f8fafc;
 }
 
 .sidebar-link.active {
-  color: white;
-  background: rgba(255, 255, 255, 0.1);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
-  border-left: 3px solid var(--accent-color);
-  padding-left: 13px;
-  /* Compensate for border */
+  color: #1e3a8a;
+  background: #f1f5f9;
+  box-shadow: inset 0 0 0 1px #e2e8f0;
+}
+
+.sidebar-link.active .sidebar-icon {
+  color: #2563eb;
 }
 
 .sidebar-icon {
@@ -254,7 +256,7 @@ code {
 
 .sidebar-footer {
   padding: 24px;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  border-top: 1px solid var(--border-color);
 }
 
 .sidebar-footer .btn-logout {
@@ -289,6 +291,112 @@ code {
   color: var(--text-main);
 }
 
+.top-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.org-switcher {
+  position: relative;
+}
+
+.org-switcher-trigger {
+  border: 1px solid var(--border-color);
+  background: #fff;
+  border-radius: 10px;
+  height: 40px;
+  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  color: var(--text-main);
+  font-weight: 600;
+  max-width: 250px;
+}
+
+.org-switcher-trigger.active,
+.org-switcher-trigger:hover {
+  border-color: #cbd5e1;
+}
+
+.org-switcher-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.org-switcher-caret {
+  color: #64748b;
+  font-size: 0.85em;
+}
+
+.org-switcher-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: min(320px, calc(100vw - 32px));
+  background: #fff;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  box-shadow: var(--shadow-lg);
+  padding: 8px;
+  z-index: 200;
+}
+
+.org-switcher-menu-title {
+  padding: 8px;
+  color: #64748b;
+  font-size: 0.75em;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.org-switcher-item {
+  width: 100%;
+  border: none;
+  background: transparent;
+  border-radius: 10px;
+  padding: 10px;
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  color: var(--text-main);
+}
+
+.org-switcher-item small {
+  color: #64748b;
+  font-size: 0.75em;
+  text-transform: uppercase;
+}
+
+.org-switcher-item:hover,
+.org-switcher-item.active {
+  background: #f8fafc;
+}
+
+.org-switcher-manage {
+  width: 100%;
+  border: none;
+  margin-top: 6px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  border-radius: 10px;
+  padding: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  text-align: left;
+}
+
+.org-switcher-manage:hover {
+  background: #dbeafe;
+}
+
 .user-pill {
   display: flex;
   align-items: center;
@@ -310,6 +418,20 @@ code {
   align-items: center;
   justify-content: center;
   font-size: 0.8em;
+}
+
+@media (max-width: 900px) {
+  .top-bar {
+    padding: 0 16px;
+  }
+
+  .top-bar h2 {
+    display: none;
+  }
+
+  .org-switcher-trigger {
+    max-width: 180px;
+  }
 }
 
 /* Utility Classes */
