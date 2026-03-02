@@ -30,6 +30,8 @@ model User {
   createdOkrs Okr[]                  @relation("OKRCreator")
   createdAppraisals Appraisal[]      @relation("AppraisalCreator")
   subjectAppraisals Appraisal[]      @relation("AppraisalSubject")
+  createdClients Client[]            @relation("ClientCreator")
+  createdProjects Project[]          @relation("ProjectCreator")
 }
 
 model Organization {
@@ -47,6 +49,8 @@ model Organization {
   tags           Tag[]
   okrs           Okr[]
   appraisals     Appraisal[]
+  clients        Client[]
+  projects       Project[]
 }
 
 model OrganizationMember {
@@ -73,6 +77,7 @@ model Task {
   assigneeId     String?
   supporterId    String?
   tagId          String?
+  projectId      String
   deletedAt      DateTime?
   deletedById    String?
   createdAt      DateTime     @default(now())
@@ -84,10 +89,13 @@ model Task {
   comments       Comment[]
   attachments    Attachment[]
   tag            Tag?         @relation(fields: [tagId], references: [id])
+  project        Project      @relation(fields: [projectId], references: [id])
   taskTeams      TaskTeam[]
 
   @@index([organizationId, deletedAt])
   @@index([deletedAt])
+  @@index([projectId])
+  @@index([organizationId, projectId, status, deletedAt])
 }
 
 model Comment {
@@ -213,6 +221,39 @@ model Team {
   taskLinks      TaskTeam[]
 
   @@unique([organizationId, normalizedName])
+}
+
+model Client {
+  id              String       @id @default(uuid())
+  organizationId  String
+  name            String
+  normalizedName  String
+  createdByUserId String
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  organization    Organization @relation(fields: [organizationId], references: [id])
+  createdBy       User         @relation("ClientCreator", fields: [createdByUserId], references: [id])
+  projects        Project[]
+
+  @@unique([organizationId, normalizedName])
+}
+
+model Project {
+  id              String       @id @default(uuid())
+  organizationId  String
+  clientId        String
+  name            String
+  normalizedName  String
+  createdByUserId String
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  organization    Organization @relation(fields: [organizationId], references: [id])
+  client          Client       @relation(fields: [clientId], references: [id])
+  createdBy       User         @relation("ProjectCreator", fields: [createdByUserId], references: [id])
+  tasks           Task[]
+
+  @@unique([clientId, normalizedName])
+  @@index([organizationId])
 }
 
 model TaskTeam {

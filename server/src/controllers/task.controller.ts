@@ -131,7 +131,7 @@ const syncTaskTeams = async (taskId: string, teamIds: string[]) => {
 export const getTasks = async (req: Request, res: Response) => {
     try {
         const userId = (req as any).user.userId;
-        const { organizationId, status, assigneeId, view } = req.query;
+        const { organizationId, status, assigneeId, view, projectId, clientId } = req.query;
         const taskView = resolveTaskView(view);
 
         const where: any = {};
@@ -194,6 +194,14 @@ export const getTasks = async (req: Request, res: Response) => {
         if (assigneeId) {
             where.assigneeId = assigneeId;
         }
+        if (projectId) {
+            where.projectId = projectId;
+        }
+        if (clientId) {
+            where.project = {
+                clientId: clientId as string
+            };
+        }
 
         const tasks = await prisma.task.findMany({
             where,
@@ -235,6 +243,18 @@ export const getTasks = async (req: Request, res: Response) => {
                 attachments: true
                 ,
                 tag: true,
+                project: {
+                    select: {
+                        id: true,
+                        name: true,
+                        client: {
+                            select: {
+                                id: true,
+                                name: true
+                            }
+                        }
+                    }
+                },
                 taskTeams: {
                     include: {
                         team: {
@@ -261,12 +281,12 @@ export const getTasks = async (req: Request, res: Response) => {
 export const createTask = async (req: Request, res: Response) => {
     try {
         const userId = (req as any).user.userId;
-        const { title, description, organizationId, assigneeId, supporterId, dueDate, priority, tagId } = req.body;
+        const { title, description, organizationId, assigneeId, supporterId, dueDate, priority, tagId, projectId } = req.body;
         const normalizedAssigneeId = assigneeId === '' ? null : assigneeId;
         const normalizedSupporterId = supporterId === '' ? null : supporterId;
 
-        if (!title || !organizationId || !tagId || !normalizedAssigneeId) {
-            return res.status(400).json({ error: 'Title, organization, tag and assignee are required' });
+        if (!title || !organizationId || !tagId || !normalizedAssigneeId || !projectId) {
+            return res.status(400).json({ error: 'Title, organization, tag, project and assignee are required' });
         }
 
         const membership = await prisma.organizationMember.findUnique({
@@ -287,6 +307,11 @@ export const createTask = async (req: Request, res: Response) => {
             return res.status(400).json({ error: 'Selected tag is invalid for this organization' });
         }
 
+        const project = await prisma.project.findUnique({ where: { id: projectId } });
+        if (!project || project.organizationId !== organizationId) {
+            return res.status(400).json({ error: 'Selected project is invalid for this organization' });
+        }
+
         const { teamIds } = await resolveTaskTeamContext({
             organizationId,
             assigneeId: normalizedAssigneeId,
@@ -302,6 +327,7 @@ export const createTask = async (req: Request, res: Response) => {
                     assigneeId: normalizedAssigneeId,
                     supporterId: normalizedSupporterId,
                     tagId,
+                    projectId,
                     dueDate: dueDate ? new Date(dueDate) : null,
                     priority: priority || 'LOW',
                     status: 'CREATED'
@@ -321,6 +347,7 @@ export const createTask = async (req: Request, res: Response) => {
                     supporter: { select: { id: true, email: true, name: true } },
                     organization: { select: { id: true, name: true } },
                     tag: true,
+                    project: { select: { id: true, name: true, client: { select: { id: true, name: true } } } },
                     taskTeams: { include: { team: { select: { id: true, name: true } } } }
                 }
             });
@@ -387,6 +414,18 @@ export const getTaskById = async (req: Request, res: Response) => {
                 },
                 attachments: true,
                 tag: true,
+                project: {
+                    select: {
+                        id: true,
+                        name: true,
+                        client: {
+                            select: {
+                                id: true,
+                                name: true
+                            }
+                        }
+                    }
+                },
                 taskTeams: {
                     include: {
                         team: {
@@ -428,12 +467,13 @@ export const updateTask = async (req: Request, res: Response) => {
     try {
         const userId = (req as any).user.userId;
         const id = req.params.id as string;
-        const { title, description, status, assigneeId, supporterId, dueDate, priority, tagId } = req.body;
+        const { title, description, status, assigneeId, supporterId, dueDate, priority, tagId, projectId } = req.body;
         const hasAssigneeUpdate = assigneeId !== undefined;
         const normalizedAssigneeId = assigneeId === '' ? null : assigneeId;
         const hasSupporterUpdate = supporterId !== undefined;
         const normalizedSupporterId = supporterId === '' ? null : supporterId;
         const hasTagUpdate = tagId !== undefined;
+        const hasProjectUpdate = projectId !== undefined;
 
         const task = await prisma.task.findUnique({
             where: { id: id }
@@ -470,11 +510,25 @@ export const updateTask = async (req: Request, res: Response) => {
             }
         }
 
+        if (hasProjectUpdate) {
+            if (!projectId) {
+                return res.status(400).json({ error: 'Task project is required' });
+            }
+            const project = await prisma.project.findUnique({ where: { id: projectId } });
+            if (!project || project.organizationId !== task.organizationId) {
+                return res.status(400).json({ error: 'Selected project is invalid for this organization' });
+            }
+        }
+
         const nextAssigneeId = hasAssigneeUpdate ? normalizedAssigneeId : task.assigneeId;
         const nextSupporterId = hasSupporterUpdate ? normalizedSupporterId : task.supporterId;
+        const nextProjectId = hasProjectUpdate ? projectId : task.projectId;
 
         if (!nextAssigneeId) {
             return res.status(400).json({ error: 'Primary assignee is required' });
+        }
+        if (!nextProjectId) {
+            return res.status(400).json({ error: 'Task project is required' });
         }
 
         const { teamIds } = await resolveTaskTeamContext({
@@ -493,6 +547,7 @@ export const updateTask = async (req: Request, res: Response) => {
                     ...(hasAssigneeUpdate && { assigneeId: normalizedAssigneeId }),
                     ...(hasSupporterUpdate && { supporterId: normalizedSupporterId }),
                     ...(hasTagUpdate && { tagId }),
+                    ...(hasProjectUpdate && { projectId }),
                     ...(dueDate !== undefined && { dueDate: dueDate ? new Date(dueDate) : null }),
                     ...(priority && { priority })
                 }
@@ -512,6 +567,7 @@ export const updateTask = async (req: Request, res: Response) => {
                     supporter: { select: { id: true, email: true, name: true } },
                     organization: { select: { id: true, name: true } },
                     tag: true,
+                    project: { select: { id: true, name: true, client: { select: { id: true, name: true } } } },
                     taskTeams: { include: { team: { select: { id: true, name: true } } } }
                 }
             });
@@ -648,6 +704,18 @@ export const restoreTask = async (req: Request, res: Response) => {
                 attachments: true
                 ,
                 tag: true,
+                project: {
+                    select: {
+                        id: true,
+                        name: true,
+                        client: {
+                            select: {
+                                id: true,
+                                name: true
+                            }
+                        }
+                    }
+                },
                 taskTeams: {
                     include: {
                         team: {
@@ -730,7 +798,7 @@ export const addComment = async (req: Request, res: Response) => {
 export const getStats = async (req: Request, res: Response) => {
     try {
         const userId = (req as any).user.userId;
-        const { organizationId } = req.query;
+        const { organizationId, projectId, clientId } = req.query;
 
         let where: any = { deletedAt: null };
         let membership: { role: string; teamId: string | null } | null = null;
@@ -764,6 +832,16 @@ export const getStats = async (req: Request, res: Response) => {
             });
             where.organizationId = {
                 in: memberships.map(m => m.organizationId)
+            };
+        }
+
+        if (projectId) {
+            where.projectId = projectId;
+        }
+
+        if (clientId) {
+            where.project = {
+                clientId: clientId as string
             };
         }
 

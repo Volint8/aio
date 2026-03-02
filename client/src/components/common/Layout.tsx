@@ -66,6 +66,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     const dashboardSection = params.get('section') || 'tracker';
 
     const adminDashboardItems = useMemo(() => ([
+        { label: 'Projects', section: 'projects' },
         { label: 'OKRs', section: 'okrs' },
         { label: 'Tracker', section: 'tracker' },
         { label: 'Tags', section: 'tags' },
@@ -73,11 +74,13 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         { label: 'Appraisals', section: 'appraisals' }
     ]), []);
     const teamLeadDashboardItems = useMemo(() => ([
+        { label: 'Projects', section: 'projects' },
         { label: 'OKRs', section: 'okrs' },
         { label: 'Tracker', section: 'tracker' },
         { label: 'Team', section: 'team' }
     ]), []);
     const memberDashboardItems = useMemo(() => ([
+        { label: 'Projects', section: 'projects' },
         { label: 'OKRs', section: 'okrs' },
         { label: 'Tracker', section: 'tracker' }
     ]), []);
@@ -130,6 +133,14 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                         <path d="M12 8v4l3 2"></path>
                     </svg>
                 );
+            case 'projects':
+                return (
+                    <svg {...common}>
+                        <rect x="3" y="5" width="18" height="14" rx="2"></rect>
+                        <path d="M3 9h18"></path>
+                        <path d="M8 5V3h8v2"></path>
+                    </svg>
+                );
             case 'tags':
                 return (
                     <svg {...common}>
@@ -165,7 +176,9 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         <div className="app-container">
             <aside className="sidebar">
                 <div className="sidebar-header">
-                    <div className="sidebar-logo">Apraizal</div>
+                    <div className="sidebar-logo">
+                        <img src="/images/image.png" alt="Apraizal Logo" style={{ height: '32px' }} />
+                    </div>
                 </div>
 
                 <nav className="sidebar-nav">

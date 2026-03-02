@@ -6,9 +6,7 @@ const LandingPage = () => {
         <div className="landing-page" id="home">
             <header className="landing-header">
                 <div className="landing-brand">
-                    <span className="dot dot-light" aria-hidden="true"></span>
-                    <span className="dot dot-dark" aria-hidden="true"></span>
-                    <span className="brand-text">Apraizal</span>
+                    <img src="/images/image.png" alt="Apraizal Logo" style={{ height: '40px' }} />
                 </div>
 
                 <nav className="landing-nav" aria-label="Main">
@@ -37,7 +35,7 @@ const LandingPage = () => {
                 </section>
 
                 <section id="about" className="about">
-                    <h2>About Apraizal</h2>
+                    <h2>About <img src="/images/image.png" alt="Apraizal Logo" style={{ height: '24px', verticalAlign: 'middle', display: 'inline-block' }} /></h2>
                     <p>
                         Apraizal helps teams manage objectives, track task ownership, and keep appraisals organized in one workflow.
                         Admins, team leads, and members each get focused views so execution stays clear and measurable.

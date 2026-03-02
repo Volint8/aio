@@ -22,6 +22,17 @@ const requireAdmin = async (userId: string, organizationId: string) => {
   return !!membership && membership.role === 'ADMIN';
 };
 
+const getEditorMembership = async (userId: string, organizationId: string) => {
+  const membership = await getMembership(userId, organizationId);
+  if (!membership) {
+    return null;
+  }
+  if (!['TEAM_LEAD', 'MEMBER'].includes(membership.role)) {
+    return null;
+  }
+  return membership;
+};
+
 const buildTeamName = (name: string) => normalizeOrgName(name);
 
 const validateTeamParticipants = async (tx: any, organizationId: string, leadUserId: string, memberUserIds: string[]) => {
@@ -725,6 +736,375 @@ export const deleteTeam = async (req: Request, res: Response) => {
     return res.json({ message: 'Team deleted' });
   } catch (error) {
     console.error('Delete team error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+export const listClients = async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user.userId as string;
+    const organizationId = req.params.id as string;
+
+    const membership = await getMembership(userId, organizationId);
+    if (!membership) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const clients = await prisma.client.findMany({
+      where: { organizationId },
+      include: {
+        createdBy: {
+          select: { id: true, name: true, email: true }
+        },
+        _count: {
+          select: { projects: true }
+        }
+      },
+      orderBy: { name: 'asc' }
+    });
+
+    const data = await Promise.all(clients.map(async (client) => {
+      const taskCount = await prisma.task.count({
+        where: {
+          organizationId,
+          project: { clientId: client.id }
+        }
+      });
+      return {
+        id: client.id,
+        organizationId: client.organizationId,
+        name: client.name,
+        normalizedName: client.normalizedName,
+        createdAt: client.createdAt,
+        updatedAt: client.updatedAt,
+        createdByUserId: client.createdByUserId,
+        createdBy: client.createdBy,
+        projectCount: client._count.projects,
+        taskCount
+      };
+    }));
+
+    return res.json(data);
+  } catch (error) {
+    console.error('List clients error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+export const createClient = async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user.userId as string;
+    const organizationId = req.params.id as string;
+    const { name } = req.body as { name?: string };
+
+    if (!name?.trim()) {
+      return res.status(400).json({ error: 'Client name is required' });
+    }
+
+    const editorMembership = await getEditorMembership(userId, organizationId);
+    if (!editorMembership) {
+      return res.status(403).json({ error: 'Only team leads or members can create clients' });
+    }
+
+    const client = await prisma.client.create({
+      data: {
+        organizationId,
+        name: name.trim(),
+        normalizedName: normalizeOrgName(name),
+        createdByUserId: userId
+      },
+      include: {
+        createdBy: {
+          select: { id: true, name: true, email: true }
+        }
+      }
+    });
+
+    return res.status(201).json({
+      ...client,
+      projectCount: 0,
+      taskCount: 0
+    });
+  } catch (error: any) {
+    if (error?.code === 'P2002') {
+      return res.status(400).json({ error: 'Client already exists in this organization' });
+    }
+    console.error('Create client error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+export const updateClient = async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user.userId as string;
+    const organizationId = req.params.id as string;
+    const clientId = req.params.clientId as string;
+    const { name } = req.body as { name?: string };
+
+    if (!name?.trim()) {
+      return res.status(400).json({ error: 'Client name is required' });
+    }
+
+    const editorMembership = await getEditorMembership(userId, organizationId);
+    if (!editorMembership) {
+      return res.status(403).json({ error: 'Only team leads or members can update clients' });
+    }
+
+    const existing = await prisma.client.findUnique({ where: { id: clientId } });
+    if (!existing || existing.organizationId !== organizationId) {
+      return res.status(404).json({ error: 'Client not found' });
+    }
+    if (existing.createdByUserId !== userId) {
+      return res.status(403).json({ error: 'You can only update clients you created' });
+    }
+
+    const updated = await prisma.client.update({
+      where: { id: clientId },
+      data: {
+        name: name.trim(),
+        normalizedName: normalizeOrgName(name)
+      },
+      include: {
+        createdBy: {
+          select: { id: true, name: true, email: true }
+        },
+        _count: {
+          select: { projects: true }
+        }
+      }
+    });
+
+    const taskCount = await prisma.task.count({
+      where: {
+        organizationId,
+        project: { clientId }
+      }
+    });
+
+    return res.json({
+      ...updated,
+      projectCount: updated._count.projects,
+      taskCount
+    });
+  } catch (error: any) {
+    if (error?.code === 'P2002') {
+      return res.status(400).json({ error: 'Client already exists in this organization' });
+    }
+    console.error('Update client error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+export const deleteClient = async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user.userId as string;
+    const organizationId = req.params.id as string;
+    const clientId = req.params.clientId as string;
+
+    const editorMembership = await getEditorMembership(userId, organizationId);
+    if (!editorMembership) {
+      return res.status(403).json({ error: 'Only team leads or members can delete clients' });
+    }
+
+    const existing = await prisma.client.findUnique({ where: { id: clientId } });
+    if (!existing || existing.organizationId !== organizationId) {
+      return res.status(404).json({ error: 'Client not found' });
+    }
+    if (existing.createdByUserId !== userId) {
+      return res.status(403).json({ error: 'You can only delete clients you created' });
+    }
+
+    const projectsCount = await prisma.project.count({
+      where: { clientId }
+    });
+    if (projectsCount > 0) {
+      return res.status(400).json({ error: 'Cannot delete a client that has projects' });
+    }
+
+    await prisma.client.delete({
+      where: { id: clientId }
+    });
+
+    return res.json({ message: 'Client deleted' });
+  } catch (error) {
+    console.error('Delete client error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+export const listProjects = async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user.userId as string;
+    const organizationId = req.params.id as string;
+    const clientId = req.query.clientId as string | undefined;
+
+    const membership = await getMembership(userId, organizationId);
+    if (!membership) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const projects = await prisma.project.findMany({
+      where: {
+        organizationId,
+        ...(clientId ? { clientId } : {})
+      },
+      include: {
+        client: {
+          select: { id: true, name: true }
+        },
+        createdBy: {
+          select: { id: true, name: true, email: true }
+        },
+        _count: {
+          select: { tasks: true }
+        }
+      },
+      orderBy: { name: 'asc' }
+    });
+
+    return res.json(projects.map((project) => ({
+      ...project,
+      taskCount: project._count.tasks
+    })));
+  } catch (error) {
+    console.error('List projects error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+export const createProject = async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user.userId as string;
+    const organizationId = req.params.id as string;
+    const { clientId, name } = req.body as { clientId?: string; name?: string };
+
+    if (!name?.trim() || !clientId) {
+      return res.status(400).json({ error: 'Project name and clientId are required' });
+    }
+
+    const editorMembership = await getEditorMembership(userId, organizationId);
+    if (!editorMembership) {
+      return res.status(403).json({ error: 'Only team leads or members can create projects' });
+    }
+
+    const client = await prisma.client.findUnique({ where: { id: clientId } });
+    if (!client || client.organizationId !== organizationId) {
+      return res.status(400).json({ error: 'Selected client is invalid for this organization' });
+    }
+
+    const project = await prisma.project.create({
+      data: {
+        organizationId,
+        clientId,
+        name: name.trim(),
+        normalizedName: normalizeOrgName(name),
+        createdByUserId: userId
+      },
+      include: {
+        client: { select: { id: true, name: true } },
+        createdBy: { select: { id: true, name: true, email: true } }
+      }
+    });
+
+    return res.status(201).json({
+      ...project,
+      taskCount: 0
+    });
+  } catch (error: any) {
+    if (error?.code === 'P2002') {
+      return res.status(400).json({ error: 'Project already exists for this client' });
+    }
+    console.error('Create project error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+export const updateProject = async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user.userId as string;
+    const organizationId = req.params.id as string;
+    const projectId = req.params.projectId as string;
+    const { name, clientId } = req.body as { name?: string; clientId?: string };
+
+    const editorMembership = await getEditorMembership(userId, organizationId);
+    if (!editorMembership) {
+      return res.status(403).json({ error: 'Only team leads or members can update projects' });
+    }
+
+    const existing = await prisma.project.findUnique({ where: { id: projectId } });
+    if (!existing || existing.organizationId !== organizationId) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+    if (existing.createdByUserId !== userId) {
+      return res.status(403).json({ error: 'You can only update projects you created' });
+    }
+
+    if (clientId) {
+      const client = await prisma.client.findUnique({ where: { id: clientId } });
+      if (!client || client.organizationId !== organizationId) {
+        return res.status(400).json({ error: 'Selected client is invalid for this organization' });
+      }
+    }
+
+    const updated = await prisma.project.update({
+      where: { id: projectId },
+      data: {
+        ...(name?.trim() ? { name: name.trim(), normalizedName: normalizeOrgName(name) } : {}),
+        ...(clientId ? { clientId } : {})
+      },
+      include: {
+        client: { select: { id: true, name: true } },
+        createdBy: { select: { id: true, name: true, email: true } },
+        _count: { select: { tasks: true } }
+      }
+    });
+
+    return res.json({
+      ...updated,
+      taskCount: updated._count.tasks
+    });
+  } catch (error: any) {
+    if (error?.code === 'P2002') {
+      return res.status(400).json({ error: 'Project already exists for this client' });
+    }
+    console.error('Update project error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+export const deleteProject = async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user.userId as string;
+    const organizationId = req.params.id as string;
+    const projectId = req.params.projectId as string;
+
+    const editorMembership = await getEditorMembership(userId, organizationId);
+    if (!editorMembership) {
+      return res.status(403).json({ error: 'Only team leads or members can delete projects' });
+    }
+
+    const existing = await prisma.project.findUnique({ where: { id: projectId } });
+    if (!existing || existing.organizationId !== organizationId) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+    if (existing.createdByUserId !== userId) {
+      return res.status(403).json({ error: 'You can only delete projects you created' });
+    }
+
+    const taskCount = await prisma.task.count({
+      where: { projectId }
+    });
+    if (taskCount > 0) {
+      return res.status(400).json({ error: 'Cannot delete a project that has tasks' });
+    }
+
+    await prisma.project.delete({
+      where: { id: projectId }
+    });
+
+    return res.json({ message: 'Project deleted' });
+  } catch (error) {
+    console.error('Delete project error:', error);
     return res.status(500).json({ error: 'Internal server error' });
   }
 };

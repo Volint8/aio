@@ -30,6 +30,9 @@ export const sendOtpEmail = async (to: string, otp: string) => {
     const subject = "Your Verification Code - Apraizal Platform";
     const html = `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 10px;">
+            <div style="text-align: center; margin-bottom: 20px;">
+                <img src="${(process.env.CLIENT_URL || 'http://localhost:5173').split(',')[0]}/images/image.png" alt="Apraizal Logo" style="height: 40px;" />
+            </div>
             <h2 style="color: #333; text-align: center;">Verify Your Email</h2>
             <p style="color: #666; font-size: 16px;">Hello,</p>
             <p style="color: #666; font-size: 16px;">Thank you for signing up with Apraizal Platform. Please use the following One-Time Password (OTP) to verify your email address:</p>
@@ -73,6 +76,9 @@ export const sendTaskAssignmentEmail = async (params: {
 
     const html = `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 10px;">
+            <div style="text-align: center; margin-bottom: 20px;">
+                <img src="${(process.env.CLIENT_URL || 'http://localhost:5173').split(',')[0]}/images/image.png" alt="Apraizal Logo" style="height: 40px;" />
+            </div>
             <h2 style="color: #333; text-align: center;">You Have a New Task</h2>
             <p style="color: #666; font-size: 16px;">Hi ${displayName},</p>
             <p style="color: #666; font-size: 16px;">
@@ -105,6 +111,9 @@ export const sendInviteEmail = async (params: {
 
     const html = `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 10px;">
+            <div style="text-align: center; margin-bottom: 20px;">
+                <img src="${(process.env.CLIENT_URL || 'http://localhost:5173').split(',')[0]}/images/image.png" alt="Apraizal Logo" style="height: 40px;" />
+            </div>
             <h2 style="color: #333; text-align: center;">You're Invited</h2>
             <p style="color: #666; font-size: 16px;">
                 ${inviter} invited you to join <strong>${organizationName}</strong> as <strong>${role}</strong>.

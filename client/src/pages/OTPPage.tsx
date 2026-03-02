@@ -44,9 +44,7 @@ const OTPPage = () => {
             <div className="login-card">
                 <div className="login-header">
                     <div className="brand-row">
-                        <span className="brand-dot brand-dot-light" aria-hidden="true"></span>
-                        <span className="brand-dot brand-dot-dark" aria-hidden="true"></span>
-                        <h1>Apraizal</h1>
+                        <img src="/images/image.png" alt="Apraizal Logo" style={{ height: '48px', marginBottom: '8px' }} />
                     </div>
                     <p className="tagline">Organize <span aria-hidden="true">•</span> Track <span aria-hidden="true">•</span> Appraise</p>
                 </div>
