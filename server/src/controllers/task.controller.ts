@@ -80,9 +80,6 @@ const resolveTaskTeamContext = async (params: {
     if (assigneeMembership.role === 'ADMIN') {
         throw new Error('Admin users cannot be assigned as primary assignee');
     }
-    if (!assigneeMembership.teamId) {
-        throw new Error('Primary assignee must belong to a team');
-    }
 
     let supporterMembership: any = null;
     if (supporterId) {
@@ -107,8 +104,11 @@ const resolveTaskTeamContext = async (params: {
         }
     }
 
-    const teamIds = [assigneeMembership.teamId];
-    if (supporterMembership?.teamId && supporterMembership.teamId !== assigneeMembership.teamId) {
+    const teamIds: string[] = [];
+    if (assigneeMembership.teamId) {
+        teamIds.push(assigneeMembership.teamId);
+    }
+    if (supporterMembership?.teamId) {
         teamIds.push(supporterMembership.teamId);
     }
 
@@ -336,9 +336,10 @@ export const createTask = async (req: Request, res: Response) => {
         });
 
         res.status(201).json(task);
-    } catch (error) {
+    } catch (error: any) {
         console.error('Create task error:', error);
-        res.status(500).json({ error: 'Internal server error' });
+        const message = error instanceof Error ? error.message : 'Internal server error';
+        res.status(message === 'Internal server error' ? 500 : 400).json({ error: message });
     }
 };
 
@@ -528,9 +529,10 @@ export const updateTask = async (req: Request, res: Response) => {
         }
 
         res.json(updatedTask);
-    } catch (error) {
+    } catch (error: any) {
         console.error('Update task error:', error);
-        res.status(500).json({ error: 'Internal server error' });
+        const message = error instanceof Error ? error.message : 'Internal server error';
+        res.status(message === 'Internal server error' ? 500 : 400).json({ error: message });
     }
 };
 

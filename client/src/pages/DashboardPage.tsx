@@ -178,7 +178,6 @@ const DashboardPage = () => {
     const [submittingCommentTaskId, setSubmittingCommentTaskId] = useState<string | null>(null);
 
     const [showCreateTaskModal, setShowCreateTaskModal] = useState(false);
-    const [showCreateTagModal, setShowCreateTagModal] = useState(false);
     const [showCreateOkrModal, setShowCreateOkrModal] = useState(false);
     const [showCreateAppraisalModal, setShowCreateAppraisalModal] = useState(false);
     const [showAddLinkModal, setShowAddLinkModal] = useState(false);
@@ -207,7 +206,6 @@ const DashboardPage = () => {
         tagId: ''
     });
 
-    const [newTag, setNewTag] = useState({ name: '', color: '#2563eb' });
     const [newOkr, setNewOkr] = useState({
         title: '',
         description: '',
@@ -249,6 +247,18 @@ const DashboardPage = () => {
         if (requestedSection === 'appraisals' && isAdmin) return 'appraisals';
         return 'tracker';
     }, [requestedSection, canTrackTeam, isAdmin, isTeamLead, isMember]);
+
+    const tagSourceMap = useMemo(() => {
+        const map: Record<string, { okrTitle: string; krTitle: string }> = {};
+        okrs.forEach(okr => {
+            okr.keyResults?.forEach(kr => {
+                if (kr.tag) {
+                    map[kr.tag.id] = { okrTitle: okr.title, krTitle: kr.title };
+                }
+            });
+        });
+        return map;
+    }, [okrs]);
 
     const userChartData = memberStats.map((item) => ({
         id: item.userId,
@@ -471,18 +481,6 @@ const DashboardPage = () => {
         }
     };
 
-    const handleCreateTag = async (e: React.FormEvent) => {
-        e.preventDefault();
-        try {
-            await api.post(`/orgs/${orgId}/tags`, newTag);
-            setNewTag({ name: '', color: '#2563eb' });
-            setShowCreateTagModal(false);
-            await fetchData();
-        } catch (error: any) {
-            const errorData = error.response?.data?.error;
-            alert((typeof errorData === 'object' ? errorData.message : errorData) || 'Failed to create tag');
-        }
-    };
 
     const handleCreateOkr = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -694,7 +692,7 @@ const DashboardPage = () => {
                     )}
                     {currentSection === 'tags' && isAdmin && (
                         <div className="header-actions">
-                            <button onClick={() => setShowCreateTagModal(true)} className="btn-primary">+ New Tag</button>
+                            <button onClick={() => setShowCreateOkrModal(true)} className="btn-primary">+ New OKR</button>
                         </div>
                     )}
                     {currentSection === 'okrs' && isAdmin && (
@@ -817,7 +815,9 @@ const DashboardPage = () => {
                                 <div key={tag.id} className="task-card" style={{ padding: '16px' }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                         <span style={{ width: 12, height: 12, borderRadius: 999, background: tag.color, display: 'inline-block' }}></span>
-                                        <strong>{tag.name}</strong>
+                                        <strong title={tagSourceMap[tag.id] ? `Objective: ${tagSourceMap[tag.id].okrTitle} | KR: ${tagSourceMap[tag.id].krTitle}` : ''}>
+                                            {tag.name}
+                                        </strong>
                                     </div>
                                 </div>
                             ))}
@@ -844,7 +844,7 @@ const DashboardPage = () => {
                                         <ul style={{ margin: '8px 0 0 16px', padding: 0 }}>
                                             {(okr.keyResults || []).map((kr) => (
                                                 <li key={kr.id} style={{ marginBottom: 6 }}>
-                                                    {kr.title} <span className="priority-badge low" style={{ borderColor: kr.tag.color, color: kr.tag.color }}>{kr.tag.name}</span>
+                                                    {kr.title} <span className="priority-badge low" style={{ borderColor: kr.tag.color, color: kr.tag.color }} title={`Objective: ${okr.title} | KR: ${kr.title}`}>{kr.tag.name}</span>
                                                 </li>
                                             ))}
                                         </ul>
@@ -961,7 +961,9 @@ const DashboardPage = () => {
                                 <div className="stat-card" onClick={() => setFilter('all')}><h3>Total Workload</h3><p className="stat-value">{stats.total}</p></div>
                                 <div className="stat-card" onClick={() => setFilter('in_progress')}><h3>Active Sprints</h3><p className="stat-value">{stats.inProgress}</p></div>
                                 <div className="stat-card" onClick={() => setFilter('completed')}><h3>Completed Work</h3><p className="stat-value">{stats.completed}</p></div>
-                                <div className="stat-card" onClick={() => setFilter('my')}><h3>Your Focus</h3><p className="stat-value">{stats.myTasks}</p></div>
+                                {!isAdmin && (
+                                    <div className="stat-card" onClick={() => setFilter('my')}><h3>Your Focus</h3><p className="stat-value">{stats.myTasks}</p></div>
+                                )}
                             </div>
                         )}
 
@@ -973,7 +975,9 @@ const DashboardPage = () => {
                                 )}
                                 <div className="filter-group">
                                     <button type="button" className={`btn-filter ${filter === 'all' ? 'active' : ''}`} onClick={() => setFilter('all')}>All</button>
-                                    <button type="button" className={`btn-filter ${filter === 'my' ? 'active' : ''}`} onClick={() => setFilter('my')}>My Tasks</button>
+                                    {!isAdmin && (
+                                        <button type="button" className={`btn-filter ${filter === 'my' ? 'active' : ''}`} onClick={() => setFilter('my')}>My Tasks</button>
+                                    )}
                                     <button type="button" className={`btn-filter ${filter === 'created' ? 'active' : ''}`} onClick={() => setFilter('created')}>Created</button>
                                     <button type="button" className={`btn-filter ${filter === 'in_progress' ? 'active' : ''}`} onClick={() => setFilter('in_progress')}>In Progress</button>
                                     <button type="button" className={`btn-filter ${filter === 'completed' ? 'active' : ''}`} onClick={() => setFilter('completed')}>Completed</button>
@@ -992,7 +996,15 @@ const DashboardPage = () => {
                                                 <div className="task-badges">
                                                     <span className={`priority-badge ${task.priority.toLowerCase()}`}>{task.priority}</span>
                                                     <span className={`status-badge ${task.status.toLowerCase()}`}>{task.status.replace('_', ' ')}</span>
-                                                    {task.tag && <span className="priority-badge low" style={{ borderColor: task.tag.color, color: task.tag.color }}>{task.tag.name}</span>}
+                                                    {task.tag && (
+                                                        <span
+                                                            className="priority-badge low"
+                                                            style={{ borderColor: task.tag.color, color: task.tag.color }}
+                                                            title={tagSourceMap[task.tag.id] ? `Objective: ${tagSourceMap[task.tag.id].okrTitle} | KR: ${tagSourceMap[task.tag.id].krTitle}` : ''}
+                                                        >
+                                                            {task.tag.name}
+                                                        </span>
+                                                    )}
                                                 </div>
                                             </div>
                                             <div className="task-meta">
@@ -1022,7 +1034,15 @@ const DashboardPage = () => {
                                                 <div className="task-badges">
                                                     <span className={`priority-badge ${selectedTask.priority.toLowerCase()}`}>{selectedTask.priority}</span>
                                                     <span className={`status-badge ${selectedTask.status.toLowerCase()}`}>{selectedTask.status.replace('_', ' ')}</span>
-                                                    {selectedTask.tag && <span className="priority-badge low" style={{ borderColor: selectedTask.tag.color, color: selectedTask.tag.color }}>{selectedTask.tag.name}</span>}
+                                                    {selectedTask.tag && (
+                                                        <span
+                                                            className="priority-badge low"
+                                                            style={{ borderColor: selectedTask.tag.color, color: selectedTask.tag.color }}
+                                                            title={tagSourceMap[selectedTask.tag.id] ? `Objective: ${tagSourceMap[selectedTask.tag.id].okrTitle} | KR: ${tagSourceMap[selectedTask.tag.id].krTitle}` : ''}
+                                                        >
+                                                            {selectedTask.tag.name}
+                                                        </span>
+                                                    )}
                                                 </div>
                                             </div>
                                             <div className="task-meta">
@@ -1191,7 +1211,7 @@ const DashboardPage = () => {
                                 {selectedCreateTaskTag && (
                                     <div className="selected-tag-preview">
                                         <span className="color-preview-chip" style={{ background: selectedCreateTaskTag.color }} aria-hidden="true"></span>
-                                        <span>Selected tag: <strong>{selectedCreateTaskTag.name}</strong></span>
+                                        <span>Selected tag: <strong title={tagSourceMap[selectedCreateTaskTag.id] ? `Objective: ${tagSourceMap[selectedCreateTaskTag.id].okrTitle} | KR: ${tagSourceMap[selectedCreateTaskTag.id].krTitle}` : ''}>{selectedCreateTaskTag.name}</strong></span>
                                     </div>
                                 )}
                             </div>
@@ -1264,7 +1284,7 @@ const DashboardPage = () => {
                                 {selectedEditTaskTag && (
                                     <div className="selected-tag-preview">
                                         <span className="color-preview-chip" style={{ background: selectedEditTaskTag.color }} aria-hidden="true"></span>
-                                        <span>Selected tag: <strong>{selectedEditTaskTag.name}</strong></span>
+                                        <span>Selected tag: <strong title={tagSourceMap[selectedEditTaskTag.id] ? `Objective: ${tagSourceMap[selectedEditTaskTag.id].okrTitle} | KR: ${tagSourceMap[selectedEditTaskTag.id].krTitle}` : ''}>{selectedEditTaskTag.name}</strong></span>
                                     </div>
                                 )}
                             </div>
@@ -1435,38 +1455,6 @@ const DashboardPage = () => {
                 </div>
             )}
 
-            {showCreateTagModal && (
-                <div className="modal-overlay" onClick={() => setShowCreateTagModal(false)}>
-                    <div className="modal" onClick={(e) => e.stopPropagation()}>
-                        <h2>Create Tag</h2>
-                        <form onSubmit={handleCreateTag}>
-                            <div className="form-group">
-                                <label>Name</label>
-                                <input type="text" value={newTag.name} onChange={(e) => setNewTag({ ...newTag, name: e.target.value })} required autoFocus />
-                            </div>
-                            <div className="form-group">
-                                <label>Color</label>
-                                <div className="color-picker-row">
-                                    <input
-                                        className="color-picker-input"
-                                        type="color"
-                                        value={newTag.color}
-                                        onChange={(e) => setNewTag({ ...newTag, color: e.target.value })}
-                                        required
-                                        aria-label="Pick tag color"
-                                    />
-                                    <span className="color-value">{newTag.color.toUpperCase()}</span>
-                                    <span className="color-preview-chip" style={{ background: newTag.color }} aria-hidden="true"></span>
-                                </div>
-                            </div>
-                            <div className="modal-actions">
-                                <button type="button" onClick={() => setShowCreateTagModal(false)} className="btn-secondary">Cancel</button>
-                                <button type="submit" className="btn-primary">Create Tag</button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            )}
 
             {showCreateOkrModal && (
                 <div className="modal-overlay" onClick={() => setShowCreateOkrModal(false)}>
