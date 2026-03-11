@@ -20,6 +20,34 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     const [currentOrgRole, setCurrentOrgRole] = useState(localStorage.getItem('selectedOrgRole') || '');
     const [organizations, setOrganizations] = useState<OrgSummary[]>([]);
     const [showOrgMenu, setShowOrgMenu] = useState(false);
+    const [notifications, setNotifications] = useState<any[]>([]);
+    const [showNotifications, setShowNotifications] = useState(false);
+
+    const fetchNotifications = () => {
+        const orgId = localStorage.getItem('selectedOrgId');
+        if (!orgId) return;
+
+        api.get('/notifications', { params: { organizationId: orgId } })
+            .then(res => setNotifications(res.data))
+            .catch(() => {});
+    };
+
+    useEffect(() => {
+        fetchNotifications();
+        const interval = setInterval(fetchNotifications, 60000);
+        return () => clearInterval(interval);
+    }, [location.pathname]);
+
+    const unreadCount = notifications.filter(n => !n.isRead).length;
+
+    const handleMarkAsRead = async (id: string) => {
+        try {
+            await api.patch(`/notifications/${id}/read`);
+            setNotifications(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n));
+        } catch (error) {
+            console.error('Failed to mark as read:', error);
+        }
+    };
 
     useEffect(() => {
         const orgId = localStorage.getItem('selectedOrgId');
@@ -265,6 +293,40 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                         {location.pathname === '/dashboard' ? 'Operations Board' : 'Select Organization'}
                     </h2>
                     <div className="top-bar-actions">
+                        <div className="notification-bell-container">
+                            <button 
+                                className={`notification-bell ${unreadCount > 0 ? 'has-unread' : ''}`}
+                                onClick={() => setShowNotifications(!showNotifications)}
+                            >
+                                🔔
+                                {unreadCount > 0 && <span className="unread-badge">{unreadCount}</span>}
+                            </button>
+
+                            {showNotifications && (
+                                <div className="notifications-menu">
+                                    <div className="notifications-header">Notifications</div>
+                                    <div className="notifications-list">
+                                        {notifications.length === 0 ? (
+                                            <div className="notification-empty">No notifications</div>
+                                        ) : (
+                                            notifications.map(n => (
+                                                <div 
+                                                    key={n.id} 
+                                                    className={`notification-item ${n.isRead ? 'read' : 'unread'}`}
+                                                    onClick={() => !n.isRead && handleMarkAsRead(n.id)}
+                                                >
+                                                    <div className="notification-sender">From: {n.sender.name || n.sender.email}</div>
+                                                    <div className="notification-type">{n.type.replace('_', ' ')}</div>
+                                                    <div className="notification-message">{n.message}</div>
+                                                    <div className="notification-time">{new Date(n.createdAt).toLocaleString()}</div>
+                                                </div>
+                                            ))
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
                         <div className="org-switcher">
                             <button
                                 type="button"

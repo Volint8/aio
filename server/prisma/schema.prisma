@@ -8,30 +8,33 @@ datasource db {
 }
 
 model User {
-  id            String               @id @default(uuid())
-  email         String               @unique
-  passwordHash  String
-  name          String?
-  role          String               @default("USER") // USER, ADMIN
-  isVerified    Boolean              @default(false)
-  otp           String?
-  otpExpiresAt  DateTime?
-  pendingInviteId String?
-  createdAt     DateTime             @default(now())
-  updatedAt     DateTime             @updatedAt
-  organizations OrganizationMember[]
-  tasks         Task[]               @relation("AssignedTasks")
-  supportedTasks Task[]              @relation("SupportedTasks")
-  deletedTasks  Task[]               @relation("DeletedTasks")
-  leadingTeams  Team[]               @relation("TeamLead")
-  comments      Comment[]
-  invitedMemberships Invite[]        @relation("Inviter")
-  acceptedInvites Invite[]           @relation("InviteAccepter")
-  createdOkrs Okr[]                  @relation("OKRCreator")
-  createdAppraisals Appraisal[]      @relation("AppraisalCreator")
-  subjectAppraisals Appraisal[]      @relation("AppraisalSubject")
-  createdClients Client[]            @relation("ClientCreator")
-  createdProjects Project[]          @relation("ProjectCreator")
+  id                 String               @id @default(uuid())
+  email              String               @unique
+  passwordHash       String
+  name               String?
+  role               String               @default("USER") // USER, ADMIN
+  isVerified         Boolean              @default(false)
+  otp                String?
+  otpExpiresAt       DateTime?
+  pendingInviteId    String?
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+  organizations      OrganizationMember[]
+  tasks              Task[]               @relation("AssignedTasks")
+  supportedTasks     Task[]               @relation("SupportedTasks")
+  deletedTasks       Task[]               @relation("DeletedTasks")
+  leadingTeams       Team[]               @relation("TeamLead")
+  comments           Comment[]
+  invitedMemberships Invite[]             @relation("Inviter")
+  acceptedInvites    Invite[]             @relation("InviteAccepter")
+  createdOkrs        Okr[]                @relation("OKRCreator")
+  createdAppraisals  Appraisal[]          @relation("AppraisalCreator")
+  subjectAppraisals  Appraisal[]          @relation("AppraisalSubject")
+  createdClients     Client[]             @relation("ClientCreator")
+  createdProjects    Project[]            @relation("ProjectCreator")
+  workSubmissions    WorkSubmission[]
+  notificationsSent  Notification[]       @relation("NotificationSender")
+  activityLogs       ActivityLog[]
 }
 
 model Organization {
@@ -51,6 +54,7 @@ model Organization {
   appraisals     Appraisal[]
   clients        Client[]
   projects       Project[]
+  notifications  Notification[]
 }
 
 model OrganizationMember {
@@ -67,11 +71,11 @@ model OrganizationMember {
 }
 
 model Task {
-  id             String       @id @default(uuid())
+  id             String           @id @default(uuid())
   title          String
   description    String?
-  status         String       @default("CREATED") // CREATED, IN_PROGRESS, COMPLETED
-  priority       String       @default("LOW") // LOW, MEDIUM, HIGH
+  status         String           @default("CREATED") // CREATED, IN_PROGRESS, COMPLETED
+  priority       String           @default("LOW") // LOW, MEDIUM, HIGH
   dueDate        DateTime?
   organizationId String
   assigneeId     String?
@@ -80,16 +84,18 @@ model Task {
   projectId      String
   deletedAt      DateTime?
   deletedById    String?
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
-  organization   Organization @relation(fields: [organizationId], references: [id])
-  assignee       User?        @relation("AssignedTasks", fields: [assigneeId], references: [id])
-  supporter      User?        @relation("SupportedTasks", fields: [supporterId], references: [id])
-  deletedBy      User?        @relation("DeletedTasks", fields: [deletedById], references: [id])
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  organization   Organization     @relation(fields: [organizationId], references: [id])
+  assignee       User?            @relation("AssignedTasks", fields: [assigneeId], references: [id])
+  supporter      User?            @relation("SupportedTasks", fields: [supporterId], references: [id])
+  deletedBy      User?            @relation("DeletedTasks", fields: [deletedById], references: [id])
   comments       Comment[]
   attachments    Attachment[]
-  tag            Tag?         @relation(fields: [tagId], references: [id])
-  project        Project      @relation(fields: [projectId], references: [id])
+  submissions    WorkSubmission[]
+  activityLogs   ActivityLog[]
+  tag            Tag?             @relation(fields: [tagId], references: [id])
+  project        Project          @relation(fields: [projectId], references: [id])
   taskTeams      TaskTeam[]
 
   @@index([organizationId, deletedAt])
@@ -108,6 +114,37 @@ model Comment {
   user      User     @relation(fields: [userId], references: [id])
 }
 
+model WorkSubmission {
+  id          String    @id @default(uuid())
+  taskId      String
+  userId      String
+  description String?
+  submittedAt DateTime  @default(now())
+  status      String    @default("PENDING") // PENDING, REVIEWED, APPROVED, REJECTED
+  reviewNotes String?
+  reviewedAt  DateTime?
+  reviewedBy  String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  task        Task      @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model ActivityLog {
+  id          String   @id @default(uuid())
+  taskId      String
+  userId      String?
+  action      String // COMMENT_ADDED, COMMENT_DELETED, STATUS_CHANGED, ASSIGNEE_CHANGED, SUPPORTER_CHANGED, SUBMISSION_CREATED, SUBMISSION_REVIEWED, ATTACHMENT_ADDED, ATTACHMENT_DELETED, TASK_UPDATED
+  description String
+  metadata    Json? // Store additional context like old/new values
+  createdAt   DateTime @default(now())
+  task        Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([taskId])
+  @@index([createdAt])
+}
+
 model Attachment {
   id        String   @id @default(uuid())
   type      String   @default("FILE") // FILE, LINK
@@ -121,33 +158,33 @@ model Attachment {
 }
 
 model Invite {
-  id              String       @id @default(uuid())
-  organizationId  String
-  email           String
-  role            String       // TEAM_LEAD, MEMBER
-  tokenHash       String
-  status          String       @default("PENDING") // PENDING, ACCEPTED, EXPIRED, REVOKED
-  expiresAt       DateTime
-  invitedByUserId String
+  id               String       @id @default(uuid())
+  organizationId   String
+  email            String
+  role             String // TEAM_LEAD, MEMBER
+  tokenHash        String
+  status           String       @default("PENDING") // PENDING, ACCEPTED, EXPIRED, REVOKED
+  expiresAt        DateTime
+  invitedByUserId  String
   acceptedByUserId String?
-  createdAt       DateTime     @default(now())
-  updatedAt       DateTime     @updatedAt
-  organization    Organization @relation(fields: [organizationId], references: [id])
-  invitedBy       User         @relation("Inviter", fields: [invitedByUserId], references: [id])
-  acceptedBy      User?        @relation("InviteAccepter", fields: [acceptedByUserId], references: [id])
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+  organization     Organization @relation(fields: [organizationId], references: [id])
+  invitedBy        User         @relation("Inviter", fields: [invitedByUserId], references: [id])
+  acceptedBy       User?        @relation("InviteAccepter", fields: [acceptedByUserId], references: [id])
 
   @@index([organizationId, email, status])
 }
 
 model Tag {
-  id             String       @id @default(uuid())
+  id             String         @id @default(uuid())
   organizationId String
   name           String
   normalizedName String
-  color          String       @default("#2563eb")
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
-  organization   Organization @relation(fields: [organizationId], references: [id])
+  color          String         @default("#2563eb")
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  organization   Organization   @relation(fields: [organizationId], references: [id])
   tasks          Task[]
   keyResults     OkrKeyResult[]
 
@@ -155,17 +192,17 @@ model Tag {
 }
 
 model Okr {
-  id             String       @id @default(uuid())
+  id             String          @id @default(uuid())
   organizationId String
   title          String
   description    String?
   periodStart    DateTime
   periodEnd      DateTime
   createdBy      String
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
-  organization   Organization @relation(fields: [organizationId], references: [id])
-  creator        User         @relation("OKRCreator", fields: [createdBy], references: [id])
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  organization   Organization    @relation(fields: [organizationId], references: [id])
+  creator        User            @relation("OKRCreator", fields: [createdBy], references: [id])
   assignments    OkrAssignment[]
   keyResults     OkrKeyResult[]
 }
@@ -173,7 +210,7 @@ model Okr {
 model OkrAssignment {
   id         String   @id @default(uuid())
   okrId      String
-  targetType String   // TEAM, MEMBER
+  targetType String // TEAM, MEMBER
   targetId   String
   createdAt  DateTime @default(now())
   okr        Okr      @relation(fields: [okrId], references: [id], onDelete: Cascade)
@@ -199,6 +236,10 @@ model Appraisal {
   createdByUserId String
   cycle           String
   summary         String
+  tasksCompleted  Float?       // Percentage
+  deadlinesMet    Float?       // Percentage
+  okrContribution String?      // HIGH, MEDIUM, LOW
+  overallRating   String?      // EXCELLENT, GOOD, AVERAGE, POOR
   status          String       @default("GENERATED") // GENERATED, PUBLISHED
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
@@ -229,7 +270,7 @@ model Client {
   name            String
   normalizedName  String
   createdByUserId String
-  visibility      String       @default("ORG_WIDE")  // ORG_WIDE, CREATOR_ONLY
+  visibility      String       @default("ORG_WIDE") // ORG_WIDE, CREATOR_ONLY
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
   organization    Organization @relation(fields: [organizationId], references: [id])
@@ -246,7 +287,7 @@ model Project {
   name            String
   normalizedName  String
   createdByUserId String
-  visibility      String       @default("ORG_WIDE")  // ORG_WIDE, CREATOR_ONLY
+  visibility      String       @default("ORG_WIDE") // ORG_WIDE, CREATOR_ONLY
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
   organization    Organization @relation(fields: [organizationId], references: [id])
@@ -268,4 +309,20 @@ model TaskTeam {
 
   @@unique([taskId, teamId])
   @@index([teamId])
+}
+
+model Notification {
+  id             String       @id @default(uuid())
+  organizationId String
+  senderId       String
+  targetType     String       // INDIVIDUAL, TEAM, PROJECT
+  targetId       String
+  type           String       // DEADLINE_REMINDER, PRIORITY_ALERT, FEEDBACK
+  message        String
+  isRead         Boolean      @default(false)
+  createdAt      DateTime     @default(now())
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  sender         User         @relation("NotificationSender", fields: [senderId], references: [id])
+
+  @@index([organizationId, targetId, targetType])
 }

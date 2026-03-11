@@ -59,9 +59,10 @@ interface Task {
 }
 
 interface Stats {
-    created: number;
-    inProgress: number;
+    pending: number;
+    ongoing: number;
     completed: number;
+    overdue: number;
     myTasks: number;
     total: number;
 }
@@ -189,10 +190,13 @@ interface MemberStatRecord {
     userId: string;
     name: string;
     stats: {
-        created: number;
-        inProgress: number;
+        pending: number;
+        ongoing: number;
         completed: number;
+        overdue: number;
         total: number;
+        performanceScore?: number;
+        temperature?: string;
     };
 }
 
@@ -200,12 +204,20 @@ interface TeamDistributionRecord {
     teamId: string;
     teamName: string;
     leadUser: { id: string; name: string | null; email: string };
-    stats: { created: number; inProgress: number; completed: number; total: number };
+    stats: { pending: number; ongoing: number; completed: number; overdue: number; total: number; okrProgress?: number };
     people: Array<{
         userId: string;
         name: string;
         role: string;
-        stats: { created: number; inProgress: number; completed: number; total: number };
+        stats: { 
+            pending: number; 
+            ongoing: number; 
+            completed: number; 
+            overdue: number; 
+            total: number;
+            performanceScore?: number;
+            temperature?: string;
+        };
     }>;
 }
 
@@ -228,10 +240,36 @@ const DashboardPage = () => {
 
     const [loading, setLoading] = useState(true);
     const [filter, setFilter] = useState<TaskFilter>('all');
+    const [assigneeFilterId, setAssigneeFilterId] = useState<string | null>(null);
     const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
     const [expandedCommentThreads, setExpandedCommentThreads] = useState<Record<string, boolean>>({});
     const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});
     const [submittingCommentTaskId, setSubmittingCommentTaskId] = useState<string | null>(null);
+    const [submissions, setSubmissions] = useState<Array<{
+        id: string;
+        taskId: string;
+        userId: string;
+        description?: string;
+        submittedAt: string;
+        status: 'PENDING' | 'REVIEWED' | 'APPROVED' | 'REJECTED';
+        reviewNotes?: string;
+        reviewedAt?: string;
+        reviewedBy?: string;
+        user?: { id: string; name: string | null; email: string };
+    }>>([]);
+    const [activityLogs, setActivityLogs] = useState<Array<{
+        id: string;
+        taskId: string;
+        userId?: string;
+        action: string;
+        description: string;
+        metadata?: any;
+        createdAt: string;
+        user?: { id: string; name: string | null; email: string };
+    }>>([]);
+    const [showSubmissionModal, setShowSubmissionModal] = useState(false);
+    const [submissionDescription, setSubmissionDescription] = useState('');
+    const [reviewNotes, setReviewNotes] = useState('');
 
     const [showCreateTaskModal, setShowCreateTaskModal] = useState(false);
     const [showCreateOkrModal, setShowCreateOkrModal] = useState(false);
@@ -239,6 +277,39 @@ const DashboardPage = () => {
     const [showAddLinkModal, setShowAddLinkModal] = useState(false);
     const [showCreateTeamModal, setShowCreateTeamModal] = useState(false);
     const [editingTeam, setEditingTeam] = useState<Team | null>(null);
+    const [showSendAlertModal, setShowSendAlertModal] = useState(false);
+    const [alertForm, setAlertForm] = useState({
+        targetType: 'INDIVIDUAL',
+        targetId: '',
+        type: 'DEADLINE_REMINDER',
+        message: ''
+    });
+
+    const orgId = localStorage.getItem('selectedOrgId');
+
+    const handleSendAlert = async (e: React.FormEvent) => {
+        e.preventDefault();
+        try {
+            if (!alertForm.targetId) {
+                alert('Target is required');
+                return;
+            }
+            if (!alertForm.message) {
+                alert('Message is required');
+                return;
+            }
+            await api.post('/notifications/send-alert', {
+                ...alertForm,
+                organizationId: orgId
+            });
+            setShowSendAlertModal(false);
+            setAlertForm({ targetType: 'INDIVIDUAL', targetId: '', type: 'DEADLINE_REMINDER', message: '' });
+            alert('Alert sent successfully');
+        } catch (error: any) {
+            alert(error.response?.data?.error || 'Failed to send alert');
+        }
+    };
+
     const [showEditTaskModal, setShowEditTaskModal] = useState(false);
     const [showCreateClientModal, setShowCreateClientModal] = useState(false);
     const [showCreateProjectModal, setShowCreateProjectModal] = useState(false);
@@ -253,7 +324,8 @@ const DashboardPage = () => {
         assigneeId: '',
         supporterId: '',
         tagId: '',
-        projectId: ''
+        projectId: '',
+        alertTeamLead: false
     });
 
     const [editTask, setEditTask] = useState({
@@ -300,8 +372,6 @@ const DashboardPage = () => {
     const navigate = useNavigate();
     const location = useLocation();
 
-    const orgId = localStorage.getItem('selectedOrgId');
-
     const requestedSection = (new URLSearchParams(location.search).get('section') || 'tracker') as DashboardSection;
     const requestedTrackerView = (new URLSearchParams(location.search).get('view') || 'users') as TrackerView;
     const isAdmin = organization?.userRole === 'ADMIN';
@@ -336,25 +406,27 @@ const DashboardPage = () => {
     const userChartData = memberStats.map((item) => ({
         id: item.userId,
         label: item.name,
-        pending: item.stats.created,
-        ongoing: item.stats.inProgress,
+        pending: item.stats.pending,
+        ongoing: item.stats.ongoing,
         completed: item.stats.completed,
+        overdue: item.stats.overdue,
         total: item.stats.total
     }));
 
     const teamChartData = teamDistribution.map((item) => ({
         id: item.teamId,
         label: item.teamName,
-        pending: item.stats.created,
-        ongoing: item.stats.inProgress,
+        pending: item.stats.pending,
+        ongoing: item.stats.ongoing,
         completed: item.stats.completed,
+        overdue: item.stats.overdue,
         total: item.stats.total
     }));
 
     const currentChartData = trackerView === 'teams' ? teamChartData : userChartData;
     const chartMaxValue = Math.max(
         1,
-        ...currentChartData.flatMap((item) => [item.pending, item.ongoing, item.completed])
+        ...currentChartData.flatMap((item) => [item.pending, item.ongoing, item.completed, item.overdue])
     );
 
     const workersActiveCount = useMemo(() => {
@@ -395,12 +467,29 @@ const DashboardPage = () => {
     }, [taskClientFilter, taskProjectFilter, projects]);
 
     useEffect(() => {
+        if (selectedTaskId) {
+            fetchSubmissions(selectedTaskId);
+            fetchActivity(selectedTaskId);
+        } else {
+            setSubmissions([]);
+            setActivityLogs([]);
+        }
+    }, [selectedTaskId]);
+
+    useEffect(() => {
         if (!orgId) {
             navigate('/organizations');
             return;
         }
         fetchData();
-    }, [orgId, filter, taskClientFilter, taskProjectFilter]);
+    }, [orgId, filter, taskClientFilter, taskProjectFilter, assigneeFilterId]);
+
+    const handleMemberClick = (userId: string) => {
+        setAssigneeFilterId(userId);
+        const params = new URLSearchParams(location.search);
+        params.set('section', 'projects');
+        navigate(`/dashboard?${params.toString()}`);
+    };
 
     const fetchData = async () => {
         try {
@@ -471,6 +560,10 @@ const DashboardPage = () => {
             }
 
             let filteredTasks = tasksRes.data as Task[];
+            if (assigneeFilterId) {
+                filteredTasks = filteredTasks.filter((t: Task) => t.assignee?.id === assigneeFilterId);
+            }
+
             if (filter === 'my') {
                 filteredTasks = filteredTasks.filter((t: Task) => t.assignee?.id === user?.id);
             } else if (filter === 'overdue') {
@@ -570,7 +663,8 @@ const DashboardPage = () => {
                 assigneeId: '',
                 supporterId: '',
                 tagId: tags[0]?.id || '',
-                projectId: projects[0]?.id || ''
+                projectId: projects[0]?.id || '',
+                alertTeamLead: false
             });
             setShowCreateTaskModal(false);
             await fetchData();
@@ -922,11 +1016,63 @@ const DashboardPage = () => {
             setSubmittingCommentTaskId(taskId);
             await api.post(`/tasks/${taskId}/comments`, { content });
             setCommentDrafts((prev) => ({ ...prev, [taskId]: '' }));
+            await fetchSubmissions(taskId);
+            await fetchActivity(taskId);
             await fetchData();
         } catch {
             alert('Failed to add comment');
         } finally {
             setSubmittingCommentTaskId(null);
+        }
+    };
+
+    const fetchSubmissions = async (taskId: string) => {
+        try {
+            const res = await api.get(`/tasks/${taskId}/submissions`);
+            setSubmissions(res.data);
+        } catch (error) {
+            console.error('Failed to fetch submissions');
+        }
+    };
+
+    const fetchActivity = async (taskId: string) => {
+        try {
+            const res = await api.get(`/tasks/${taskId}/activity`);
+            setActivityLogs(res.data);
+        } catch (error) {
+            console.error('Failed to fetch activity');
+        }
+    };
+
+    const handleSubmitWork = async () => {
+        if (!selectedTaskId || !submissionDescription.trim()) return;
+        try {
+            await api.post(`/tasks/${selectedTaskId}/submit`, {
+                description: submissionDescription.trim()
+            });
+            setSubmissionDescription('');
+            setShowSubmissionModal(false);
+            await fetchSubmissions(selectedTaskId);
+            await fetchActivity(selectedTaskId);
+            await fetchData();
+        } catch {
+            alert('Failed to submit work');
+        }
+    };
+
+    const handleReviewSubmission = async (submissionId: string, status: 'APPROVED' | 'REJECTED') => {
+        if (!selectedTaskId) return;
+        try {
+            await api.post(`/tasks/${selectedTaskId}/submissions/${submissionId}/review`, {
+                status,
+                reviewNotes: reviewNotes.trim() || undefined
+            });
+            setReviewNotes('');
+            await fetchSubmissions(selectedTaskId);
+            await fetchActivity(selectedTaskId);
+            await fetchData();
+        } catch {
+            alert('Failed to review submission');
         }
     };
 
@@ -952,6 +1098,16 @@ const DashboardPage = () => {
                     )}
                     {currentSection === 'tracker' && (
                         <div className="header-actions">
+                            {assigneeFilterId && (
+                                <button onClick={() => setAssigneeFilterId(null)} className="btn-secondary">
+                                    Show All
+                                </button>
+                            )}
+                            {(isAdmin || isTeamLead) && (
+                                <button onClick={() => setShowSendAlertModal(true)} className="btn-secondary">
+                                    Send Alert
+                                </button>
+                            )}
                             <button onClick={() => setShowCreateTaskModal(true)} className="btn-primary">
                                 + New Task
                             </button>
@@ -1056,12 +1212,10 @@ const DashboardPage = () => {
                                             <h3 style={{ margin: 0 }}>{team.name}</h3>
                                             <p className="org-subtitle" style={{ marginTop: 4 }}>Lead: {team.leadUser.name || team.leadUser.email}</p>
                                         </div>
-                                        {isAdmin && (
-                                            <div className="header-actions">
-                                                <button className="btn-secondary" onClick={() => openEditTeam(team)}>Edit</button>
-                                                <button className="btn-logout" onClick={() => handleDeleteTeam(team.id)}>Delete</button>
-                                            </div>
-                                        )}
+                                        <div style={{ textAlign: 'right' }}>
+                                            <div style={{ fontSize: '1.2em', fontWeight: 700, color: '#2563eb' }}>{team.stats.completed}%</div>
+                                            <div style={{ fontSize: '0.7em', color: '#64748b', textTransform: 'uppercase', fontWeight: 700 }}>Completion Rate</div>
+                                        </div>
                                     </div>
 
                                     <div className="stat-bar-container" style={{ marginBottom: 10 }}>
@@ -1069,25 +1223,43 @@ const DashboardPage = () => {
                                         <div className="stat-bar progress" style={{ width: `${(team.stats.inProgress / (team.stats.total || 1)) * 100}%` }}></div>
                                         <div className="stat-bar completed" style={{ width: `${(team.stats.completed / (team.stats.total || 1)) * 100}%` }}></div>
                                     </div>
-                                    <div className="member-counts" style={{ justifyContent: 'flex-start', marginBottom: 8 }}>
-                                        <span className="count created">{team.stats.created}</span>
-                                        <span className="count progress">{team.stats.inProgress}</span>
-                                        <span className="count completed">{team.stats.completed}</span>
+                                    <div className="member-counts" style={{ justifyContent: 'space-between', marginBottom: 12 }}>
+                                        <div style={{ display: 'flex', gap: 8 }}>
+                                            <span className="count completed" title="Tasks Completed">{team.stats.completed} Completed</span>
+                                            <span className="count created" title="Tasks Created">{team.stats.created} Created</span>
+                                        </div>
+                                        {isAdmin && (
+                                            <div className="header-actions" style={{ margin: 0 }}>
+                                                <button className="btn-secondary" style={{ padding: '4px 8px', fontSize: '0.8em' }} onClick={() => openEditTeam(team)}>Edit</button>
+                                                <button className="btn-logout" style={{ padding: '4px 8px', fontSize: '0.8em' }} onClick={() => handleDeleteTeam(team.id)}>Delete</button>
+                                            </div>
+                                        )}
                                     </div>
 
                                     <div>
                                         <strong>People</strong>
                                         <div className="team-members-list" style={{ marginTop: 8 }}>
                                             {(team.people || team.members || []).map((person: any) => (
-                                                <div className="team-member-row" key={person.userId || person.id}>
+                                                <div 
+                                                    className="team-member-row" 
+                                                    key={person.userId || person.id}
+                                                    onClick={() => handleMemberClick(person.userId || person.id)}
+                                                    style={{ cursor: 'pointer' }}
+                                                >
                                                     <div className="team-member-info">
-                                                        <strong>{person.name || person.email}</strong>
-                                                        <span>{person.role}</span>
+                                                        <strong style={{ color: '#2563eb' }}>{person.name || person.email}</strong>
+                                                        <div style={{ fontSize: '0.8em', display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
+                                                            <span>{person.role}</span>
+                                                            <span title={`Score: ${person.stats?.performanceScore || 0}%`}>
+                                                                • {person.stats?.temperature || '🔴 Low Activity'}
+                                                            </span>
+                                                        </div>
                                                     </div>
                                                     <div className="team-member-role">
-                                                        <span className="role-badge created">{person.stats?.created || 0}</span>
-                                                        <span className="role-badge in_progress">{person.stats?.inProgress || 0}</span>
-                                                        <span className="role-badge completed">{person.stats?.completed || 0}</span>
+                                                        <span className="role-badge created" title="Pending">{person.stats?.pending || 0}</span>
+                                                        <span className="role-badge in_progress" title="Ongoing">{person.stats?.ongoing || 0}</span>
+                                                        <span className="role-badge completed" title="Completed">{person.stats?.completed || 0}</span>
+                                                        <span className="role-badge overdue" title="Overdue">{person.stats?.overdue || 0}</span>
                                                     </div>
                                                 </div>
                                             ))}
@@ -1264,16 +1436,46 @@ const DashboardPage = () => {
                     <div className="tasks-section">
                         <div className="tasks-header"><h2>Appraisals</h2></div>
                         <div className="tasks-list">
-                            {appraisals.map((appraisal) => (
-                                <div key={appraisal.id} className="task-card" style={{ padding: '16px' }}>
-                                    <div className="task-header" style={{ marginBottom: 8 }}>
-                                        <h3>{appraisal.subjectUser?.name || appraisal.subjectUser?.email || 'Team Member'}</h3>
-                                        <div className="task-badges">
-                                            <span className="status-badge created">{appraisal.cycle}</span>
-                                            <span className="status-badge in_progress">{appraisal.status}</span>
+                            {appraisals.map((appraisal: any) => (
+                                <div key={appraisal.id} className="task-card" style={{ padding: '24px' }}>
+                                    <div className="task-header" style={{ marginBottom: 16 }}>
+                                        <div>
+                                            <h3 style={{ margin: 0, fontSize: '1.2em' }}>{appraisal.subjectUser?.name || appraisal.subjectUser?.email || 'Team Member'}</h3>
+                                            <p className="org-subtitle" style={{ marginTop: 4 }}>Cycle: {appraisal.cycle}</p>
+                                        </div>
+                                        <div style={{ textAlign: 'right' }}>
+                                            <div style={{ fontSize: '1.4em', fontWeight: 800, color: appraisal.overallRating === 'EXCELLENT' ? '#16a34a' : appraisal.overallRating === 'GOOD' ? '#2563eb' : '#f97316' }}>
+                                                {appraisal.overallRating}
+                                            </div>
+                                            <div style={{ fontSize: '0.7em', color: '#64748b', textTransform: 'uppercase', fontWeight: 700 }}>Overall Rating</div>
                                         </div>
                                     </div>
-                                    <p className="task-description">{appraisal.summary}</p>
+                                    
+                                    <div className="appraisal-metrics" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '20px', background: '#f8fafc', padding: '16px', borderRadius: '12px' }}>
+                                        <div style={{ textAlign: 'center' }}>
+                                            <div style={{ fontSize: '1.1em', fontWeight: 700 }}>{Math.round(appraisal.tasksCompleted || 0)}%</div>
+                                            <div style={{ fontSize: '0.65em', color: '#64748b', textTransform: 'uppercase' }}>Tasks Completed</div>
+                                        </div>
+                                        <div style={{ textAlign: 'center' }}>
+                                            <div style={{ fontSize: '1.1em', fontWeight: 700 }}>{Math.round(appraisal.deadlinesMet || 0)}%</div>
+                                            <div style={{ fontSize: '0.65em', color: '#64748b', textTransform: 'uppercase' }}>Deadlines Met</div>
+                                        </div>
+                                        <div style={{ textAlign: 'center' }}>
+                                            <div style={{ fontSize: '1.1em', fontWeight: 700 }}>{appraisal.okrContribution}</div>
+                                            <div style={{ fontSize: '0.65em', color: '#64748b', textTransform: 'uppercase' }}>OKR Contribution</div>
+                                        </div>
+                                    </div>
+
+                                    <p className="task-description" style={{ whiteSpace: 'pre-wrap', marginBottom: '20px', color: '#475569' }}>{appraisal.summary}</p>
+                                    
+                                    <div style={{ display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid #e2e8f0', paddingTop: '16px' }}>
+                                        <button 
+                                            className="btn-secondary" 
+                                            onClick={() => window.open(`${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/appraisals/${appraisal.id}/export?token=${localStorage.getItem('token')}`, '_blank')}
+                                        >
+                                            Export Report (CSV)
+                                        </button>
+                                    </div>
                                 </div>
                             ))}
                         </div>
@@ -1291,9 +1493,10 @@ const DashboardPage = () => {
                                     <div className="tracker-hero-right">
                                         <p><strong>Workers:</strong> {workersActiveCount} people active</p>
                                         <div className="tracker-legend">
-                                            <span className="legend-chip pending">Pending Task</span>
-                                            <span className="legend-chip completed">Completed Task</span>
-                                            <span className="legend-chip ongoing">Ongoing Task</span>
+                                            <span className="legend-chip pending">Pending</span>
+                                            <span className="legend-chip ongoing">Ongoing</span>
+                                            <span className="legend-chip completed">Completed</span>
+                                            <span className="legend-chip overdue">Overdue</span>
                                         </div>
                                     </div>
                                 </div>
@@ -1341,14 +1544,19 @@ const DashboardPage = () => {
                                                                 title={`Pending: ${item.pending}`}
                                                             />
                                                             <span
+                                                                className="tracker-bar ongoing"
+                                                                style={{ height: `${(item.ongoing / chartMaxValue) * 100}%` }}
+                                                                title={`Ongoing: ${item.ongoing}`}
+                                                            />
+                                                            <span
                                                                 className="tracker-bar completed"
                                                                 style={{ height: `${(item.completed / chartMaxValue) * 100}%` }}
                                                                 title={`Completed: ${item.completed}`}
                                                             />
                                                             <span
-                                                                className="tracker-bar ongoing"
-                                                                style={{ height: `${(item.ongoing / chartMaxValue) * 100}%` }}
-                                                                title={`Ongoing: ${item.ongoing}`}
+                                                                className="tracker-bar overdue"
+                                                                style={{ height: `${(item.overdue / chartMaxValue) * 100}%` }}
+                                                                title={`Overdue: ${item.overdue}`}
                                                             />
                                                         </div>
                                                         <div className="tracker-bar-label">{item.label}</div>
@@ -1363,9 +1571,17 @@ const DashboardPage = () => {
 
                         {!canUseTrackerCharts && stats && (
                             <div className="stats-grid">
+                                {(isMember || isTeamLead) && (
+                                    <div className="stat-card performance-highlight">
+                                        <h3>My Performance</h3>
+                                        <p className="stat-value">{memberStats.find(m => m.userId === user?.id)?.stats.temperature || '🔴 Low Activity'}</p>
+                                        <small>Score: {memberStats.find(m => m.userId === user?.id)?.stats.performanceScore || 0}%</small>
+                                    </div>
+                                )}
                                 <div className="stat-card" onClick={() => setFilter('all')}><h3>Total Workload</h3><p className="stat-value">{stats.total}</p></div>
-                                <div className="stat-card" onClick={() => setFilter('in_progress')}><h3>Active Sprints</h3><p className="stat-value">{stats.inProgress}</p></div>
+                                <div className="stat-card" onClick={() => setFilter('in_progress')}><h3>Ongoing Tasks</h3><p className="stat-value">{stats.ongoing}</p></div>
                                 <div className="stat-card" onClick={() => setFilter('completed')}><h3>Completed Work</h3><p className="stat-value">{stats.completed}</p></div>
+                                <div className="stat-card" onClick={() => setFilter('overdue')}><h3>Overdue</h3><p className="stat-value" style={{ color: '#ef4444' }}>{stats.overdue}</p></div>
                                 {!isAdmin && (
                                     <div className="stat-card" onClick={() => setFilter('my')}><h3>Your Focus</h3><p className="stat-value">{stats.myTasks}</p></div>
                                 )}
@@ -1383,8 +1599,8 @@ const DashboardPage = () => {
                                     {!isAdmin && (
                                         <button type="button" className={`btn-filter ${filter === 'my' ? 'active' : ''}`} onClick={() => setFilter('my')}>My Tasks</button>
                                     )}
-                                    <button type="button" className={`btn-filter ${filter === 'created' ? 'active' : ''}`} onClick={() => setFilter('created')}>Created</button>
-                                    <button type="button" className={`btn-filter ${filter === 'in_progress' ? 'active' : ''}`} onClick={() => setFilter('in_progress')}>In Progress</button>
+                                    <button type="button" className={`btn-filter ${filter === 'created' ? 'active' : ''}`} onClick={() => setFilter('created')}>Pending</button>
+                                    <button type="button" className={`btn-filter ${filter === 'in_progress' ? 'active' : ''}`} onClick={() => setFilter('in_progress')}>Ongoing</button>
                                     <button type="button" className={`btn-filter ${filter === 'completed' ? 'active' : ''}`} onClick={() => setFilter('completed')}>Completed</button>
                                     <button type="button" className={`btn-filter overdue ${filter === 'overdue' ? 'active' : ''}`} onClick={() => setFilter('overdue')}>Overdue</button>
                                     {isAdmin && (
@@ -1562,6 +1778,102 @@ const DashboardPage = () => {
                                                             </li>
                                                         ))}
                                                     </ul>
+                                                </div>
+                                            )}
+
+                                            {!isDeletedView && selectedTask.status !== 'COMPLETED' && (user?.id === selectedTask.assignee?.id || user?.id === selectedTask.supporter?.id) && (
+                                                <div className="task-work-submission">
+                                                    <h4>Work Submission</h4>
+                                                    <button
+                                                        type="button"
+                                                        className="btn-action success"
+                                                        onClick={() => setShowSubmissionModal(true)}
+                                                    >
+                                                        Submit Work
+                                                    </button>
+                                                </div>
+                                            )}
+
+                                            {!isDeletedView && submissions.length > 0 && (
+                                                <div className="task-submissions-list">
+                                                    <h4>Submissions</h4>
+                                                    <div className="submissions-list">
+                                                        {submissions.map((sub) => (
+                                                            <div key={sub.id} className="submission-item">
+                                                                <div className="submission-header">
+                                                                    <span className="submission-author">
+                                                                        {sub.user?.name || 'Unknown'}
+                                                                    </span>
+                                                                    <span className={`submission-status status-${sub.status.toLowerCase()}`}>
+                                                                        {sub.status}
+                                                                    </span>
+                                                                </div>
+                                                                <div className="submission-meta">
+                                                                    <span>Submitted: {new Date(sub.submittedAt).toLocaleString()}</span>
+                                                                    {sub.reviewedAt && (
+                                                                        <span>Reviewed: {new Date(sub.reviewedAt).toLocaleString()}</span>
+                                                                    )}
+                                                                </div>
+                                                                {sub.description && (
+                                                                    <p className="submission-description">{sub.description}</p>
+                                                                )}
+                                                                {sub.reviewNotes && (
+                                                                    <p className="submission-review-notes"><strong>Review Notes:</strong> {sub.reviewNotes}</p>
+                                                                )}
+                                                                {isAdmin && sub.status === 'PENDING' && (
+                                                                    <div className="submission-actions">
+                                                                        <button
+                                                                            className="btn-action success"
+                                                                            onClick={() => {
+                                                                                handleReviewSubmission(sub.id, 'APPROVED');
+                                                                            }}
+                                                                        >
+                                                                            Approve
+                                                                        </button>
+                                                                        <button
+                                                                            className="btn-action danger"
+                                                                            onClick={() => {
+                                                                                handleReviewSubmission(sub.id, 'REJECTED');
+                                                                            }}
+                                                                        >
+                                                                            Reject
+                                                                        </button>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {!isDeletedView && activityLogs.length > 0 && (
+                                                <div className="task-activity-timeline">
+                                                    <h4>Activity Timeline</h4>
+                                                    <div className="activity-list">
+                                                        {activityLogs.map((log) => (
+                                                            <div key={log.id} className="activity-item">
+                                                                <div className="activity-icon">
+                                                                    {log.action === 'COMMENT_ADDED' && '💬'}
+                                                                    {log.action === 'COMMENT_DELETED' && '🗑️'}
+                                                                    {log.action === 'STATUS_CHANGED' && '📊'}
+                                                                    {log.action === 'ASSIGNEE_CHANGED' && '👤'}
+                                                                    {log.action === 'SUPPORTER_CHANGED' && '🤝'}
+                                                                    {log.action === 'SUBMISSION_CREATED' && '📝'}
+                                                                    {log.action === 'SUBMISSION_REVIEWED' && '✅'}
+                                                                    {log.action === 'ATTACHMENT_ADDED' && '📎'}
+                                                                    {log.action === 'ATTACHMENT_DELETED' && '📎'}
+                                                                    {log.action === 'TASK_UPDATED' && '✏️'}
+                                                                </div>
+                                                                <div className="activity-content">
+                                                                    <div className="activity-header">
+                                                                        <span className="activity-user">{log.user?.name || 'System'}</span>
+                                                                        <span className="activity-time">{new Date(log.createdAt).toLocaleString()}</span>
+                                                                    </div>
+                                                                    <p className="activity-description">{log.description}</p>
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
                                                 </div>
                                             )}
 
@@ -1868,6 +2180,22 @@ const DashboardPage = () => {
                                     </select>
                                 </div>
                             )}
+                            {!isTeamLead && (
+                                <div className="form-group">
+                                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                                        <input
+                                            type="checkbox"
+                                            checked={newTask.alertTeamLead}
+                                            onChange={(e) => setNewTask({ ...newTask, alertTeamLead: e.target.checked })}
+                                            style={{ width: 'auto', margin: 0 }}
+                                        />
+                                        <span>Alert Team Lead about this task</span>
+                                    </label>
+                                    <small style={{ color: 'var(--text-muted)', display: 'block', marginTop: 4 }}>
+                                        Team leads will be notified about this task for review.
+                                    </small>
+                                </div>
+                            )}
                             <div className="modal-actions">
                                 <button type="button" onClick={() => setShowCreateTaskModal(false)} className="btn-secondary">Cancel</button>
                                 <button type="submit" className="btn-primary">Create Task</button>
@@ -1960,6 +2288,75 @@ const DashboardPage = () => {
                             <div className="modal-actions">
                                 <button type="button" onClick={() => setShowEditTaskModal(false)} className="btn-secondary">Cancel</button>
                                 <button type="submit" className="btn-primary">Save Changes</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {showSendAlertModal && (
+                <div className="modal-overlay" onClick={() => setShowSendAlertModal(false)}>
+                    <div className="modal" onClick={(e) => e.stopPropagation()}>
+                        <h2>Send Alert</h2>
+                        <form onSubmit={handleSendAlert}>
+                            <div className="form-group">
+                                <label>Target Type</label>
+                                <select 
+                                    value={alertForm.targetType} 
+                                    onChange={(e) => setAlertForm({ ...alertForm, targetType: e.target.value, targetId: '' })}
+                                >
+                                    <option value="INDIVIDUAL">Individual Member</option>
+                                    <option value="TEAM">Entire Team</option>
+                                    <option value="PROJECT">Project Group</option>
+                                </select>
+                            </div>
+
+                            <div className="form-group">
+                                <label>Recipient</label>
+                                <select 
+                                    value={alertForm.targetId} 
+                                    onChange={(e) => setAlertForm({ ...alertForm, targetId: e.target.value })}
+                                    required
+                                >
+                                    <option value="">Select Recipient</option>
+                                    {alertForm.targetType === 'INDIVIDUAL' && assignableUsers.map(u => (
+                                        <option key={u.userId} value={u.userId}>{u.user.name || u.user.email}</option>
+                                    ))}
+                                    {alertForm.targetType === 'TEAM' && teamDistribution.map(t => (
+                                        <option key={t.teamId} value={t.teamId}>{t.teamName}</option>
+                                    ))}
+                                    {alertForm.targetType === 'PROJECT' && projects.map(p => (
+                                        <option key={p.id} value={p.id}>{p.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            <div className="form-group">
+                                <label>Alert Type</label>
+                                <select 
+                                    value={alertForm.type} 
+                                    onChange={(e) => setAlertForm({ ...alertForm, type: e.target.value })}
+                                >
+                                    <option value="DEADLINE_REMINDER">Deadline Reminder</option>
+                                    <option value="PRIORITY_ALERT">Task Priority Notification</option>
+                                    <option value="FEEDBACK">Feedback Message</option>
+                                </select>
+                            </div>
+
+                            <div className="form-group">
+                                <label>Message</label>
+                                <textarea 
+                                    rows={4} 
+                                    value={alertForm.message} 
+                                    onChange={(e) => setAlertForm({ ...alertForm, message: e.target.value })}
+                                    placeholder="Enter your alert message here..."
+                                    required
+                                />
+                            </div>
+
+                            <div className="modal-actions">
+                                <button type="button" onClick={() => setShowSendAlertModal(false)} className="btn-secondary">Cancel</button>
+                                <button type="submit" className="btn-primary">Send Alert</button>
                             </div>
                         </form>
                     </div>
@@ -2253,6 +2650,31 @@ const DashboardPage = () => {
                             <div className="modal-actions">
                                 <button type="button" onClick={() => setShowAddLinkModal(false)} className="btn-secondary">Cancel</button>
                                 <button type="submit" className="btn-primary">Attach</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {showSubmissionModal && (
+                <div className="modal-overlay" onClick={() => setShowSubmissionModal(false)}>
+                    <div className="modal" onClick={(e) => e.stopPropagation()}>
+                        <h2>Submit Work</h2>
+                        <form onSubmit={(e) => { e.preventDefault(); handleSubmitWork(); }}>
+                            <div className="form-group">
+                                <label>Description</label>
+                                <textarea
+                                    value={submissionDescription}
+                                    onChange={(e) => setSubmissionDescription(e.target.value)}
+                                    placeholder="Describe the work you're submitting..."
+                                    rows={4}
+                                    required
+                                    autoFocus
+                                />
+                            </div>
+                            <div className="modal-actions">
+                                <button type="button" onClick={() => setShowSubmissionModal(false)} className="btn-secondary">Cancel</button>
+                                <button type="submit" className="btn-primary">Submit Work</button>
                             </div>
                         </form>
                     </div>

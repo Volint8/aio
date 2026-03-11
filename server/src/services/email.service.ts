@@ -135,3 +135,37 @@ export const sendInviteEmail = async (params: {
 
     return sendEmail(to, subject, html);
 };
+
+export const sendTaskAlertEmail = async (params: {
+    to: string;
+    taskTitle: string;
+    taskDescription?: string | null;
+    creatorName: string | null;
+    organizationName: string;
+}) => {
+    const { to, taskTitle, taskDescription, creatorName, organizationName } = params;
+    const subject = `Task Alert: ${taskTitle}`;
+    const fromUser = creatorName || 'A team member';
+
+    const html = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 10px;">
+            <div style="text-align: center; margin-bottom: 20px;">
+                <img src="${(process.env.CLIENT_URL || 'http://localhost:5173').split(',')[0]}/images/image.png" alt="Apraizal Logo" style="height: 40px;" />
+            </div>
+            <h2 style="color: #333; text-align: center;">Task Alert</h2>
+            <p style="color: #666; font-size: 16px;">Hi Team Lead,</p>
+            <p style="color: #666; font-size: 16px;">
+                ${fromUser} has created a new task in <strong>${organizationName}</strong> and requested your review.
+            </p>
+            <div style="background-color: #f4f4f4; padding: 15px; border-radius: 5px; margin: 20px 0;">
+                <p style="margin: 0 0 8px 0;"><strong>Task:</strong> ${taskTitle}</p>
+                ${taskDescription ? `<p style="margin: 0;"><strong>Description:</strong> ${taskDescription}</p>` : ''}
+            </div>
+            <p style="color: #666; font-size: 14px;">Please log in to the Apraizal platform to review and assign this task.</p>
+            <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
+            <p style="text-align: center; color: #999; font-size: 12px;">&copy; ${new Date().getFullYear()} Apraizal Platform. All rights reserved.</p>
+        </div>
+    `;
+
+    return sendEmail(to, subject, html);
+};

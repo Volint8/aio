@@ -648,18 +648,91 @@ export const getTeams = async (req: Request, res: Response) => {
     });
 
     const teamData = await Promise.all(teams.map(async (team) => {
-      const [created, inProgress, completed] = await Promise.all([
+      const now = new Date();
+      const [pending, ongoing, completed, overdue] = await Promise.all([
         prisma.task.count({ where: { deletedAt: null, status: 'CREATED', taskTeams: { some: { teamId: team.id } } } }),
         prisma.task.count({ where: { deletedAt: null, status: 'IN_PROGRESS', taskTeams: { some: { teamId: team.id } } } }),
-        prisma.task.count({ where: { deletedAt: null, status: 'COMPLETED', taskTeams: { some: { teamId: team.id } } } })
+        prisma.task.count({ where: { deletedAt: null, status: 'COMPLETED', taskTeams: { some: { teamId: team.id } } } }),
+        prisma.task.count({
+          where: {
+            deletedAt: null,
+            status: { not: 'COMPLETED' },
+            taskTeams: { some: { teamId: team.id } },
+            dueDate: { lt: now }
+          }
+        })
       ]);
 
+      // Calculate OKR Progress for the team
+      const teamOkrs = await prisma.okr.findMany({
+        where: {
+          organizationId,
+          assignments: {
+            some: {
+              targetType: 'TEAM',
+              targetId: team.id
+            }
+          }
+        },
+        include: {
+          keyResults: true
+        }
+      });
+
+      let totalProgress = 0;
+      if (teamOkrs.length > 0) {
+        const okrProgresses = await Promise.all(teamOkrs.map(async (okr) => {
+          const tagIds = okr.keyResults.map(kr => kr.tagId);
+          if (tagIds.length === 0) return 0;
+
+          const [totalTasks, completedTasks] = await Promise.all([
+            prisma.task.count({ where: { organizationId, tagId: { in: tagIds }, deletedAt: null } }),
+            prisma.task.count({ where: { organizationId, tagId: { in: tagIds }, status: 'COMPLETED', deletedAt: null } })
+          ]);
+
+          return totalTasks > 0 ? (completedTasks / totalTasks) * 100 : 0;
+        }));
+        totalProgress = okrProgresses.reduce((acc, curr) => acc + curr, 0) / teamOkrs.length;
+      }
+
       const members = await Promise.all(team.members.map(async (member) => {
-        const [mCreated, mInProgress, mCompleted] = await Promise.all([
+        const [mPending, mOngoing, mCompleted, mOverdue, mOkrTasks] = await Promise.all([
           prisma.task.count({ where: { deletedAt: null, assigneeId: member.userId, status: 'CREATED' } }),
           prisma.task.count({ where: { deletedAt: null, assigneeId: member.userId, status: 'IN_PROGRESS' } }),
-          prisma.task.count({ where: { deletedAt: null, assigneeId: member.userId, status: 'COMPLETED' } })
+          prisma.task.count({ where: { deletedAt: null, assigneeId: member.userId, status: 'COMPLETED' } }),
+          prisma.task.count({
+            where: {
+              deletedAt: null,
+              assigneeId: member.userId,
+              status: { not: 'COMPLETED' },
+              dueDate: { lt: now }
+            }
+          }),
+          prisma.task.count({
+            where: {
+              organizationId,
+              assigneeId: member.userId,
+              deletedAt: null,
+              tag: {
+                keyResults: { some: {} }
+              }
+            }
+          })
         ]);
+
+        const mTotal = mPending + mOngoing + mCompleted;
+        let performanceScore = 0;
+        let temperature = '🔴 Low Activity';
+
+        if (mTotal > 0) {
+          const completionRate = (mCompleted / mTotal) * 50;
+          const deadlineRate = ((mTotal - mOverdue) / mTotal) * 30;
+          const okrContribution = (mOkrTasks / mTotal) * 20;
+          performanceScore = Math.round(completionRate + deadlineRate + okrContribution);
+
+          if (performanceScore > 75) temperature = '🔥 High Performance';
+          else if (performanceScore > 35) temperature = '🟡 Moderate Performance';
+        }
 
         return {
           id: member.user.id,
@@ -667,10 +740,13 @@ export const getTeams = async (req: Request, res: Response) => {
           email: member.user.email,
           role: member.role,
           stats: {
-            created: mCreated,
-            inProgress: mInProgress,
+            pending: mPending,
+            ongoing: mOngoing,
             completed: mCompleted,
-            total: mCreated + mInProgress + mCompleted
+            overdue: mOverdue,
+            total: mTotal,
+            performanceScore,
+            temperature
           }
         };
       }));
@@ -680,10 +756,12 @@ export const getTeams = async (req: Request, res: Response) => {
         name: team.name,
         leadUser: team.leadUser,
         stats: {
-          created,
-          inProgress,
+          pending,
+          ongoing,
           completed,
-          total: created + inProgress + completed
+          overdue,
+          total: pending + ongoing + completed,
+          okrProgress: Math.round(totalProgress)
         },
         members
       };
@@ -1552,7 +1630,7 @@ export const generateAppraisal = async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.userId as string;
     const organizationId = req.params.id as string;
-    const { subjectUserId, cycle, summary } = req.body as { subjectUserId?: string; cycle?: string; summary?: string };
+    const { subjectUserId, cycle } = req.body as { subjectUserId?: string; cycle?: string };
 
     if (!subjectUserId || !cycle) {
       return res.status(400).json({ error: 'subjectUserId and cycle are required' });
@@ -1568,13 +1646,65 @@ export const generateAppraisal = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Subject user is not a member of this organization' });
     }
 
+    // Performance Calculations
+    const now = new Date();
+    const [allTasks, completedTasks, overdueTasks, okrLinkedTasks] = await Promise.all([
+      prisma.task.count({ where: { organizationId, assigneeId: subjectUserId, deletedAt: null } }),
+      prisma.task.count({ where: { organizationId, assigneeId: subjectUserId, status: 'COMPLETED', deletedAt: null } }),
+      prisma.task.count({
+        where: {
+          organizationId,
+          assigneeId: subjectUserId,
+          deletedAt: null,
+          status: { not: 'COMPLETED' },
+          dueDate: { lt: now }
+        }
+      }),
+      prisma.task.count({
+        where: {
+          organizationId,
+          assigneeId: subjectUserId,
+          deletedAt: null,
+          tag: { keyResults: { some: {} } }
+        }
+      })
+    ]);
+
+    const tasksCompleted = allTasks > 0 ? (completedTasks / allTasks) * 100 : 0;
+    const deadlinesMet = allTasks > 0 ? ((allTasks - overdueTasks) / allTasks) * 100 : 0;
+    
+    let okrContribution = 'LOW';
+    const okrRatio = allTasks > 0 ? (okrLinkedTasks / allTasks) : 0;
+    if (okrRatio > 0.5) okrContribution = 'HIGH';
+    else if (okrRatio > 0.2) okrContribution = 'MEDIUM';
+
+    // Rating Logic
+    let overallRating = 'AVERAGE';
+    const performanceScore = (tasksCompleted * 0.5) + (deadlinesMet * 0.3) + (okrRatio * 100 * 0.2);
+    if (performanceScore > 85) overallRating = 'EXCELLENT';
+    else if (performanceScore > 70) overallRating = 'GOOD';
+    else if (performanceScore < 40) overallRating = 'POOR';
+
+    const subjectUser = await prisma.user.findUnique({ where: { id: subjectUserId }, select: { name: true, email: true } });
+    const name = subjectUser?.name || subjectUser?.email || 'Employee';
+
+    const summary = `Performance appraisal for ${name} during ${cycle}. 
+Tasks Completed: ${Math.round(tasksCompleted)}%
+Deadlines Met: ${Math.round(deadlinesMet)}%
+OKR Contribution: ${okrContribution}
+Overall Rating: ${overallRating}`;
+
     const created = await prisma.appraisal.create({
       data: {
         organizationId,
         subjectUserId,
         createdByUserId: userId,
         cycle,
-        summary: summary || 'Auto-generated appraisal placeholder',
+        summary,
+        tasksCompleted,
+        deadlinesMet,
+        okrContribution,
+        overallRating,
         status: 'GENERATED'
       }
     });

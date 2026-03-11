@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
-import { sendTaskAssignmentEmail } from '../services/email.service';
+import { sendTaskAssignmentEmail, sendTaskAlertEmail } from '../services/email.service';
 
 const prisma = new PrismaClient();
 
@@ -281,7 +281,7 @@ export const getTasks = async (req: Request, res: Response) => {
 export const createTask = async (req: Request, res: Response) => {
     try {
         const userId = (req as any).user.userId;
-        const { title, description, organizationId, assigneeId, supporterId, dueDate, priority, tagId, projectId } = req.body;
+        const { title, description, organizationId, assigneeId, supporterId, dueDate, priority, tagId, projectId, alertTeamLead } = req.body;
         const normalizedAssigneeId = assigneeId === '' ? null : assigneeId;
         const normalizedSupporterId = supporterId === '' ? null : supporterId;
 
@@ -295,6 +295,9 @@ export const createTask = async (req: Request, res: Response) => {
                     userId,
                     organizationId
                 }
+            },
+            include: {
+                user: { select: { name: true } }
             }
         });
 
@@ -361,6 +364,28 @@ export const createTask = async (req: Request, res: Response) => {
             dueDate: task?.dueDate,
             priority: task?.priority
         });
+
+        // Send alert to team leads if requested
+        if (alertTeamLead && membership.role !== 'TEAM_LEAD' && membership.role !== 'ADMIN') {
+            const teamLeads = await prisma.organizationMember.findMany({
+                where: { organizationId, role: 'TEAM_LEAD' },
+                include: { user: { select: { email: true, name: true } } }
+            });
+
+            for (const lead of teamLeads) {
+                try {
+                    await sendTaskAlertEmail({
+                        to: lead.user.email,
+                        taskTitle: title,
+                        taskDescription: description,
+                        creatorName: membership.user?.name || 'A team member',
+                        organizationName: task?.organization?.name || ''
+                    });
+                } catch (alertErr) {
+                    console.error('Failed to send task alert:', alertErr);
+                }
+            }
+        }
 
         res.status(201).json(task);
     } catch (error: any) {
@@ -552,6 +577,82 @@ export const updateTask = async (req: Request, res: Response) => {
                     ...(priority && { priority })
                 }
             });
+
+            // Log activity for changes
+            const activityEntries: Array<{ action: string; description: string; metadata?: any }> = [];
+            
+            if (status && status !== task.status) {
+                activityEntries.push({
+                    action: 'STATUS_CHANGED',
+                    description: `Status changed from ${task.status} to ${status}`,
+                    metadata: { oldStatus: task.status, newStatus: status }
+                });
+            }
+            
+            if (hasAssigneeUpdate && normalizedAssigneeId !== task.assigneeId) {
+                activityEntries.push({
+                    action: 'ASSIGNEE_CHANGED',
+                    description: `Assignee changed`,
+                    metadata: { oldAssigneeId: task.assigneeId, newAssigneeId: normalizedAssigneeId }
+                });
+            }
+            
+            if (hasSupporterUpdate && normalizedSupporterId !== task.supporterId) {
+                activityEntries.push({
+                    action: 'SUPPORTER_CHANGED',
+                    description: `Supporter changed`,
+                    metadata: { oldSupporterId: task.supporterId, newSupporterId: normalizedSupporterId }
+                });
+            }
+            
+            if (priority && priority !== task.priority) {
+                activityEntries.push({
+                    action: 'TASK_UPDATED',
+                    description: `Priority changed from ${task.priority} to ${priority}`,
+                    metadata: { oldPriority: task.priority, newPriority: priority }
+                });
+            }
+            
+            if (dueDate !== undefined) {
+                const oldDue = task.dueDate ? new Date(task.dueDate).toISOString() : null;
+                const newDue = dueDate ? new Date(dueDate).toISOString() : null;
+                if (oldDue !== newDue) {
+                    activityEntries.push({
+                        action: 'TASK_UPDATED',
+                        description: `Due date changed`,
+                        metadata: { oldDueDate: oldDue, newDueDate: newDue }
+                    });
+                }
+            }
+            
+            if (description !== undefined && description !== task.description) {
+                activityEntries.push({
+                    action: 'TASK_UPDATED',
+                    description: 'Description updated',
+                    metadata: { field: 'description' }
+                });
+            }
+            
+            if (title && title !== task.title) {
+                activityEntries.push({
+                    action: 'TASK_UPDATED',
+                    description: 'Title updated',
+                    metadata: { field: 'title' }
+                });
+            }
+            
+            // Create activity logs
+            for (const entry of activityEntries) {
+                await tx.activityLog.create({
+                    data: {
+                        taskId: id,
+                        userId,
+                        action: entry.action,
+                        description: entry.description,
+                        metadata: entry.metadata
+                    }
+                });
+            }
 
             await tx.taskTeam.deleteMany({ where: { taskId: updated.id } });
             if (teamIds.length > 0) {
@@ -747,7 +848,8 @@ export const addComment = async (req: Request, res: Response) => {
         }
 
         const task = await prisma.task.findUnique({
-            where: { id: id }
+            where: { id: id },
+            include: { organization: true }
         });
 
         if (!task) {
@@ -771,6 +873,14 @@ export const addComment = async (req: Request, res: Response) => {
             return res.status(403).json({ error: 'Access denied' });
         }
 
+        // Extract @mentions from content
+        const mentionRegex = /@\[([^\]]+)\]\(user:([a-f0-9-]+)\)/g;
+        const mentionedUserIds = new Set<string>();
+        let match;
+        while ((match = mentionRegex.exec(content)) !== null) {
+            mentionedUserIds.add(match[2]);
+        }
+
         const comment = await prisma.comment.create({
             data: {
                 content,
@@ -787,6 +897,44 @@ export const addComment = async (req: Request, res: Response) => {
                 }
             }
         });
+
+        // Log activity
+        await prisma.activityLog.create({
+            data: {
+                taskId: id,
+                userId,
+                action: 'COMMENT_ADDED',
+                description: 'Added a comment',
+                metadata: { commentId: comment.id }
+            }
+        });
+
+        // Send notifications to mentioned users
+        if (mentionedUserIds.size > 0) {
+            const mentionedUsers = await prisma.user.findMany({
+                where: { id: { in: Array.from(mentionedUserIds) } },
+                select: { email: true, name: true }
+            });
+
+            const currentUser = await prisma.user.findUnique({
+                where: { id: userId },
+                select: { name: true }
+            });
+
+            for (const mentionedUser of mentionedUsers) {
+                if (mentionedUser.email) {
+                    await sendTaskAssignmentEmail({
+                        to: mentionedUser.email,
+                        assigneeName: mentionedUser.name,
+                        taskTitle: task.title,
+                        organizationName: task.organization.name,
+                        assignerName: currentUser?.name || 'Someone',
+                        dueDate: task.dueDate,
+                        priority: task.priority
+                    }).catch(() => {}); // Silent fail for notifications
+                }
+            }
+        }
 
         res.status(201).json(comment);
     } catch (error) {
@@ -845,19 +993,28 @@ export const getStats = async (req: Request, res: Response) => {
             };
         }
 
-        const [created, inProgress, completed, myTasks] = await Promise.all([
+        const now = new Date();
+        const [pending, ongoing, completed, overdue, myTasks] = await Promise.all([
             prisma.task.count({ where: { ...where, status: 'CREATED' } }),
             prisma.task.count({ where: { ...where, status: 'IN_PROGRESS' } }),
             prisma.task.count({ where: { ...where, status: 'COMPLETED' } }),
+            prisma.task.count({
+                where: {
+                    ...where,
+                    status: { not: 'COMPLETED' },
+                    dueDate: { lt: now }
+                }
+            }),
             prisma.task.count({ where: { ...where, assigneeId: userId } })
         ]);
 
         res.json({
-            created,
-            inProgress,
+            pending,
+            ongoing,
             completed,
+            overdue,
             myTasks,
-            total: created + inProgress + completed
+            total: pending + ongoing + completed
         });
     } catch (error) {
         console.error('Get stats error:', error);
@@ -875,7 +1032,8 @@ export const uploadAttachment = async (req: Request, res: Response) => {
         }
 
         const task = await prisma.task.findUnique({
-            where: { id: id }
+            where: { id: id },
+            include: { organization: true }
         });
 
         if (!task) {
@@ -909,6 +1067,17 @@ export const uploadAttachment = async (req: Request, res: Response) => {
             }
         });
 
+        // Log activity
+        await prisma.activityLog.create({
+            data: {
+                taskId: id,
+                userId,
+                action: 'ATTACHMENT_ADDED',
+                description: `Added attachment: ${req.file.originalname}`,
+                metadata: { attachmentId: attachment.id, fileName: req.file.originalname }
+            }
+        });
+
         res.status(201).json(attachment);
     } catch (error) {
         console.error('Upload attachment error:', error);
@@ -927,7 +1096,8 @@ export const addLinkAttachment = async (req: Request, res: Response) => {
         }
 
         const task = await prisma.task.findUnique({
-            where: { id }
+            where: { id },
+            include: { organization: true }
         });
 
         if (!task) {
@@ -957,6 +1127,17 @@ export const addLinkAttachment = async (req: Request, res: Response) => {
                 fileName: fileName || null,
                 url,
                 taskId: id
+            }
+        });
+
+        // Log activity
+        await prisma.activityLog.create({
+            data: {
+                taskId: id,
+                userId,
+                action: 'ATTACHMENT_ADDED',
+                description: `Added link: ${fileName || url}`,
+                metadata: { attachmentId: attachment.id, url }
             }
         });
 
@@ -1010,20 +1191,57 @@ export const getMemberStats = async (req: Request, res: Response) => {
         });
 
         const memberStats = await Promise.all(members.map(async (m) => {
-            const [created, inProgress, completed] = await Promise.all([
+            const now = new Date();
+            const [pending, ongoing, completed, overdue, okrLinkedTasks] = await Promise.all([
                 prisma.task.count({ where: { organizationId: organizationId as string, assigneeId: m.userId, status: 'CREATED', deletedAt: null } }),
                 prisma.task.count({ where: { organizationId: organizationId as string, assigneeId: m.userId, status: 'IN_PROGRESS', deletedAt: null } }),
-                prisma.task.count({ where: { organizationId: organizationId as string, assigneeId: m.userId, status: 'COMPLETED', deletedAt: null } })
+                prisma.task.count({ where: { organizationId: organizationId as string, assigneeId: m.userId, status: 'COMPLETED', deletedAt: null } }),
+                prisma.task.count({
+                    where: {
+                        organizationId: organizationId as string,
+                        assigneeId: m.userId,
+                        deletedAt: null,
+                        status: { not: 'COMPLETED' },
+                        dueDate: { lt: now }
+                    }
+                }),
+                prisma.task.count({
+                    where: {
+                        organizationId: organizationId as string,
+                        assigneeId: m.userId,
+                        deletedAt: null,
+                        tag: {
+                            keyResults: { some: {} }
+                        }
+                    }
+                })
             ]);
+
+            const total = pending + ongoing + completed;
+            let performanceScore = 0;
+            let temperature = '🔴 Low Activity';
+
+            if (total > 0) {
+                const completionRate = (completed / total) * 50; // 50 points max
+                const deadlineRate = ((total - overdue) / total) * 30; // 30 points max
+                const okrContribution = (okrLinkedTasks / total) * 20; // 20 points max
+                performanceScore = Math.round(completionRate + deadlineRate + okrContribution);
+
+                if (performanceScore > 75) temperature = '🔥 High Performance';
+                else if (performanceScore > 35) temperature = '🟡 Moderate Performance';
+            }
 
             return {
                 userId: m.userId,
                 name: m.user.name || m.user.email,
                 stats: {
-                    created,
-                    inProgress,
+                    pending,
+                    ongoing,
                     completed,
-                    total: created + inProgress + completed
+                    overdue,
+                    total,
+                    performanceScore,
+                    temperature
                 }
             };
         }));
@@ -1168,6 +1386,17 @@ export const deleteComment = async (req: Request, res: Response) => {
             where: { id: commentId }
         });
 
+        // Log activity
+        await prisma.activityLog.create({
+            data: {
+                taskId: comment.taskId,
+                userId,
+                action: 'COMMENT_DELETED',
+                description: 'Deleted a comment',
+                metadata: { commentId }
+            }
+        });
+
         res.json({ message: 'Comment deleted successfully' });
     } catch (error) {
         console.error('Delete comment error:', error);
@@ -1210,9 +1439,237 @@ export const deleteAttachment = async (req: Request, res: Response) => {
             where: { id: attachmentId }
         });
 
+        // Log activity
+        await prisma.activityLog.create({
+            data: {
+                taskId: attachment.taskId,
+                userId,
+                action: 'ATTACHMENT_DELETED',
+                description: `Deleted attachment: ${attachment.fileName || 'file'}`,
+                metadata: { attachmentId }
+            }
+        });
+
         res.json({ message: 'Attachment deleted successfully' });
     } catch (error) {
         console.error('Delete attachment error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+};
+
+export const submitWork = async (req: Request, res: Response) => {
+    try {
+        const userId = (req as any).user.userId;
+        const taskId = req.params.id as string;
+        const { description } = req.body;
+
+        const task = await prisma.task.findUnique({
+            where: { id: taskId },
+            include: { organization: true }
+        });
+
+        if (!task) {
+            return res.status(404).json({ error: 'Task not found' });
+        }
+
+        if (!ensureTaskIsActive(task)) {
+            return res.status(400).json({ error: 'Task is in Recently Deleted' });
+        }
+
+        // Only assignee or supporter can submit work
+        if (task.assigneeId !== userId && task.supporterId !== userId) {
+            return res.status(403).json({ error: 'Only assignee or supporter can submit work' });
+        }
+
+        const submission = await prisma.workSubmission.create({
+            data: {
+                taskId,
+                userId,
+                description: description || null
+            }
+        });
+
+        // Log activity
+        await prisma.activityLog.create({
+            data: {
+                taskId,
+                userId,
+                action: 'SUBMISSION_CREATED',
+                description: `${task.assigneeId === userId ? 'Assignee' : 'Supporter'} submitted work`,
+                metadata: { submissionId: submission.id }
+            }
+        });
+
+        res.json({ message: 'Work submitted successfully', submission });
+    } catch (error) {
+        console.error('Submit work error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+};
+
+export const getSubmissions = async (req: Request, res: Response) => {
+    try {
+        const taskId = req.params.id as string;
+        const userId = (req as any).user.userId;
+
+        const task = await prisma.task.findUnique({
+            where: { id: taskId },
+            include: { organization: true }
+        });
+
+        if (!task) {
+            return res.status(404).json({ error: 'Task not found' });
+        }
+
+        if (!ensureTaskIsActive(task)) {
+            return res.status(400).json({ error: 'Task is in Recently Deleted' });
+        }
+
+        const membership = await prisma.organizationMember.findUnique({
+            where: {
+                userId_organizationId: {
+                    userId,
+                    organizationId: task.organizationId
+                }
+            }
+        });
+
+        if (!membership) {
+            return res.status(403).json({ error: 'Access denied' });
+        }
+
+        const submissions = await prisma.workSubmission.findMany({
+            where: { taskId },
+            include: {
+                user: {
+                    select: { id: true, name: true, email: true }
+                }
+            },
+            orderBy: { submittedAt: 'desc' }
+        });
+
+        res.json(submissions);
+    } catch (error) {
+        console.error('Get submissions error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+};
+
+export const reviewSubmission = async (req: Request, res: Response) => {
+    try {
+        const userId = (req as any).user.userId;
+        const taskId = req.params.id as string;
+        const submissionId = req.params.submissionId as string;
+        const { status, reviewNotes } = req.body;
+
+        const task = await prisma.task.findUnique({
+            where: { id: taskId },
+            include: { organization: true }
+        });
+
+        if (!task) {
+            return res.status(404).json({ error: 'Task not found' });
+        }
+
+        if (!ensureTaskIsActive(task)) {
+            return res.status(400).json({ error: 'Task is in Recently Deleted' });
+        }
+
+        const membership = await prisma.organizationMember.findUnique({
+            where: {
+                userId_organizationId: {
+                    userId,
+                    organizationId: task.organizationId
+                }
+            }
+        });
+
+        if (!membership || membership.role !== 'ADMIN') {
+            return res.status(403).json({ error: 'Only admins can review submissions' });
+        }
+
+        if (!['PENDING', 'REVIEWED', 'APPROVED', 'REJECTED'].includes(status)) {
+            return res.status(400).json({ error: 'Invalid status' });
+        }
+
+        const submission = await prisma.workSubmission.update({
+            where: { id: submissionId },
+            data: {
+                status,
+                reviewNotes: reviewNotes || null,
+                reviewedAt: new Date(),
+                reviewedBy: userId
+            },
+            include: {
+                user: {
+                    select: { id: true, name: true, email: true }
+                }
+            }
+        });
+
+        // Log activity
+        await prisma.activityLog.create({
+            data: {
+                taskId,
+                userId,
+                action: 'SUBMISSION_REVIEWED',
+                description: `Submission ${status.toLowerCase()}`,
+                metadata: { submissionId, status }
+            }
+        });
+
+        res.json({ message: 'Submission reviewed successfully', submission });
+    } catch (error) {
+        console.error('Review submission error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+};
+
+export const getActivityTimeline = async (req: Request, res: Response) => {
+    try {
+        const taskId = req.params.id as string;
+        const userId = (req as any).user.userId;
+
+        const task = await prisma.task.findUnique({
+            where: { id: taskId },
+            include: { organization: true }
+        });
+
+        if (!task) {
+            return res.status(404).json({ error: 'Task not found' });
+        }
+
+        if (!ensureTaskIsActive(task)) {
+            return res.status(400).json({ error: 'Task is in Recently Deleted' });
+        }
+
+        const membership = await prisma.organizationMember.findUnique({
+            where: {
+                userId_organizationId: {
+                    userId,
+                    organizationId: task.organizationId
+                }
+            }
+        });
+
+        if (!membership) {
+            return res.status(403).json({ error: 'Access denied' });
+        }
+
+        const activities = await prisma.activityLog.findMany({
+            where: { taskId },
+            include: {
+                user: {
+                    select: { id: true, name: true, email: true }
+                }
+            },
+            orderBy: { createdAt: 'desc' },
+            take: 50
+        });
+
+        res.json(activities);
+    } catch (error) {
+        console.error('Get activity timeline error:', error);
         res.status(500).json({ error: 'Internal server error' });
     }
 };
