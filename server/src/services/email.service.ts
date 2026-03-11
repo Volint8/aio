@@ -104,10 +104,12 @@ export const sendInviteEmail = async (params: {
     role: string;
     inviteUrl: string;
     inviterName?: string | null;
+    inviteeName?: string | null;
 }) => {
-    const { to, organizationName, role, inviteUrl, inviterName } = params;
+    const { to, organizationName, role, inviteUrl, inviterName, inviteeName } = params;
     const subject = `Invitation to join ${organizationName} on Apraizal`;
     const inviter = inviterName || 'An administrator';
+    const recipient = inviteeName || to;
 
     const html = `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 10px;">

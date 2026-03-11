@@ -112,6 +112,15 @@ interface Okr {
     description?: string | null;
     periodStart: string;
     periodEnd: string;
+    assignments?: Array<{
+        id: string;
+        targetType: string;
+        targetId: string;
+        team?: {
+            id: string;
+            name: string;
+        };
+    }>;
     keyResults?: Array<{
         id: string;
         title: string;
@@ -130,6 +139,7 @@ interface Appraisal {
 interface InviteRecord {
     id: string;
     email: string;
+    name?: string | null;
     role: string;
     status: string;
     expiresAt: string;
@@ -139,6 +149,7 @@ interface ClientRecord {
     id: string;
     name: string;
     createdByUserId: string;
+    visibility: string;
     createdAt: string;
     projectCount?: number;
     taskCount?: number;
@@ -155,6 +166,7 @@ interface ProjectRecord {
     clientId: string;
     organizationId: string;
     createdByUserId: string;
+    visibility: string;
     createdAt: string;
     client: {
         id: string;
@@ -169,7 +181,7 @@ interface ProjectRecord {
 }
 
 type DashboardSection = 'projects' | 'tracker' | 'team' | 'tags' | 'okrs' | 'appraisals';
-type TaskFilter = 'all' | 'my' | 'created' | 'in_progress' | 'completed' | 'recently_deleted';
+type TaskFilter = 'all' | 'my' | 'created' | 'in_progress' | 'completed' | 'overdue' | 'recently_deleted';
 type TrackerView = 'users' | 'teams';
 type ProjectsTab = 'clients' | 'projects';
 
@@ -261,6 +273,8 @@ const DashboardPage = () => {
         description: '',
         periodStart: '',
         periodEnd: '',
+        assignedToTeamId: '',
+        supportedByTeamIds: [] as string[],
         keyResults: [{ title: '', tagName: '', tagColor: '#2563eb' }]
     });
     const [newAppraisal, setNewAppraisal] = useState({ subjectUserId: '', cycle: '', summary: '' });
@@ -271,12 +285,14 @@ const DashboardPage = () => {
         memberUserIds: [] as string[]
     });
     const [inviteEmail, setInviteEmail] = useState('');
+    const [inviteName, setInviteName] = useState('');
     const [inviteRole, setInviteRole] = useState('MEMBER');
     const [inviting, setInviting] = useState(false);
     const [teamError, setTeamError] = useState('');
     const [projectsTab, setProjectsTab] = useState<ProjectsTab>('projects');
     const [clientFormName, setClientFormName] = useState('');
-    const [projectForm, setProjectForm] = useState({ name: '', clientId: '' });
+    const [clientFormVisibility, setClientFormVisibility] = useState('ORG_WIDE');
+    const [projectForm, setProjectForm] = useState({ name: '', clientId: '', visibility: 'ORG_WIDE' });
     const [taskClientFilter, setTaskClientFilter] = useState('all');
     const [taskProjectFilter, setTaskProjectFilter] = useState('all');
 
@@ -457,6 +473,13 @@ const DashboardPage = () => {
             let filteredTasks = tasksRes.data as Task[];
             if (filter === 'my') {
                 filteredTasks = filteredTasks.filter((t: Task) => t.assignee?.id === user?.id);
+            } else if (filter === 'overdue') {
+                const now = new Date();
+                filteredTasks = filteredTasks.filter((t: Task) => 
+                    t.dueDate && 
+                    new Date(t.dueDate) < now && 
+                    t.status !== 'COMPLETED'
+                );
             } else if (filter !== 'all' && filter !== 'recently_deleted') {
                 const statusMap: Record<string, string> = {
                     created: 'CREATED',
@@ -497,6 +520,20 @@ const DashboardPage = () => {
     const selectedCreateTaskTag = tags.find((tag) => tag.id === newTask.tagId) || null;
     const selectedEditTaskTag = tags.find((tag) => tag.id === editTask.tagId) || null;
     const isDeletedView = filter === 'recently_deleted';
+
+    const isOverdue = (task: Task) => {
+        if (!task.dueDate || task.status === 'COMPLETED') return false;
+        return new Date(task.dueDate) < new Date();
+    };
+
+    const getDaysOverdue = (task: Task) => {
+        if (!task.dueDate) return 0;
+        const dueDate = new Date(task.dueDate);
+        const now = new Date();
+        if (dueDate >= now) return 0;
+        const diffMs = now.getTime() - dueDate.getTime();
+        return Math.ceil(diffMs / (24 * 60 * 60 * 1000));
+    };
 
     const getDaysUntilPurge = (deletedAt: string | null | undefined) => {
         if (!deletedAt) return RETENTION_DAYS;
@@ -595,8 +632,17 @@ const DashboardPage = () => {
     const handleCreateOkr = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
+            const assignments = [];
+            if (newOkr.assignedToTeamId) {
+                assignments.push({ targetType: 'TEAM', targetId: newOkr.assignedToTeamId });
+            }
+            newOkr.supportedByTeamIds.forEach((teamId) => {
+                assignments.push({ targetType: 'TEAM', targetId: teamId });
+            });
+
             await api.post(`/orgs/${orgId}/okrs`, {
                 ...newOkr,
+                assignments,
                 keyResults: newOkr.keyResults.filter((kr) => kr.title.trim() && kr.tagName.trim())
             });
             setNewOkr({
@@ -604,6 +650,8 @@ const DashboardPage = () => {
                 description: '',
                 periodStart: '',
                 periodEnd: '',
+                assignedToTeamId: '',
+                supportedByTeamIds: [],
                 keyResults: [{ title: '', tagName: '', tagColor: '#2563eb' }]
             });
             setShowCreateOkrModal(false);
@@ -703,9 +751,11 @@ const DashboardPage = () => {
             setInviting(true);
             await api.post(`/orgs/${orgId}/invites`, {
                 email: inviteEmail,
-                role: inviteRole
+                role: inviteRole,
+                name: inviteName || undefined
             });
             setInviteEmail('');
+            setInviteName('');
             setInviteRole('MEMBER');
             const invitesRes = await api.get(`/orgs/${orgId}/invites`);
             setInvites(invitesRes.data || []);
@@ -718,12 +768,27 @@ const DashboardPage = () => {
         }
     };
 
+    const handleResendInvite = async (inviteId: string) => {
+        if (!orgId || !window.confirm('Resend this invitation?')) return;
+
+        try {
+            await api.post(`/orgs/${orgId}/invites/${inviteId}/resend`);
+            const invitesRes = await api.get(`/orgs/${orgId}/invites`);
+            setInvites(invitesRes.data || []);
+        } catch (error: any) {
+            const errorData = error.response?.data?.error;
+            const message = typeof errorData === 'object' ? errorData.message : errorData;
+            alert(message || 'Failed to resend invite');
+        }
+    };
+
     const handleCreateClient = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!orgId || !clientFormName.trim()) return;
         try {
-            await api.post(`/orgs/${orgId}/clients`, { name: clientFormName });
+            await api.post(`/orgs/${orgId}/clients`, { name: clientFormName, visibility: clientFormVisibility });
             setClientFormName('');
+            setClientFormVisibility('ORG_WIDE');
             setShowCreateClientModal(false);
             await fetchData();
         } catch (error: any) {
@@ -736,7 +801,7 @@ const DashboardPage = () => {
         e.preventDefault();
         if (!orgId || !editingClient || !clientFormName.trim()) return;
         try {
-            await api.patch(`/orgs/${orgId}/clients/${editingClient.id}`, { name: clientFormName });
+            await api.patch(`/orgs/${orgId}/clients/${editingClient.id}`, { name: clientFormName, visibility: clientFormVisibility });
             setEditingClient(null);
             setClientFormName('');
             await fetchData();
@@ -763,9 +828,10 @@ const DashboardPage = () => {
         try {
             await api.post(`/orgs/${orgId}/projects`, {
                 name: projectForm.name,
-                clientId: projectForm.clientId
+                clientId: projectForm.clientId,
+                visibility: projectForm.visibility
             });
-            setProjectForm({ name: '', clientId: clients[0]?.id || '' });
+            setProjectForm({ name: '', clientId: clients[0]?.id || '', visibility: 'ORG_WIDE' });
             setShowCreateProjectModal(false);
             await fetchData();
         } catch (error: any) {
@@ -780,10 +846,11 @@ const DashboardPage = () => {
         try {
             await api.patch(`/orgs/${orgId}/projects/${editingProject.id}`, {
                 name: projectForm.name,
-                clientId: projectForm.clientId
+                clientId: projectForm.clientId,
+                visibility: projectForm.visibility
             });
             setEditingProject(null);
-            setProjectForm({ name: '', clientId: clients[0]?.id || '' });
+            setProjectForm({ name: '', clientId: clients[0]?.id || '', visibility: 'ORG_WIDE' });
             await fetchData();
         } catch (error: any) {
             const errorData = error.response?.data?.error;
@@ -872,7 +939,7 @@ const DashboardPage = () => {
             <div className="dashboard-container">
                 <div className="dashboard-header">
                     <div>
-                        <h1>{organization?.name || 'Workspace'}</h1>
+                        <h1>Welcome to {organization?.name || 'Workspace'}, {user?.name || user?.email}</h1>
                         <p className="org-subtitle">
                             {organization?.userRole} • {organization?.members?.length || 0} Team Members
                         </p>
@@ -923,6 +990,12 @@ const DashboardPage = () => {
                                 {teamError && <p className="team-error">{teamError}</p>}
                                 <form className="team-invite-form" onSubmit={handleInviteMember}>
                                     <input
+                                        type="text"
+                                        value={inviteName}
+                                        onChange={(e) => setInviteName(e.target.value)}
+                                        placeholder="Full name (optional)"
+                                    />
+                                    <input
                                         type="email"
                                         value={inviteEmail}
                                         onChange={(e) => setInviteEmail(e.target.value)}
@@ -943,10 +1016,29 @@ const DashboardPage = () => {
                                         {invites.slice(0, 8).map((invite) => (
                                             <div key={invite.id} className="team-invite-row">
                                                 <div className="team-member-info">
-                                                    <strong>{invite.email}</strong>
+                                                    <div>
+                                                        {invite.name ? (
+                                                            <>
+                                                                <strong>{invite.name}</strong>
+                                                                <span className="invite-email">{invite.email}</span>
+                                                            </>
+                                                        ) : (
+                                                            <strong>{invite.email}</strong>
+                                                        )}
+                                                    </div>
                                                     <span>Expires {new Date(invite.expiresAt).toLocaleDateString()}</span>
                                                 </div>
                                                 <div className="team-member-role">
+                                                    {invite.status === 'PENDING' && (
+                                                        <button
+                                                            type="button"
+                                                            className="btn-secondary"
+                                                            style={{ padding: '4px 10px', fontSize: '0.8em', marginRight: '8px' }}
+                                                            onClick={() => handleResendInvite(invite.id)}
+                                                        >
+                                                            Resend
+                                                        </button>
+                                                    )}
                                                     <span className="role-badge low">{invite.role}</span>
                                                     <span className={`role-badge ${invite.status.toLowerCase()}`}>{invite.status}</span>
                                                 </div>
@@ -1045,7 +1137,7 @@ const DashboardPage = () => {
                                                             className="btn-secondary"
                                                             onClick={() => {
                                                                 setEditingProject(project);
-                                                                setProjectForm({ name: project.name, clientId: project.clientId });
+                                                                setProjectForm({ name: project.name, clientId: project.clientId, visibility: project.visibility });
                                                             }}
                                                         >
                                                             Edit
@@ -1084,6 +1176,7 @@ const DashboardPage = () => {
                                                             onClick={() => {
                                                                 setEditingClient(client);
                                                                 setClientFormName(client.name);
+                                                                setClientFormVisibility(client.visibility);
                                                             }}
                                                         >
                                                             Edit
@@ -1133,6 +1226,19 @@ const DashboardPage = () => {
                                     <div className="task-header">
                                         <h3>{okr.title}</h3>
                                         <p className="task-description">{okr.description || 'No description'}</p>
+                                        {(okr.assignments && okr.assignments.length > 0) && (
+                                            <div className="task-meta" style={{ marginTop: 8 }}>
+                                                {okr.assignments.filter((a) => a.targetType === 'TEAM' && a.team).some((a) => a.targetType === 'TEAM') && (
+                                                    <div style={{ marginBottom: 4 }}>
+                                                        <strong>Assigned To:</strong>{' '}
+                                                        {okr.assignments
+                                                            .filter((a) => a.targetType === 'TEAM' && a.team)
+                                                            .map((a) => a.team!.name)
+                                                            .join(', ')}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
                                         <div className="task-meta">
                                             <span><strong>Start:</strong> {new Date(okr.periodStart).toLocaleDateString()}</span>
                                             <span><strong>End:</strong> {new Date(okr.periodEnd).toLocaleDateString()}</span>
@@ -1280,6 +1386,7 @@ const DashboardPage = () => {
                                     <button type="button" className={`btn-filter ${filter === 'created' ? 'active' : ''}`} onClick={() => setFilter('created')}>Created</button>
                                     <button type="button" className={`btn-filter ${filter === 'in_progress' ? 'active' : ''}`} onClick={() => setFilter('in_progress')}>In Progress</button>
                                     <button type="button" className={`btn-filter ${filter === 'completed' ? 'active' : ''}`} onClick={() => setFilter('completed')}>Completed</button>
+                                    <button type="button" className={`btn-filter overdue ${filter === 'overdue' ? 'active' : ''}`} onClick={() => setFilter('overdue')}>Overdue</button>
                                     {isAdmin && (
                                         <button type="button" className={`btn-filter ${filter === 'recently_deleted' ? 'active' : ''}`} onClick={() => setFilter('recently_deleted')}>Recently Deleted</button>
                                     )}
@@ -1309,12 +1416,17 @@ const DashboardPage = () => {
                             <div className="tasks-workspace">
                                 <div className="tasks-list">
                                     {tasks.map((task) => (
-                                        <button key={task.id} type="button" className={`task-card task-card-compact ${selectedTaskId === task.id ? 'active' : ''}`} onClick={() => setSelectedTaskId(task.id)}>
+                                        <button key={task.id} type="button" className={`task-card task-card-compact ${selectedTaskId === task.id ? 'active' : ''} ${isOverdue(task) ? 'overdue' : ''}`} onClick={() => setSelectedTaskId(task.id)}>
                                             <div className="task-header">
                                                 <h3>{task.title}</h3>
                                                 <div className="task-badges">
                                                     <span className={`priority-badge ${task.priority.toLowerCase()}`}>{task.priority}</span>
                                                     <span className={`status-badge ${task.status.toLowerCase()}`}>{task.status.replace('_', ' ')}</span>
+                                                    {isOverdue(task) && (
+                                                        <span className="status-badge overdue" title={`Due: ${new Date(task.dueDate!).toLocaleDateString()} (${getDaysOverdue(task)} days overdue)`}>
+                                                            Overdue
+                                                        </span>
+                                                    )}
                                                     {task.tag && (
                                                         <span
                                                             className="priority-badge low"
@@ -1527,6 +1639,19 @@ const DashboardPage = () => {
                                     autoFocus
                                 />
                             </div>
+                            <div className="form-group">
+                                <label>Visibility</label>
+                                <select
+                                    value={clientFormVisibility}
+                                    onChange={(e) => setClientFormVisibility(e.target.value)}
+                                >
+                                    <option value="ORG_WIDE">Organization-wide (All members)</option>
+                                    <option value="CREATOR_ONLY">Only me (Creator)</option>
+                                </select>
+                            </div>
+                            <div className="modal-notice">
+                                <small>This client will be visible to all team members and team leads.</small>
+                            </div>
                             <div className="modal-actions">
                                 <button type="button" onClick={() => setShowCreateClientModal(false)} className="btn-secondary">Cancel</button>
                                 <button type="submit" className="btn-primary">Create Client</button>
@@ -1550,6 +1675,16 @@ const DashboardPage = () => {
                                     required
                                     autoFocus
                                 />
+                            </div>
+                            <div className="form-group">
+                                <label>Visibility</label>
+                                <select
+                                    value={clientFormVisibility}
+                                    onChange={(e) => setClientFormVisibility(e.target.value)}
+                                >
+                                    <option value="ORG_WIDE">Organization-wide (All members)</option>
+                                    <option value="CREATOR_ONLY">Only me (Creator)</option>
+                                </select>
                             </div>
                             <div className="modal-actions">
                                 <button type="button" onClick={() => setEditingClient(null)} className="btn-secondary">Cancel</button>
@@ -1588,6 +1723,19 @@ const DashboardPage = () => {
                                     ))}
                                 </select>
                             </div>
+                            <div className="form-group">
+                                <label>Visibility</label>
+                                <select
+                                    value={projectForm.visibility}
+                                    onChange={(e) => setProjectForm({ ...projectForm, visibility: e.target.value })}
+                                >
+                                    <option value="ORG_WIDE">Organization-wide (All members)</option>
+                                    <option value="CREATOR_ONLY">Only me (Creator)</option>
+                                </select>
+                            </div>
+                            <div className="modal-notice">
+                                <small>This project will be visible to all team members and team leads.</small>
+                            </div>
                             <div className="modal-actions">
                                 <button type="button" onClick={() => setShowCreateProjectModal(false)} className="btn-secondary">Cancel</button>
                                 <button type="submit" className="btn-primary">Create Project</button>
@@ -1623,6 +1771,16 @@ const DashboardPage = () => {
                                     {clients.map((client) => (
                                         <option key={client.id} value={client.id}>{client.name}</option>
                                     ))}
+                                </select>
+                            </div>
+                            <div className="form-group">
+                                <label>Visibility</label>
+                                <select
+                                    value={projectForm.visibility}
+                                    onChange={(e) => setProjectForm({ ...projectForm, visibility: e.target.value })}
+                                >
+                                    <option value="ORG_WIDE">Organization-wide (All members)</option>
+                                    <option value="CREATOR_ONLY">Only me (Creator)</option>
                                 </select>
                             </div>
                             <div className="modal-actions">
@@ -1946,6 +2104,43 @@ const DashboardPage = () => {
                                 <div className="form-group">
                                     <label>Period End</label>
                                     <input type="date" value={newOkr.periodEnd} onChange={(e) => setNewOkr({ ...newOkr, periodEnd: e.target.value })} required />
+                                </div>
+                            </div>
+
+                            <div className="form-group">
+                                <label>Assigned To (Primary Team)</label>
+                                <select
+                                    value={newOkr.assignedToTeamId}
+                                    onChange={(e) => setNewOkr({ ...newOkr, assignedToTeamId: e.target.value })}
+                                >
+                                    <option value="">Select a team</option>
+                                    {teams.map((team) => (
+                                        <option key={team.id} value={team.id}>{team.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            <div className="form-group">
+                                <label>Supported By (Contributing Teams)</label>
+                                <div style={{ maxHeight: 150, overflowY: 'auto', border: '1px solid var(--border-color)', borderRadius: 8, padding: 8 }}>
+                                    {teams.map((team) => (
+                                        <label key={team.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', cursor: 'pointer' }}>
+                                            <input
+                                                type="checkbox"
+                                                checked={newOkr.supportedByTeamIds.includes(team.id)}
+                                                onChange={(e) => {
+                                                    const checked = e.target.checked;
+                                                    setNewOkr((prev) => ({
+                                                        ...prev,
+                                                        supportedByTeamIds: checked
+                                                            ? [...prev.supportedByTeamIds, team.id]
+                                                            : prev.supportedByTeamIds.filter((id) => id !== team.id)
+                                                    }));
+                                                }}
+                                            />
+                                            <span>{team.name}</span>
+                                        </label>
+                                    ))}
                                 </div>
                             </div>
 

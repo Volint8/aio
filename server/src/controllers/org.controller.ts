@@ -228,7 +228,7 @@ export const createInvite = async (req: Request, res: Response) => {
   try {
     const requesterUserId = (req as any).user.userId as string;
     const organizationId = req.params.id as string;
-    const { email, role } = req.body as { email?: string; role?: string };
+    const { email, role, name } = req.body as { email?: string; role?: string; name?: string };
 
     if (!email || !role) {
       return res.status(400).json({ error: 'Email and role are required' });
@@ -308,7 +308,8 @@ export const createInvite = async (req: Request, res: Response) => {
         organizationName: invite.organization.name,
         role,
         inviteUrl,
-        inviterName: invite.invitedBy.name || invite.invitedBy.email
+        inviterName: invite.invitedBy.name || invite.invitedBy.email,
+        inviteeName: name
       });
     } catch (emailError) {
       console.error('Failed to send invite email:', emailError);
@@ -319,7 +320,8 @@ export const createInvite = async (req: Request, res: Response) => {
       email: invite.email,
       role: invite.role,
       status: invite.status,
-      expiresAt: invite.expiresAt
+      expiresAt: invite.expiresAt,
+      name: name || null
     });
   } catch (error) {
     console.error('Create invite error:', error);
@@ -362,6 +364,69 @@ export const listInvites = async (req: Request, res: Response) => {
     return res.json(invites);
   } catch (error) {
     console.error('List invites error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+export const resendInviteById = async (req: Request, res: Response) => {
+  try {
+    const requesterUserId = (req as any).user.userId as string;
+    const organizationId = req.params.id as string;
+    const inviteId = req.params.inviteId as string;
+
+    const isAdmin = await requireAdmin(requesterUserId, organizationId);
+    if (!isAdmin) {
+      return res.status(403).json({ error: 'Only admins can resend invites' });
+    }
+
+    const invite = await prisma.invite.findUnique({
+      where: { id: inviteId },
+      include: {
+        organization: true,
+        invitedBy: {
+          select: { name: true, email: true }
+        }
+      }
+    });
+
+    if (!invite || invite.organizationId !== organizationId) {
+      return res.status(404).json({ error: 'Invite not found' });
+    }
+
+    if (invite.status !== 'PENDING') {
+      return res.status(400).json({ error: 'Only pending invites can be resent' });
+    }
+
+    const baseUrl = process.env.CLIENT_URL?.split(',')[0]?.trim() || 'http://localhost:5173';
+    const rawToken = generateInviteToken();
+    const tokenHash = hashToken(rawToken);
+    const newExpiresAt = new Date(Date.now() + 72 * 60 * 60 * 1000);
+
+    await prisma.invite.update({
+      where: { id: inviteId },
+      data: {
+        tokenHash,
+        expiresAt: newExpiresAt
+      }
+    });
+
+    const inviteUrl = `${baseUrl}/accept-invite?token=${rawToken}`;
+
+    try {
+      await sendInviteEmail({
+        to: invite.email,
+        organizationName: invite.organization.name,
+        role: invite.role,
+        inviteUrl,
+        inviterName: invite.invitedBy.name || invite.invitedBy.email
+      });
+    } catch (emailError) {
+      console.error('Failed to send invite email:', emailError);
+    }
+
+    return res.json({ message: 'Invite resent' });
+  } catch (error) {
+    console.error('Resend invite error:', error);
     return res.status(500).json({ error: 'Internal server error' });
   }
 };
@@ -750,8 +815,20 @@ export const listClients = async (req: Request, res: Response) => {
       return res.status(403).json({ error: 'Access denied' });
     }
 
+    const isAdmin = membership.role === 'ADMIN';
+
+    const whereClause: any = {
+      organizationId,
+      ...(isAdmin ? {} : {
+        OR: [
+          { visibility: 'ORG_WIDE' },
+          { createdByUserId: userId }
+        ]
+      })
+    };
+
     const clients = await prisma.client.findMany({
-      where: { organizationId },
+      where: whereClause,
       include: {
         createdBy: {
           select: { id: true, name: true, email: true }
@@ -795,7 +872,7 @@ export const createClient = async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.userId as string;
     const organizationId = req.params.id as string;
-    const { name } = req.body as { name?: string };
+    const { name, visibility } = req.body as { name?: string; visibility?: string };
 
     if (!name?.trim()) {
       return res.status(400).json({ error: 'Client name is required' });
@@ -806,12 +883,17 @@ export const createClient = async (req: Request, res: Response) => {
       return res.status(403).json({ error: 'Only team leads or members can create clients' });
     }
 
+    if (visibility && !['ORG_WIDE', 'CREATOR_ONLY'].includes(visibility)) {
+      return res.status(400).json({ error: 'Visibility must be ORG_WIDE or CREATOR_ONLY' });
+    }
+
     const client = await prisma.client.create({
       data: {
         organizationId,
         name: name.trim(),
         normalizedName: normalizeOrgName(name),
-        createdByUserId: userId
+        createdByUserId: userId,
+        visibility: visibility || 'ORG_WIDE'
       },
       include: {
         createdBy: {
@@ -839,7 +921,7 @@ export const updateClient = async (req: Request, res: Response) => {
     const userId = (req as any).user.userId as string;
     const organizationId = req.params.id as string;
     const clientId = req.params.clientId as string;
-    const { name } = req.body as { name?: string };
+    const { name, visibility } = req.body as { name?: string; visibility?: string };
 
     if (!name?.trim()) {
       return res.status(400).json({ error: 'Client name is required' });
@@ -858,11 +940,16 @@ export const updateClient = async (req: Request, res: Response) => {
       return res.status(403).json({ error: 'You can only update clients you created' });
     }
 
+    if (visibility && !['ORG_WIDE', 'CREATOR_ONLY'].includes(visibility)) {
+      return res.status(400).json({ error: 'Visibility must be ORG_WIDE or CREATOR_ONLY' });
+    }
+
     const updated = await prisma.client.update({
       where: { id: clientId },
       data: {
         name: name.trim(),
-        normalizedName: normalizeOrgName(name)
+        normalizedName: normalizeOrgName(name),
+        ...(visibility !== undefined ? { visibility } : {})
       },
       include: {
         createdBy: {
@@ -943,11 +1030,21 @@ export const listProjects = async (req: Request, res: Response) => {
       return res.status(403).json({ error: 'Access denied' });
     }
 
+    const isAdmin = membership.role === 'ADMIN';
+
+    const whereClause: any = {
+      organizationId,
+      ...(clientId ? { clientId } : {}),
+      ...(isAdmin ? {} : {
+        OR: [
+          { visibility: 'ORG_WIDE' },
+          { createdByUserId: userId }
+        ]
+      })
+    };
+
     const projects = await prisma.project.findMany({
-      where: {
-        organizationId,
-        ...(clientId ? { clientId } : {})
-      },
+      where: whereClause,
       include: {
         client: {
           select: { id: true, name: true }
@@ -976,7 +1073,7 @@ export const createProject = async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.userId as string;
     const organizationId = req.params.id as string;
-    const { clientId, name } = req.body as { clientId?: string; name?: string };
+    const { clientId, name, visibility } = req.body as { clientId?: string; name?: string; visibility?: string };
 
     if (!name?.trim() || !clientId) {
       return res.status(400).json({ error: 'Project name and clientId are required' });
@@ -992,13 +1089,18 @@ export const createProject = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Selected client is invalid for this organization' });
     }
 
+    if (visibility && !['ORG_WIDE', 'CREATOR_ONLY'].includes(visibility)) {
+      return res.status(400).json({ error: 'Visibility must be ORG_WIDE or CREATOR_ONLY' });
+    }
+
     const project = await prisma.project.create({
       data: {
         organizationId,
         clientId,
         name: name.trim(),
         normalizedName: normalizeOrgName(name),
-        createdByUserId: userId
+        createdByUserId: userId,
+        visibility: visibility || 'ORG_WIDE'
       },
       include: {
         client: { select: { id: true, name: true } },
@@ -1024,7 +1126,7 @@ export const updateProject = async (req: Request, res: Response) => {
     const userId = (req as any).user.userId as string;
     const organizationId = req.params.id as string;
     const projectId = req.params.projectId as string;
-    const { name, clientId } = req.body as { name?: string; clientId?: string };
+    const { name, clientId, visibility } = req.body as { name?: string; clientId?: string; visibility?: string };
 
     const editorMembership = await getEditorMembership(userId, organizationId);
     if (!editorMembership) {
@@ -1046,11 +1148,16 @@ export const updateProject = async (req: Request, res: Response) => {
       }
     }
 
+    if (visibility && !['ORG_WIDE', 'CREATOR_ONLY'].includes(visibility)) {
+      return res.status(400).json({ error: 'Visibility must be ORG_WIDE or CREATOR_ONLY' });
+    }
+
     const updated = await prisma.project.update({
       where: { id: projectId },
       data: {
         ...(name?.trim() ? { name: name.trim(), normalizedName: normalizeOrgName(name) } : {}),
-        ...(clientId ? { clientId } : {})
+        ...(clientId ? { clientId } : {}),
+        ...(visibility !== undefined ? { visibility } : {})
       },
       include: {
         client: { select: { id: true, name: true } },
@@ -1322,7 +1429,22 @@ export const listOkrs = async (req: Request, res: Response) => {
       orderBy: { createdAt: 'desc' }
     });
 
-    return res.json(okrs);
+    // Enrich assignments with team data
+    const enrichedOkrs = await Promise.all(okrs.map(async (okr) => {
+      const enrichedAssignments = await Promise.all(okr.assignments.map(async (assignment) => {
+        if (assignment.targetType === 'TEAM') {
+          const team = await prisma.team.findUnique({
+            where: { id: assignment.targetId },
+            select: { id: true, name: true }
+          });
+          return { ...assignment, team };
+        }
+        return assignment;
+      }));
+      return { ...okr, assignments: enrichedAssignments };
+    }));
+
+    return res.json(enrichedOkrs);
   } catch (error) {
     console.error('List OKRs error:', error);
     return res.status(500).json({ error: 'Internal server error' });
