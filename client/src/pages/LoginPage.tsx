@@ -154,6 +154,18 @@ const LoginPage = () => {
                             required
                             minLength={6}
                         />
+                        {mode === 'login' && (
+                            <div style={{ textAlign: 'right', marginTop: '4px' }}>
+                                <button
+                                    type="button"
+                                    className="link-button"
+                                    style={{ fontSize: '0.85rem' }}
+                                    onClick={() => navigate('/forgot-password')}
+                                >
+                                    Forgot Password?
+                                </button>
+                            </div>
+                        )}
                     </div>
 
                     {mode === 'admin_signup' && signupStep === 2 && (

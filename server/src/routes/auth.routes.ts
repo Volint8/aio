@@ -7,7 +7,9 @@ import {
     adminSignupInit,
     adminSignupComplete,
     inviteAcceptInit,
-    inviteAcceptComplete
+    inviteAcceptComplete,
+    forgotPasswordInit,
+    forgotPasswordComplete
 } from '../controllers/auth.controller';
 import { authenticateToken } from '../middleware/auth.middleware';
 
@@ -20,6 +22,8 @@ router.post('/admin-signup/complete', adminSignupComplete);
 router.post('/invites/accept/init', inviteAcceptInit);
 router.post('/invites/accept/complete', inviteAcceptComplete);
 router.post('/verify-otp', verifyOtp);
+router.post('/forgot-password/init', forgotPasswordInit);
+router.post('/forgot-password/complete', forgotPasswordComplete);
 router.get('/me', authenticateToken, getMe);
 
 export default router;

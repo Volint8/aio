@@ -49,6 +49,29 @@ export const sendOtpEmail = async (to: string, otp: string) => {
     return sendEmail(to, subject, html);
 };
 
+export const sendPasswordResetEmail = async (to: string, otp: string) => {
+    const subject = "Password Reset Request - Apraizal Platform";
+    const html = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 10px;">
+            <div style="text-align: center; margin-bottom: 20px;">
+                <img src="${(process.env.CLIENT_URL || 'http://localhost:5173').split(',')[0]}/images/image.png" alt="Apraizal Logo" style="height: 40px;" />
+            </div>
+            <h2 style="color: #333; text-align: center;">Password Reset Request</h2>
+            <p style="color: #666; font-size: 16px;">Hello,</p>
+            <p style="color: #666; font-size: 16px;">You requested to reset your password. Please use the following code to proceed:</p>
+            <div style="background-color: #f4f4f4; padding: 15px; text-align: center; border-radius: 5px; margin: 20px 0;">
+                <span style="font-size: 24px; font-weight: bold; letter-spacing: 5px; color: #333;">${otp}</span>
+            </div>
+            <p style="color: #666; font-size: 14px;">This code will expire in 15 minutes.</p>
+            <p style="color: #666; font-size: 14px;">If you did not request this password reset, please ignore this email and your password will remain unchanged.</p>
+            <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
+            <p style="text-align: center; color: #999; font-size: 12px;">&copy; ${new Date().getFullYear()} Apraizal Platform. All rights reserved.</p>
+        </div>
+    `;
+
+    return sendEmail(to, subject, html);
+};
+
 export const sendTaskAssignmentEmail = async (params: {
     to: string;
     assigneeName?: string | null;

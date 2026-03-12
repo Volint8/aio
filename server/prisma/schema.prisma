@@ -8,17 +8,19 @@ datasource db {
 }
 
 model User {
-  id                 String               @id @default(uuid())
-  email              String               @unique
-  passwordHash       String
-  name               String?
-  role               String               @default("USER") // USER, ADMIN
-  isVerified         Boolean              @default(false)
-  otp                String?
-  otpExpiresAt       DateTime?
-  pendingInviteId    String?
-  createdAt          DateTime             @default(now())
-  updatedAt          DateTime             @updatedAt
+  id                     String               @id @default(uuid())
+  email                  String               @unique
+  passwordHash           String
+  name                   String?
+  role                   String               @default("USER") // USER, ADMIN
+  isVerified             Boolean              @default(false)
+  otp                    String?
+  otpExpiresAt           DateTime?
+  passwordResetOtp       String?
+  passwordResetOtpExpiresAt DateTime?
+  pendingInviteId        String?
+  createdAt              DateTime             @default(now())
+  updatedAt              DateTime             @updatedAt
   organizations      OrganizationMember[]
   tasks              Task[]               @relation("AssignedTasks")
   supportedTasks     Task[]               @relation("SupportedTasks")

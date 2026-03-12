@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { PrismaClient } from '@prisma/client';
-import { sendOtpEmail } from '../services/email.service';
+import { sendOtpEmail, sendPasswordResetEmail } from '../services/email.service';
 import {
   getEmailDomain,
   isWorkEmail,
@@ -480,6 +480,122 @@ export const getMe = async (req: Request, res: Response) => {
     return res.json(user);
   } catch (error) {
     console.error('Get me error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+export const forgotPasswordInit = async (req: Request, res: Response) => {
+  try {
+    const { email } = req.body as { email?: string };
+
+    if (!email) {
+      return res.status(400).json({ error: 'Email is required' });
+    }
+
+    const normalizedEmail = normalizeEmail(email);
+    const user = await prisma.user.findUnique({ where: { email: normalizedEmail } });
+
+    // Always return success message to prevent email enumeration
+    if (!user || !user.isVerified) {
+      return res.json({ message: 'If the email exists and is verified, a password reset code has been sent.' });
+    }
+
+    const otp = randomOtp();
+    const otpExpiresAt = otpExpiryDate();
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        passwordResetOtp: otp,
+        passwordResetOtpExpiresAt: otpExpiresAt
+      }
+    });
+
+    try {
+      await sendPasswordResetEmail(normalizedEmail, otp);
+    } catch (emailError) {
+      console.error('Failed to send password reset email:', emailError);
+      // Rollback OTP
+      await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          passwordResetOtp: null,
+          passwordResetOtpExpiresAt: null
+        }
+      });
+      return res.status(500).json({ error: 'Failed to send reset email. Please try again.' });
+    }
+
+    return res.json({ message: 'If the email exists and is verified, a password reset code has been sent.' });
+  } catch (error) {
+    console.error('Forgot password init error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+export const forgotPasswordComplete = async (req: Request, res: Response) => {
+  try {
+    const { email, otp, newPassword } = req.body as { email?: string; otp?: string; newPassword?: string };
+
+    if (!email || !otp || !newPassword) {
+      return res.status(400).json({ error: 'Email, OTP, and new password are required' });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({ error: 'Password must be at least 6 characters' });
+    }
+
+    const normalizedEmail = normalizeEmail(email);
+    const user = await prisma.user.findUnique({ where: { email: normalizedEmail } });
+
+    if (!user || !user.isVerified) {
+      return res.status(400).json({ error: 'Invalid reset request. Please try again.' });
+    }
+
+    if (!user.passwordResetOtp || !user.passwordResetOtpExpiresAt) {
+      return res.status(400).json({ error: 'No password reset request found. Please initiate a new reset.' });
+    }
+
+    if (new Date() > user.passwordResetOtpExpiresAt) {
+      await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          passwordResetOtp: null,
+          passwordResetOtpExpiresAt: null
+        }
+      });
+      return res.status(400).json({ error: 'Reset code expired. Please request a new one.' });
+    }
+
+    if (user.passwordResetOtp !== otp) {
+      return res.status(400).json({ error: 'Invalid reset code' });
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        passwordHash,
+        passwordResetOtp: null,
+        passwordResetOtpExpiresAt: null
+      }
+    });
+
+    const authToken = signAuthToken({ id: user.id, email: user.email, role: user.role });
+
+    return res.json({
+      message: 'Password reset successful',
+      token: authToken,
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role
+      }
+    });
+  } catch (error) {
+    console.error('Forgot password complete error:', error);
     return res.status(500).json({ error: 'Internal server error' });
   }
 };

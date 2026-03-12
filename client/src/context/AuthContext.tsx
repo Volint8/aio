@@ -17,6 +17,8 @@ interface AuthContextType {
     inviteAcceptInit: (token: string, pass: string, name?: string) => Promise<{ mode: string; email: string }>;
     inviteAcceptComplete: (token: string, pass: string) => Promise<void>;
     verifyOtp: (email: string, otp: string) => Promise<void>;
+    forgotPasswordInit: (email: string) => Promise<{ message: string }>;
+    forgotPasswordComplete: (email: string, otp: string, newPassword: string) => Promise<{ message: string; token: string; user: User }>;
     logout: () => void;
     loading: boolean;
 }
@@ -84,6 +86,19 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         api.defaults.headers.common['Authorization'] = `Bearer ${res.data.token}`;
     };
 
+    const forgotPasswordInit = async (email: string) => {
+        const res = await api.post('/auth/forgot-password/init', { email });
+        return { message: res.data.message };
+    };
+
+    const forgotPasswordComplete = async (email: string, otp: string, newPassword: string) => {
+        const res = await api.post('/auth/forgot-password/complete', { email, otp, newPassword });
+        setUser(res.data.user);
+        localStorage.setItem('token', res.data.token);
+        api.defaults.headers.common['Authorization'] = `Bearer ${res.data.token}`;
+        return { message: res.data.message, token: res.data.token, user: res.data.user };
+    };
+
     const logout = () => {
         setUser(null);
         localStorage.removeItem('token');
@@ -99,6 +114,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             inviteAcceptInit,
             inviteAcceptComplete,
             verifyOtp,
+            forgotPasswordInit,
+            forgotPasswordComplete,
             logout,
             loading
         }}>

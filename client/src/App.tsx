@@ -7,6 +7,7 @@ import InviteAcceptPage from './pages/InviteAcceptPage';
 import OrgSelectionPage from './pages/OrgSelectionPage';
 import DashboardPage from './pages/DashboardPage';
 import LandingPage from './pages/LandingPage';
+import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import Layout from './components/common/Layout';
 
 const ProtectedRoute = ({ children }: { children: ReactElement }) => {
@@ -40,6 +41,7 @@ function AppRoutes() {
         user ? <Navigate to="/organizations" replace /> : <LoginPage />
       } />
       <Route path="/confirm-otp" element={<OTPPage />} />
+      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/accept-invite" element={<InviteAcceptPage />} />
       <Route path="/organizations" element={
         <ProtectedRoute>
