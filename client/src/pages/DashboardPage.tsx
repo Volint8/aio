@@ -504,7 +504,20 @@ const DashboardPage = () => {
 
     useEffect(() => {
         if (!orgId) {
-            navigate('/organizations');
+            // Auto-select the first organization
+            api.get('/orgs')
+                .then((res) => {
+                    const organizations = Array.isArray(res.data) ? res.data : [];
+                    if (organizations.length > 0) {
+                        const firstOrg = organizations[0];
+                        localStorage.setItem('selectedOrgId', firstOrg.id);
+                        localStorage.setItem('selectedOrgRole', firstOrg.userRole);
+                        window.location.reload(); // Reload to apply the selected org
+                    }
+                })
+                .catch(() => {
+                    console.error('Failed to fetch organizations');
+                });
             return;
         }
         fetchData();
@@ -628,8 +641,13 @@ const DashboardPage = () => {
             } else if (clientsRes.data?.[0]?.id) {
                 setProjectForm((prev) => ({ ...prev, clientId: prev.clientId || clientsRes.data[0].id }));
             }
-        } catch (error) {
-            console.error('Failed to fetch data:', error);
+        } catch (error: any) {
+            console.error('Failed to fetch dashboard data:', error);
+            // Set organization to null on error to prevent rendering with stale data
+            setOrganization(null);
+            // Show error message to user
+            const errorMessage = error.response?.data?.error || error.message || 'Failed to load data';
+            alert(`Error loading dashboard: ${errorMessage}`);
         } finally {
             setLoading(false);
         }
@@ -1243,15 +1261,21 @@ const DashboardPage = () => {
                     />
                 )}
 
-                {currentSection === 'okr' && (
+                {currentSection === 'okr' && organization && (
                     <OkrView
                         okrs={okrs}
-                        userRole={organization?.userRole as 'ADMIN' | 'TEAM_LEAD' | 'MEMBER'}
+                        userRole={organization.userRole as 'ADMIN' | 'TEAM_LEAD' | 'MEMBER'}
                         onCreateTask={() => setShowCreateTaskModal(true)}
                         onSendAlert={() => setShowSendAlertModal(true)}
                         onEditOkr={handleOpenEditOkr}
                         onDeleteOkr={handleDeleteOkr}
                     />
+                )}
+
+                {currentSection === 'okr' && !organization && (
+                    <div className="empty-state">
+                        <p>Loading organization...</p>
+                    </div>
                 )}
 
                 <div className="dashboard-header">

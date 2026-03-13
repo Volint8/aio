@@ -4,7 +4,6 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import LoginPage from './pages/LoginPage';
 import OTPPage from './pages/OTPPage';
 import InviteAcceptPage from './pages/InviteAcceptPage';
-import OrgSelectionPage from './pages/OrgSelectionPage';
 import DashboardPage from './pages/DashboardPage';
 import LandingPage from './pages/LandingPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
@@ -38,18 +37,11 @@ function AppRoutes() {
   return (
     <Routes>
       <Route path="/login" element={
-        user ? <Navigate to="/organizations" replace /> : <LoginPage />
+        user ? <Navigate to="/dashboard" replace /> : <LoginPage />
       } />
       <Route path="/confirm-otp" element={<OTPPage />} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/accept-invite" element={<InviteAcceptPage />} />
-      <Route path="/organizations" element={
-        <ProtectedRoute>
-          <Layout>
-            <OrgSelectionPage />
-          </Layout>
-        </ProtectedRoute>
-      } />
       <Route path="/dashboard" element={
         <ProtectedRoute>
           <Layout>

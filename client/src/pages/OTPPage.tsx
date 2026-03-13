@@ -29,7 +29,7 @@ const OTPPage = () => {
             await verifyOtp(email, otp);
             // Clear pending email
             localStorage.removeItem('pendingAuthEmail');
-            navigate('/organizations');
+            navigate('/dashboard');
         } catch (err: any) {
             const errorData = err.response?.data?.error;
             const message = typeof errorData === 'object' ? errorData.message : errorData;

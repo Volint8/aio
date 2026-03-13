@@ -18,7 +18,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     const navigate = useNavigate();
     const location = useLocation();
     const [currentOrgRole, setCurrentOrgRole] = useState(localStorage.getItem('selectedOrgRole') || '');
-    const [organizations, setOrganizations] = useState<OrgSummary[]>([]);
+    const [selectedOrganization, setSelectedOrganization] = useState<OrgSummary | null>(null);
     const [notifications, setNotifications] = useState<any[]>([]);
     const [showNotifications, setShowNotifications] = useState(false);
 
@@ -59,19 +59,14 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                 const role = res.data?.userRole || '';
                 setCurrentOrgRole(role);
                 localStorage.setItem('selectedOrgRole', role);
+                setSelectedOrganization({
+                    id: res.data.id,
+                    name: res.data.name,
+                    userRole: role
+                });
             })
             .catch(() => {
                 setCurrentOrgRole(localStorage.getItem('selectedOrgRole') || '');
-            });
-    }, [location.pathname]);
-
-    useEffect(() => {
-        api.get('/orgs')
-            .then((res) => {
-                setOrganizations(Array.isArray(res.data) ? res.data : []);
-            })
-            .catch(() => {
-                setOrganizations([]);
             });
     }, [location.pathname]);
 
@@ -99,9 +94,6 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         { label: 'Task Tracker', section: 'task-tracker' },
         { label: 'OKR', section: 'okr' }
     ]), []);
-
-    const selectedOrgId = localStorage.getItem('selectedOrgId');
-    const selectedOrganization = organizations.find((org) => org.id === selectedOrgId);
 
     const getInitials = (name: string) => {
         return name

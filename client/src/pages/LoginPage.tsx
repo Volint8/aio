@@ -38,7 +38,7 @@ const LoginPage = () => {
 
     const handleLogin = async () => {
         await login(email, password);
-        navigate('/');
+        navigate('/dashboard');
     };
 
     const handleAdminSignupStepOne = async () => {
