@@ -113,6 +113,7 @@ interface Okr {
     description?: string | null;
     periodStart: string;
     periodEnd: string;
+    status: string;
     assignments?: Array<{
         id: string;
         targetType: string;
@@ -209,11 +210,11 @@ interface TeamDistributionRecord {
         userId: string;
         name: string;
         role: string;
-        stats: { 
-            pending: number; 
-            ongoing: number; 
-            completed: number; 
-            overdue: number; 
+        stats: {
+            pending: number;
+            ongoing: number;
+            completed: number;
+            overdue: number;
             total: number;
             performanceScore?: number;
             temperature?: string;
@@ -315,6 +316,11 @@ const DashboardPage = () => {
     const [showCreateProjectModal, setShowCreateProjectModal] = useState(false);
     const [editingClient, setEditingClient] = useState<ClientRecord | null>(null);
     const [editingProject, setEditingProject] = useState<ProjectRecord | null>(null);
+    const [showEditOkrModal, setShowEditOkrModal] = useState(false);
+    const [editingOkr, setEditingOkr] = useState<Okr | null>(null);
+    const [showTagModal, setShowTagModal] = useState(false);
+    const [editingTag, setEditingTag] = useState<Tag | null>(null);
+    const [tagForm, setTagForm] = useState({ name: '', color: '#2563eb' });
 
     const [newTask, setNewTask] = useState({
         title: '',
@@ -348,6 +354,17 @@ const DashboardPage = () => {
         assignedToTeamId: '',
         supportedByTeamIds: [] as string[],
         keyResults: [{ title: '', tagName: '', tagColor: '#2563eb' }]
+    });
+
+    const [editOkrForm, setEditOkrForm] = useState({
+        title: '',
+        description: '',
+        periodStart: '',
+        periodEnd: '',
+        assignedToTeamId: '',
+        supportedByTeamIds: [] as string[],
+        keyResults: [{ title: '', tagName: '', tagColor: '#2563eb' }],
+        status: 'OPEN'
     });
     const [newAppraisal, setNewAppraisal] = useState({ subjectUserId: '', cycle: '', summary: '' });
     const [newLink, setNewLink] = useState({ taskId: '', url: '', fileName: '' });
@@ -568,9 +585,9 @@ const DashboardPage = () => {
                 filteredTasks = filteredTasks.filter((t: Task) => t.assignee?.id === user?.id);
             } else if (filter === 'overdue') {
                 const now = new Date();
-                filteredTasks = filteredTasks.filter((t: Task) => 
-                    t.dueDate && 
-                    new Date(t.dueDate) < now && 
+                filteredTasks = filteredTasks.filter((t: Task) =>
+                    t.dueDate &&
+                    new Date(t.dueDate) < now &&
                     t.status !== 'COMPLETED'
                 );
             } else if (filter !== 'all' && filter !== 'recently_deleted') {
@@ -753,6 +770,103 @@ const DashboardPage = () => {
         } catch (error: any) {
             const errorData = error.response?.data?.error;
             alert((typeof errorData === 'object' ? errorData.message : errorData) || 'Failed to create OKR');
+        }
+    };
+
+    const handleOpenEditOkr = (okr: Okr) => {
+        setEditingOkr(okr);
+        const assignedToTeamId = okr.assignments?.find(a => a.targetType === 'TEAM')?.targetId || '';
+        const supportedByTeamIds = okr.assignments?.filter(a => a.targetType === 'TEAM').map(a => a.targetId) || [];
+
+        setEditOkrForm({
+            title: okr.title,
+            description: okr.description || '',
+            periodStart: okr.periodStart ? new Date(okr.periodStart).toISOString().split('T')[0] : '',
+            periodEnd: okr.periodEnd ? new Date(okr.periodEnd).toISOString().split('T')[0] : '',
+            assignedToTeamId: assignedToTeamId,
+            supportedByTeamIds: supportedByTeamIds,
+            keyResults: okr.keyResults?.map(kr => ({
+                title: kr.title,
+                tagName: kr.tag.name,
+                tagColor: kr.tag.color
+            })) || [{ title: '', tagName: '', tagColor: '#2563eb' }],
+            status: okr.status || 'OPEN'
+        });
+        setShowEditOkrModal(true);
+    };
+
+    const handleUpdateOkr = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!editingOkr) return;
+        try {
+            const assignments = [];
+            if (editOkrForm.assignedToTeamId) {
+                assignments.push({ targetType: 'TEAM', targetId: editOkrForm.assignedToTeamId });
+            }
+            editOkrForm.supportedByTeamIds.forEach((teamId) => {
+                if (teamId !== editOkrForm.assignedToTeamId) {
+                    assignments.push({ targetType: 'TEAM', targetId: teamId });
+                }
+            });
+
+            await api.patch(`/orgs/${orgId}/okrs/${editingOkr.id}`, {
+                ...editOkrForm,
+                assignments,
+                keyResults: editOkrForm.keyResults.filter((kr) => kr.title.trim() && kr.tagName.trim())
+            });
+            setShowEditOkrModal(false);
+            setEditingOkr(null);
+            await fetchData();
+        } catch (error: any) {
+            alert(error.response?.data?.error || 'Failed to update OKR');
+        }
+    };
+
+    const handleDeleteOkr = async (okrId: string) => {
+        if (!window.confirm('Are you sure you want to delete this OKR? This action cannot be undone.')) return;
+        try {
+            await api.delete(`/orgs/${orgId}/okrs/${okrId}`);
+            await fetchData();
+        } catch (error: any) {
+            alert(error.response?.data?.error || 'Failed to delete OKR');
+        }
+    };
+
+    const handleMakeOkrGlobal = async (okrId: string) => {
+        try {
+            await api.patch(`/orgs/${orgId}/okrs/${okrId}`, {
+                assignments: []
+            });
+            await fetchData();
+        } catch (error: any) {
+            alert(error.response?.data?.error || 'Failed to make OKR global');
+        }
+    };
+
+    const handleTagSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        try {
+            if (editingTag) {
+                await api.patch(`/orgs/${orgId}/tags/${editingTag.id}`, tagForm);
+            } else {
+                await api.post(`/orgs/${orgId}/tags`, tagForm);
+            }
+            setShowTagModal(false);
+            setEditingTag(null);
+            setTagForm({ name: '', color: '#2563eb' });
+            await fetchData();
+        } catch (error: any) {
+            alert(error.response?.data?.error || 'Failed to save tag');
+        }
+    };
+
+    const handleDeleteTag = async (tagId: string) => {
+        if (!window.confirm('Are you sure you want to delete this tag?')) return;
+        try {
+            await api.delete(`/orgs/${orgId}/tags/${tagId}`);
+            await fetchData();
+        } catch (error: any) {
+            alert(error.response?.data?.error || 'Failed to delete tag');
         }
     };
 
@@ -1240,8 +1354,8 @@ const DashboardPage = () => {
                                         <strong>People</strong>
                                         <div className="team-members-list" style={{ marginTop: 8 }}>
                                             {(team.people || team.members || []).map((person: any) => (
-                                                <div 
-                                                    className="team-member-row" 
+                                                <div
+                                                    className="team-member-row"
                                                     key={person.userId || person.id}
                                                     onClick={() => handleMemberClick(person.userId || person.id)}
                                                     style={{ cursor: 'pointer' }}
@@ -1373,15 +1487,37 @@ const DashboardPage = () => {
 
                 {currentSection === 'tags' && isAdmin && (
                     <div className="tasks-section">
-                        <div className="tasks-header"><h2>Organization Tags</h2></div>
+                        <div className="tasks-header">
+                            <h2>Organization Tags</h2>
+                            <button className="btn-primary" onClick={() => {
+                                setEditingTag(null);
+                                setTagForm({ name: '', color: '#2563eb' });
+                                setShowTagModal(true);
+                            }}>+ New Tag</button>
+                        </div>
                         <div className="tasks-list">
-                            {tags.map((tag) => (
+                            {tags.map((tag: any) => (
                                 <div key={tag.id} className="task-card" style={{ padding: '16px' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                        <span style={{ width: 12, height: 12, borderRadius: 999, background: tag.color, display: 'inline-block' }}></span>
-                                        <strong title={tagSourceMap[tag.id] ? `Objective: ${tagSourceMap[tag.id].okrTitle} | KR: ${tagSourceMap[tag.id].krTitle}` : ''}>
-                                            {tag.name}
-                                        </strong>
+                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                            <span style={{ width: 14, height: 14, borderRadius: 999, background: tag.color, display: 'inline-block', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}></span>
+                                            <div>
+                                                <strong style={{ fontSize: '1.1em' }} title={tagSourceMap[tag.id] ? `Objective: ${tagSourceMap[tag.id].okrTitle} | KR: ${tagSourceMap[tag.id].krTitle}` : ''}>
+                                                    {tag.name}
+                                                </strong>
+                                                <div style={{ fontSize: '0.85em', color: 'var(--text-muted)', marginTop: 2 }}>
+                                                    Used in {tag.taskCount || 0} tasks
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div className="header-actions" style={{ margin: 0 }}>
+                                            <button className="btn-secondary" style={{ padding: '4px 8px', fontSize: '0.8em' }} onClick={() => {
+                                                setEditingTag(tag);
+                                                setTagForm({ name: tag.name, color: tag.color });
+                                                setShowTagModal(true);
+                                            }}>Edit</button>
+                                            <button className="btn-logout" style={{ padding: '4px 8px', fontSize: '0.8em' }} onClick={() => handleDeleteTag(tag.id)}>Delete</button>
+                                        </div>
                                     </div>
                                 </div>
                             ))}
@@ -1395,9 +1531,31 @@ const DashboardPage = () => {
                         <div className="tasks-list">
                             {okrs.map((okr) => (
                                 <div key={okr.id} className="task-card" style={{ padding: '20px' }}>
-                                    <div className="task-header">
-                                        <h3>{okr.title}</h3>
-                                        <p className="task-description">{okr.description || 'No description'}</p>
+                                    <div className="task-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                        <div style={{ flex: 1 }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                                <h3 style={{ margin: 0 }}>{okr.title}</h3>
+                                                <span className={`priority-badge ${okr.status === 'COMPLETED' ? 'low' : 'medium'}`} style={{
+                                                    backgroundColor: okr.status === 'COMPLETED' ? 'var(--success-color)' : 'var(--warning-color)',
+                                                    color: 'white',
+                                                    borderColor: 'transparent'
+                                                }}>
+                                                    {okr.status}
+                                                </span>
+                                            </div>
+                                            <p className="task-description" style={{ marginTop: 8 }}>{okr.description || 'No description'}</p>
+                                        </div>
+                                        {isAdmin && (
+                                            <div className="header-actions" style={{ margin: 0 }}>
+                                                <button className="btn-secondary" style={{ padding: '4px 8px', fontSize: '0.8em' }} onClick={() => handleOpenEditOkr(okr)}>Edit</button>
+                                                {okr.assignments && okr.assignments.length > 0 && (
+                                                    <button className="btn-secondary" style={{ padding: '4px 8px', fontSize: '0.8em' }} onClick={() => handleMakeOkrGlobal(okr.id)}>Make Global</button>
+                                                )}
+                                                <button className="btn-logout" style={{ padding: '4px 8px', fontSize: '0.8em' }} onClick={() => handleDeleteOkr(okr.id)}>Delete</button>
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div className="task-header" style={{ marginTop: 4 }}>
                                         {(okr.assignments && okr.assignments.length > 0) && (
                                             <div className="task-meta" style={{ marginTop: 8 }}>
                                                 {okr.assignments.filter((a) => a.targetType === 'TEAM' && a.team).some((a) => a.targetType === 'TEAM') && (
@@ -1450,7 +1608,7 @@ const DashboardPage = () => {
                                             <div style={{ fontSize: '0.7em', color: '#64748b', textTransform: 'uppercase', fontWeight: 700 }}>Overall Rating</div>
                                         </div>
                                     </div>
-                                    
+
                                     <div className="appraisal-metrics" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '20px', background: '#f8fafc', padding: '16px', borderRadius: '12px' }}>
                                         <div style={{ textAlign: 'center' }}>
                                             <div style={{ fontSize: '1.1em', fontWeight: 700 }}>{Math.round(appraisal.tasksCompleted || 0)}%</div>
@@ -1467,10 +1625,10 @@ const DashboardPage = () => {
                                     </div>
 
                                     <p className="task-description" style={{ whiteSpace: 'pre-wrap', marginBottom: '20px', color: '#475569' }}>{appraisal.summary}</p>
-                                    
+
                                     <div style={{ display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid #e2e8f0', paddingTop: '16px' }}>
-                                        <button 
-                                            className="btn-secondary" 
+                                        <button
+                                            className="btn-secondary"
                                             onClick={() => window.open(`${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/appraisals/${appraisal.id}/export?token=${localStorage.getItem('token')}`, '_blank')}
                                         >
                                             Export Report (CSV)
@@ -1680,18 +1838,28 @@ const DashboardPage = () => {
                                         <div className="task-detail-content" key={selectedTask.id}>
                                             <div className="task-detail-header">
                                                 <h3>{selectedTask.title}</h3>
-                                                <div className="task-badges">
-                                                    <span className={`priority-badge ${selectedTask.priority.toLowerCase()}`}>{selectedTask.priority}</span>
-                                                    <span className={`status-badge ${selectedTask.status.toLowerCase()}`}>{selectedTask.status.replace('_', ' ')}</span>
-                                                    {selectedTask.tag && (
-                                                        <span
-                                                            className="priority-badge low"
-                                                            style={{ borderColor: selectedTask.tag.color, color: selectedTask.tag.color }}
-                                                            title={tagSourceMap[selectedTask.tag.id] ? `Objective: ${tagSourceMap[selectedTask.tag.id].okrTitle} | KR: ${tagSourceMap[selectedTask.tag.id].krTitle}` : ''}
-                                                        >
-                                                            {selectedTask.tag.name}
-                                                        </span>
-                                                    )}
+                                                <div className="task-detail-header-actions">
+                                                    <button
+                                                        type="button"
+                                                        className="btn-icon-close"
+                                                        onClick={() => setSelectedTaskId(null)}
+                                                        title="Close"
+                                                    >
+                                                        ×
+                                                    </button>
+                                                    <div className="task-badges">
+                                                        <span className={`priority-badge ${selectedTask.priority.toLowerCase()}`}>{selectedTask.priority}</span>
+                                                        <span className={`status-badge ${selectedTask.status.toLowerCase()}`}>{selectedTask.status.replace('_', ' ')}</span>
+                                                        {selectedTask.tag && (
+                                                            <span
+                                                                className="priority-badge low"
+                                                                style={{ borderColor: selectedTask.tag.color, color: selectedTask.tag.color }}
+                                                                title={tagSourceMap[selectedTask.tag.id] ? `Objective: ${tagSourceMap[selectedTask.tag.id].okrTitle} | KR: ${tagSourceMap[selectedTask.tag.id].krTitle}` : ''}
+                                                            >
+                                                                {selectedTask.tag.name}
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                 </div>
                                             </div>
                                             <div className="task-meta">
@@ -2301,8 +2469,8 @@ const DashboardPage = () => {
                         <form onSubmit={handleSendAlert}>
                             <div className="form-group">
                                 <label>Target Type</label>
-                                <select 
-                                    value={alertForm.targetType} 
+                                <select
+                                    value={alertForm.targetType}
                                     onChange={(e) => setAlertForm({ ...alertForm, targetType: e.target.value, targetId: '' })}
                                 >
                                     <option value="INDIVIDUAL">Individual Member</option>
@@ -2313,8 +2481,8 @@ const DashboardPage = () => {
 
                             <div className="form-group">
                                 <label>Recipient</label>
-                                <select 
-                                    value={alertForm.targetId} 
+                                <select
+                                    value={alertForm.targetId}
                                     onChange={(e) => setAlertForm({ ...alertForm, targetId: e.target.value })}
                                     required
                                 >
@@ -2333,8 +2501,8 @@ const DashboardPage = () => {
 
                             <div className="form-group">
                                 <label>Alert Type</label>
-                                <select 
-                                    value={alertForm.type} 
+                                <select
+                                    value={alertForm.type}
                                     onChange={(e) => setAlertForm({ ...alertForm, type: e.target.value })}
                                 >
                                     <option value="DEADLINE_REMINDER">Deadline Reminder</option>
@@ -2345,9 +2513,9 @@ const DashboardPage = () => {
 
                             <div className="form-group">
                                 <label>Message</label>
-                                <textarea 
-                                    rows={4} 
-                                    value={alertForm.message} 
+                                <textarea
+                                    rows={4}
+                                    value={alertForm.message}
                                     onChange={(e) => setAlertForm({ ...alertForm, message: e.target.value })}
                                     placeholder="Enter your alert message here..."
                                     required
@@ -2603,6 +2771,151 @@ const DashboardPage = () => {
                 </div>
             )}
 
+            {showEditOkrModal && (
+                <div className="modal-overlay" onClick={() => setShowEditOkrModal(false)}>
+                    <div className="modal large" onClick={(e) => e.stopPropagation()}>
+                        <h2>Edit OKR</h2>
+                        <form onSubmit={handleUpdateOkr}>
+                            <div className="form-group">
+                                <label>Objective Title</label>
+                                <input type="text" value={editOkrForm.title} onChange={(e) => setEditOkrForm({ ...editOkrForm, title: e.target.value })} required autoFocus />
+                            </div>
+                            <div className="form-group">
+                                <label>Description</label>
+                                <textarea rows={3} value={editOkrForm.description} onChange={(e) => setEditOkrForm({ ...editOkrForm, description: e.target.value })} />
+                            </div>
+                            <div className="form-row">
+                                <div className="form-group">
+                                    <label>Period Start</label>
+                                    <input type="date" value={editOkrForm.periodStart} onChange={(e) => setEditOkrForm({ ...editOkrForm, periodStart: e.target.value })} required />
+                                </div>
+                                <div className="form-group">
+                                    <label>Period End</label>
+                                    <input type="date" value={editOkrForm.periodEnd} onChange={(e) => setEditOkrForm({ ...editOkrForm, periodEnd: e.target.value })} required />
+                                </div>
+                            </div>
+
+                            <div className="form-group">
+                                <label>Status</label>
+                                <select
+                                    value={editOkrForm.status}
+                                    onChange={(e) => setEditOkrForm({ ...editOkrForm, status: e.target.value })}
+                                >
+                                    <option value="OPEN">Open</option>
+                                    <option value="COMPLETED">Completed</option>
+                                </select>
+                            </div>
+
+                            <div className="form-group">
+                                <label>Assigned To (Primary Team)</label>
+                                <select
+                                    value={editOkrForm.assignedToTeamId}
+                                    onChange={(e) => setEditOkrForm({ ...editOkrForm, assignedToTeamId: e.target.value })}
+                                >
+                                    <option value="">Select a team</option>
+                                    {teams.map((team) => (
+                                        <option key={team.id} value={team.id}>{team.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            <div className="form-group">
+                                <label>Supported By (Contributing Teams)</label>
+                                <div style={{ maxHeight: 150, overflowY: 'auto', border: '1px solid var(--border-color)', borderRadius: 8, padding: 8 }}>
+                                    {teams.map((team) => (
+                                        <label key={team.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', cursor: 'pointer' }}>
+                                            <input
+                                                type="checkbox"
+                                                checked={editOkrForm.supportedByTeamIds.includes(team.id)}
+                                                onChange={(e) => {
+                                                    const checked = e.target.checked;
+                                                    setEditOkrForm((prev) => ({
+                                                        ...prev,
+                                                        supportedByTeamIds: checked
+                                                            ? [...prev.supportedByTeamIds, team.id]
+                                                            : prev.supportedByTeamIds.filter((id) => id !== team.id)
+                                                    }));
+                                                }}
+                                            />
+                                            <span>{team.name}</span>
+                                        </label>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <h3 style={{ marginTop: 8 }}>Key Results</h3>
+                            {editOkrForm.keyResults.map((kr, index) => (
+                                <div key={index} style={{ border: '1px solid var(--border-color)', borderRadius: 10, padding: 12, marginBottom: 10 }}>
+                                    <div className="form-group">
+                                        <label>Key Result</label>
+                                        <input
+                                            type="text"
+                                            value={kr.title}
+                                            onChange={(e) => {
+                                                const next = [...editOkrForm.keyResults];
+                                                next[index].title = e.target.value;
+                                                setEditOkrForm({ ...editOkrForm, keyResults: next });
+                                            }}
+                                            required
+                                        />
+                                    </div>
+                                    <div className="form-row">
+                                        <div className="form-group">
+                                            <label>Tag Name</label>
+                                            <input
+                                                type="text"
+                                                value={kr.tagName}
+                                                onChange={(e) => {
+                                                    const next = [...editOkrForm.keyResults];
+                                                    next[index].tagName = e.target.value;
+                                                    setEditOkrForm({ ...editOkrForm, keyResults: next });
+                                                }}
+                                                required
+                                            />
+                                        </div>
+                                        <div className="form-group">
+                                            <label>Tag Color</label>
+                                            <input
+                                                type="color"
+                                                value={kr.tagColor}
+                                                onChange={(e) => {
+                                                    const next = [...editOkrForm.keyResults];
+                                                    next[index].tagColor = e.target.value;
+                                                    setEditOkrForm({ ...editOkrForm, keyResults: next });
+                                                }}
+                                            />
+                                        </div>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        className="btn-logout"
+                                        style={{ padding: '4px 8px', fontSize: '0.8em', marginTop: 8 }}
+                                        onClick={() => {
+                                            const next = editOkrForm.keyResults.filter((_, i) => i !== index);
+                                            setEditOkrForm({ ...editOkrForm, keyResults: next.length ? next : [{ title: '', tagName: '', tagColor: '#2563eb' }] });
+                                        }}
+                                    >
+                                        Remove KR
+                                    </button>
+                                </div>
+                            ))}
+                            <button
+                                type="button"
+                                className="btn-secondary"
+                                onClick={() => setEditOkrForm({ ...editOkrForm, keyResults: [...editOkrForm.keyResults, { title: '', tagName: '', tagColor: '#2563eb' }] })}
+                            >
+                                + Add Key Result
+                            </button>
+
+                            <div className="modal-actions">
+                                <button type="button" onClick={() => setShowEditOkrModal(false)} className="btn-secondary">Cancel</button>
+                                <button type="submit" className="btn-primary">Update OKR</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
             {showCreateAppraisalModal && (
                 <div className="modal-overlay" onClick={() => setShowCreateAppraisalModal(false)}>
                     <div className="modal" onClick={(e) => e.stopPropagation()}>
@@ -2675,6 +2988,39 @@ const DashboardPage = () => {
                             <div className="modal-actions">
                                 <button type="button" onClick={() => setShowSubmissionModal(false)} className="btn-secondary">Cancel</button>
                                 <button type="submit" className="btn-primary">Submit Work</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {showTagModal && (
+                <div className="modal-overlay" onClick={() => setShowTagModal(false)}>
+                    <div className="modal" onClick={(e) => e.stopPropagation()}>
+                        <h2>{editingTag ? 'Edit Tag' : 'Create Tag'}</h2>
+                        <form onSubmit={handleTagSubmit}>
+                            <div className="form-group">
+                                <label>Tag Name</label>
+                                <input
+                                    type="text"
+                                    value={tagForm.name}
+                                    onChange={(e) => setTagForm({ ...tagForm, name: e.target.value })}
+                                    required
+                                    autoFocus
+                                    placeholder="e.g. Critical, Q1 Priority"
+                                />
+                            </div>
+                            <div className="form-group">
+                                <label>Color</label>
+                                <input
+                                    type="color"
+                                    value={tagForm.color}
+                                    onChange={(e) => setTagForm({ ...tagForm, color: e.target.value })}
+                                />
+                            </div>
+                            <div className="modal-actions">
+                                <button type="button" onClick={() => setShowTagModal(false)} className="btn-secondary">Cancel</button>
+                                <button type="submit" className="btn-primary">{editingTag ? 'Update Tag' : 'Create Tag'}</button>
                             </div>
                         </form>
                     </div>

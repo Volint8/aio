@@ -215,14 +215,16 @@ const OrgSelectionPage = () => {
                         </div>
                     ))}
 
-                    <div
-                        className="org-card create-card"
-                        onClick={() => setShowCreateModal(true)}
-                    >
-                        <div className="org-icon create-icon">+</div>
-                        <h3>Create New</h3>
-                        <p>Start a new organization</p>
-                    </div>
+                    {user?.role === 'ADMIN' && (
+                        <div
+                            className="org-card create-card"
+                            onClick={() => setShowCreateModal(true)}
+                        >
+                            <div className="org-icon create-icon">+</div>
+                            <h3>Create New</h3>
+                            <p>Start a new organization</p>
+                        </div>
+                    )}
                 </div>
 
                 {organizations.length === 0 && (

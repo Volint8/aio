@@ -144,7 +144,12 @@ export const getOrgs = async (req: Request, res: Response) => {
 export const createOrg = async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.userId as string;
+    const userRole = (req as any).user.role as string;
     const { name } = req.body as { name?: string };
+
+    if (userRole !== 'ADMIN') {
+      return res.status(403).json({ error: 'Only system administrators can create organizations' });
+    }
 
     if (!name?.trim()) {
       return res.status(400).json({ error: 'Organization name is required' });
@@ -1342,10 +1347,18 @@ export const listTags = async (req: Request, res: Response) => {
 
     const tags = await prisma.tag.findMany({
       where: { organizationId },
+      include: {
+        _count: {
+          select: { tasks: true }
+        }
+      },
       orderBy: { name: 'asc' }
     });
 
-    return res.json(tags);
+    return res.json(tags.map(tag => ({
+      ...tag,
+      taskCount: tag._count.tasks
+    })));
   } catch (error) {
     console.error('List tags error:', error);
     return res.status(500).json({ error: 'Internal server error' });
@@ -1380,6 +1393,39 @@ export const updateTag = async (req: Request, res: Response) => {
     return res.json(updated);
   } catch (error) {
     console.error('Update tag error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+export const deleteTag = async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user.userId as string;
+    const organizationId = req.params.id as string;
+    const tagId = req.params.tagId as string;
+
+    const isAdmin = await requireAdmin(userId, organizationId);
+    if (!isAdmin) {
+      return res.status(403).json({ error: 'Only admins can delete tags' });
+    }
+
+    const existingTag = await prisma.tag.findUnique({
+      where: { id: tagId },
+      include: { _count: { select: { tasks: true, keyResults: true } } }
+    });
+
+    if (!existingTag || existingTag.organizationId !== organizationId) {
+      return res.status(404).json({ error: 'Tag not found' });
+    }
+
+    if (existingTag._count.tasks > 0 || existingTag._count.keyResults > 0) {
+      return res.status(400).json({ error: 'Cannot delete tag that is in use by tasks or OKRs' });
+    }
+
+    await prisma.tag.delete({ where: { id: tagId } });
+
+    return res.json({ message: 'Tag deleted successfully' });
+  } catch (error) {
+    console.error('Delete tag error:', error);
     return res.status(500).json({ error: 'Internal server error' });
   }
 };
@@ -1540,7 +1586,8 @@ export const updateOkr = async (req: Request, res: Response) => {
       periodStart,
       periodEnd,
       assignments,
-      keyResults
+      keyResults,
+      status
     } = req.body as {
       title?: string;
       description?: string;
@@ -1548,6 +1595,7 @@ export const updateOkr = async (req: Request, res: Response) => {
       periodEnd?: string;
       assignments?: Array<{ targetType: string; targetId: string }>;
       keyResults?: Array<{ title: string; tagName: string; tagColor?: string }>;
+      status?: string;
     };
 
     const isAdmin = await requireAdmin(userId, organizationId);
@@ -1567,7 +1615,8 @@ export const updateOkr = async (req: Request, res: Response) => {
           ...(title !== undefined ? { title } : {}),
           ...(description !== undefined ? { description } : {}),
           ...(periodStart !== undefined ? { periodStart: new Date(periodStart) } : {}),
-          ...(periodEnd !== undefined ? { periodEnd: new Date(periodEnd) } : {})
+          ...(periodEnd !== undefined ? { periodEnd: new Date(periodEnd) } : {}),
+          ...(status !== undefined ? { status } : {})
         }
       });
 
@@ -1619,9 +1668,96 @@ export const updateOkr = async (req: Request, res: Response) => {
       });
     });
 
+    if (!updated) {
+      return res.status(500).json({ error: 'Internal server error' });
+    }
+
+    if (status === 'COMPLETED' && existing.status !== 'COMPLETED') {
+      try {
+        const organization = await prisma.organization.findUnique({
+          where: { id: organizationId },
+          select: { name: true }
+        });
+
+        const assignmentRecipients = await prisma.okrAssignment.findMany({
+          where: { okrId: updated.id, targetType: 'TEAM' },
+          select: { targetId: true }
+        });
+
+        const teamIds = assignmentRecipients.map(a => a.targetId);
+        const members = await prisma.organizationMember.findMany({
+          where: {
+            organizationId,
+            OR: [
+              { teamId: { in: teamIds } },
+              { role: 'ADMIN' }
+            ]
+          },
+          include: { user: { select: { email: true } } }
+        });
+
+        const recipientEmails = Array.from(new Set(members.map(m => m.user.email).filter(Boolean)));
+
+        const subject = `OKR Completed: ${updated.title}`;
+        const html = `
+          <div style="font-family: sans-serif; max-width: 600px; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
+            <h2 style="color: #22C55E;">OKR Completed! 🎉</h2>
+            <p>The following OKR in <strong>${organization?.name}</strong> has been marked as completed:</p>
+            <div style="background: #f8fafc; padding: 15px; border-radius: 8px; margin: 20px 0;">
+              <h3 style="margin-top: 0;">${updated.title}</h3>
+              <p>${updated.description || 'No description provided.'}</p>
+            </div>
+            <p>Well done to all involved teams!</p>
+          </div>
+        `;
+
+        const { sendEmail } = require('../services/email.service');
+        await Promise.all(recipientEmails.map(email => sendEmail(email, subject, html)));
+
+        await prisma.notification.create({
+          data: {
+            organizationId,
+            senderId: userId,
+            targetType: 'TEAM',
+            targetId: teamIds[0] || organizationId,
+            type: 'OKR_COMPLETED',
+            message: `OKR "${updated.title}" has been completed.`
+          }
+        });
+
+      } catch (notifyError) {
+        console.error('Failed to send OKR completion alert:', notifyError);
+      }
+    }
+
     return res.json(updated);
   } catch (error) {
     console.error('Update OKR error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+export const deleteOkr = async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user.userId as string;
+    const organizationId = req.params.id as string;
+    const okrId = req.params.okrId as string;
+
+    const isAdmin = await requireAdmin(userId, organizationId);
+    if (!isAdmin) {
+      return res.status(403).json({ error: 'Only admins can delete OKRs' });
+    }
+
+    const existing = await prisma.okr.findUnique({ where: { id: okrId } });
+    if (!existing || existing.organizationId !== organizationId) {
+      return res.status(404).json({ error: 'OKR not found' });
+    }
+
+    await prisma.okr.delete({ where: { id: okrId } });
+
+    return res.json({ message: 'OKR deleted successfully' });
+  } catch (error) {
+    console.error('Delete OKR error:', error);
     return res.status(500).json({ error: 'Internal server error' });
   }
 };
@@ -1672,7 +1808,7 @@ export const generateAppraisal = async (req: Request, res: Response) => {
 
     const tasksCompleted = allTasks > 0 ? (completedTasks / allTasks) * 100 : 0;
     const deadlinesMet = allTasks > 0 ? ((allTasks - overdueTasks) / allTasks) * 100 : 0;
-    
+
     let okrContribution = 'LOW';
     const okrRatio = allTasks > 0 ? (okrLinkedTasks / allTasks) : 0;
     if (okrRatio > 0.5) okrContribution = 'HIGH';

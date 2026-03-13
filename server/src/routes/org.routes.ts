@@ -25,9 +25,11 @@ import {
     createTag,
     listTags,
     updateTag,
+    deleteTag,
     createOkr,
     listOkrs,
     updateOkr,
+    deleteOkr,
     generateAppraisal,
     listAppraisals,
     getAudit
@@ -64,10 +66,12 @@ router.delete('/:id/projects/:projectId', authenticateToken, deleteProject);
 router.post('/:id/tags', authenticateToken, createTag);
 router.get('/:id/tags', authenticateToken, listTags);
 router.patch('/:id/tags/:tagId', authenticateToken, updateTag);
+router.delete('/:id/tags/:tagId', authenticateToken, deleteTag);
 
 router.post('/:id/okrs', authenticateToken, createOkr);
 router.get('/:id/okrs', authenticateToken, listOkrs);
 router.patch('/:id/okrs/:okrId', authenticateToken, updateOkr);
+router.delete('/:id/okrs/:okrId', authenticateToken, deleteOkr);
 
 router.post('/:id/appraisals/generate', authenticateToken, generateAppraisal);
 router.get('/:id/appraisals', authenticateToken, listAppraisals);

@@ -19,7 +19,6 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     const location = useLocation();
     const [currentOrgRole, setCurrentOrgRole] = useState(localStorage.getItem('selectedOrgRole') || '');
     const [organizations, setOrganizations] = useState<OrgSummary[]>([]);
-    const [showOrgMenu, setShowOrgMenu] = useState(false);
     const [notifications, setNotifications] = useState<any[]>([]);
     const [showNotifications, setShowNotifications] = useState(false);
 
@@ -29,7 +28,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
         api.get('/notifications', { params: { organizationId: orgId } })
             .then(res => setNotifications(res.data))
-            .catch(() => {});
+            .catch(() => { });
     };
 
     useEffect(() => {
@@ -76,16 +75,6 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
             });
     }, [location.pathname]);
 
-    useEffect(() => {
-        const onOutsideClick = () => setShowOrgMenu(false);
-        if (!showOrgMenu) {
-            return;
-        }
-        window.addEventListener('click', onOutsideClick);
-        return () => {
-            window.removeEventListener('click', onOutsideClick);
-        };
-    }, [showOrgMenu]);
 
     const isAdminInCurrentOrg = currentOrgRole === 'ADMIN';
     const isTeamLeadInCurrentOrg = currentOrgRole === 'TEAM_LEAD';
@@ -122,7 +111,6 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
     const selectedOrgId = localStorage.getItem('selectedOrgId');
     const selectedOrganization = organizations.find((org) => org.id === selectedOrgId);
-    const orgSwitcherLabel = selectedOrganization?.name || 'Organization';
 
     const getInitials = (name: string) => {
         return name
@@ -294,7 +282,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                     </h2>
                     <div className="top-bar-actions">
                         <div className="notification-bell-container">
-                            <button 
+                            <button
                                 className={`notification-bell ${unreadCount > 0 ? 'has-unread' : ''}`}
                                 onClick={() => setShowNotifications(!showNotifications)}
                             >
@@ -310,8 +298,8 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                                             <div className="notification-empty">No notifications</div>
                                         ) : (
                                             notifications.map(n => (
-                                                <div 
-                                                    key={n.id} 
+                                                <div
+                                                    key={n.id}
                                                     className={`notification-item ${n.isRead ? 'read' : 'unread'}`}
                                                     onClick={() => !n.isRead && handleMarkAsRead(n.id)}
                                                 >
@@ -327,51 +315,8 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                             )}
                         </div>
 
-                        <div className="org-switcher">
-                            <button
-                                type="button"
-                                className={`org-switcher-trigger ${showOrgMenu ? 'active' : ''}`}
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    setShowOrgMenu((prev) => !prev);
-                                }}
-                            >
-                                <span className="org-switcher-label">{orgSwitcherLabel}</span>
-                                <span className="org-switcher-caret">▾</span>
-                            </button>
-
-                            {showOrgMenu && (
-                                <div className="org-switcher-menu" onClick={(e) => e.stopPropagation()}>
-                                    <div className="org-switcher-menu-title">Switch Organization</div>
-                                    {organizations.map((org) => (
-                                        <button
-                                            key={org.id}
-                                            type="button"
-                                            className={`org-switcher-item ${org.id === selectedOrgId ? 'active' : ''}`}
-                                            onClick={() => {
-                                                localStorage.setItem('selectedOrgId', org.id);
-                                                localStorage.setItem('selectedOrgRole', org.userRole);
-                                                setCurrentOrgRole(org.userRole);
-                                                setShowOrgMenu(false);
-                                                navigate('/dashboard');
-                                            }}
-                                        >
-                                            <span>{org.name}</span>
-                                            <small>{org.userRole}</small>
-                                        </button>
-                                    ))}
-                                    <button
-                                        type="button"
-                                        className="org-switcher-manage"
-                                        onClick={() => {
-                                            setShowOrgMenu(false);
-                                            navigate('/organizations');
-                                        }}
-                                    >
-                                        Manage Organizations
-                                    </button>
-                                </div>
-                            )}
+                        <div className="org-display">
+                            <span className="org-label">{selectedOrganization?.name || 'Workspace'}</span>
                         </div>
 
                         <div className="user-pill">

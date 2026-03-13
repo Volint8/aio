@@ -8,35 +8,35 @@ datasource db {
 }
 
 model User {
-  id                     String               @id @default(uuid())
-  email                  String               @unique
-  passwordHash           String
-  name                   String?
-  role                   String               @default("USER") // USER, ADMIN
-  isVerified             Boolean              @default(false)
-  otp                    String?
-  otpExpiresAt           DateTime?
-  passwordResetOtp       String?
+  id                        String               @id @default(uuid())
+  email                     String               @unique
+  passwordHash              String
+  name                      String?
+  role                      String               @default("USER") // USER, ADMIN
+  isVerified                Boolean              @default(false)
+  otp                       String?
+  otpExpiresAt              DateTime?
+  passwordResetOtp          String?
   passwordResetOtpExpiresAt DateTime?
-  pendingInviteId        String?
-  createdAt              DateTime             @default(now())
-  updatedAt              DateTime             @updatedAt
-  organizations      OrganizationMember[]
-  tasks              Task[]               @relation("AssignedTasks")
-  supportedTasks     Task[]               @relation("SupportedTasks")
-  deletedTasks       Task[]               @relation("DeletedTasks")
-  leadingTeams       Team[]               @relation("TeamLead")
-  comments           Comment[]
-  invitedMemberships Invite[]             @relation("Inviter")
-  acceptedInvites    Invite[]             @relation("InviteAccepter")
-  createdOkrs        Okr[]                @relation("OKRCreator")
-  createdAppraisals  Appraisal[]          @relation("AppraisalCreator")
-  subjectAppraisals  Appraisal[]          @relation("AppraisalSubject")
-  createdClients     Client[]             @relation("ClientCreator")
-  createdProjects    Project[]            @relation("ProjectCreator")
-  workSubmissions    WorkSubmission[]
-  notificationsSent  Notification[]       @relation("NotificationSender")
-  activityLogs       ActivityLog[]
+  pendingInviteId           String?
+  createdAt                 DateTime             @default(now())
+  updatedAt                 DateTime             @updatedAt
+  organizations             OrganizationMember[]
+  tasks                     Task[]               @relation("AssignedTasks")
+  supportedTasks            Task[]               @relation("SupportedTasks")
+  deletedTasks              Task[]               @relation("DeletedTasks")
+  leadingTeams              Team[]               @relation("TeamLead")
+  comments                  Comment[]
+  invitedMemberships        Invite[]             @relation("Inviter")
+  acceptedInvites           Invite[]             @relation("InviteAccepter")
+  createdOkrs               Okr[]                @relation("OKRCreator")
+  createdAppraisals         Appraisal[]          @relation("AppraisalCreator")
+  subjectAppraisals         Appraisal[]          @relation("AppraisalSubject")
+  createdClients            Client[]             @relation("ClientCreator")
+  createdProjects           Project[]            @relation("ProjectCreator")
+  workSubmissions           WorkSubmission[]
+  notificationsSent         Notification[]       @relation("NotificationSender")
+  activityLogs              ActivityLog[]
 }
 
 model Organization {
@@ -200,6 +200,7 @@ model Okr {
   description    String?
   periodStart    DateTime
   periodEnd      DateTime
+  status         String          @default("OPEN") // OPEN, COMPLETED
   createdBy      String
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
@@ -238,10 +239,10 @@ model Appraisal {
   createdByUserId String
   cycle           String
   summary         String
-  tasksCompleted  Float?       // Percentage
-  deadlinesMet    Float?       // Percentage
-  okrContribution String?      // HIGH, MEDIUM, LOW
-  overallRating   String?      // EXCELLENT, GOOD, AVERAGE, POOR
+  tasksCompleted  Float? // Percentage
+  deadlinesMet    Float? // Percentage
+  okrContribution String? // HIGH, MEDIUM, LOW
+  overallRating   String? // EXCELLENT, GOOD, AVERAGE, POOR
   status          String       @default("GENERATED") // GENERATED, PUBLISHED
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
@@ -317,9 +318,9 @@ model Notification {
   id             String       @id @default(uuid())
   organizationId String
   senderId       String
-  targetType     String       // INDIVIDUAL, TEAM, PROJECT
+  targetType     String // INDIVIDUAL, TEAM, PROJECT
   targetId       String
-  type           String       // DEADLINE_REMINDER, PRIORITY_ALERT, FEEDBACK
+  type           String // DEADLINE_REMINDER, PRIORITY_ALERT, FEEDBACK
   message        String
   isRead         Boolean      @default(false)
   createdAt      DateTime     @default(now())

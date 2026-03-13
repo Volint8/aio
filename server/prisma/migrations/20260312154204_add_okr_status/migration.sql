@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE "Okr" ADD COLUMN     "status" TEXT NOT NULL DEFAULT 'OPEN';
