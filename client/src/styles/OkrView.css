@@ -1,0 +1,252 @@
+.okr-view {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    padding: 24px;
+}
+
+.okr-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.okr-title {
+    margin: 0;
+    font-size: 1.5em;
+    font-weight: 700;
+    color: var(--primary-color);
+}
+
+.okr-actions {
+    display: flex;
+    gap: 12px;
+}
+
+.btn-create-task,
+.btn-send-alert {
+    padding: 10px 20px;
+    border-radius: 8px;
+    font-size: 0.9em;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border: none;
+}
+
+.btn-create-task {
+    background: var(--primary-color);
+    color: white;
+}
+
+.btn-create-task:hover {
+    background: var(--accent-color);
+}
+
+.btn-send-alert {
+    background: transparent;
+    color: var(--primary-color);
+    border: 1px solid var(--primary-color);
+}
+
+.btn-send-alert:hover {
+    background: var(--primary-color);
+    color: white;
+}
+
+/* OKR Grid */
+.okr-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 20px;
+}
+
+.okr-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 24px;
+    box-shadow: var(--shadow);
+    transition: all 0.2s ease;
+}
+
+.okr-card:hover {
+    border-color: var(--accent-color);
+    box-shadow: var(--shadow-lg);
+}
+
+.okr-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.okr-card-title {
+    margin: 0;
+    font-size: 1.15em;
+    font-weight: 700;
+    color: var(--text-primary);
+    flex: 1;
+}
+
+.okr-status {
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 0.7em;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    white-space: nowrap;
+}
+
+.okr-status.completed {
+    background: #16a34a;
+    color: white;
+    border: 1px solid #15803d;
+}
+
+.okr-status.open {
+    background: var(--warning-color);
+    color: white;
+    border: 1px solid #f59e0b;
+}
+
+.okr-card-description {
+    margin: 0 0 16px 0;
+    font-size: 0.9em;
+    color: var(--text-secondary);
+    line-height: 1.6;
+}
+
+.okr-card-meta {
+    display: flex;
+    gap: 20px;
+    font-size: 0.85em;
+    color: var(--text-muted);
+    margin-bottom: 16px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.okr-card-meta .meta-item {
+    display: flex;
+    gap: 6px;
+}
+
+.okr-card-meta .meta-item strong {
+    color: var(--text-secondary);
+}
+
+.okr-key-results {
+    margin-bottom: 16px;
+}
+
+.okr-key-results strong {
+    display: block;
+    margin-bottom: 10px;
+    font-size: 0.9em;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.okr-key-results ul {
+    margin: 0;
+    padding-left: 20px;
+    list-style-type: disc;
+}
+
+.okr-key-results li {
+    margin-bottom: 8px;
+    font-size: 0.9em;
+    color: var(--text-primary);
+    line-height: 1.5;
+}
+
+.kr-tag {
+    display: inline-block;
+    margin-left: 8px;
+    padding: 3px 8px;
+    border-radius: 6px;
+    font-size: 0.75em;
+    font-weight: 700;
+    border: 1px solid;
+    background: transparent;
+}
+
+.okr-assignments {
+    font-size: 0.85em;
+    color: var(--text-muted);
+    padding-top: 12px;
+    border-top: 1px solid var(--border-color);
+}
+
+.okr-assignments strong {
+    color: var(--text-secondary);
+}
+
+.okr-card-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border-color);
+}
+
+.btn-edit,
+.btn-delete {
+    padding: 6px 14px;
+    border-radius: 6px;
+    font-size: 0.8em;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border: none;
+}
+
+.btn-edit {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+}
+
+.btn-edit:hover {
+    background: var(--border-color);
+}
+
+.btn-delete {
+    background: #FEF2F2;
+    color: #DC2626;
+}
+
+.btn-delete:hover {
+    background: #DC2626;
+    color: white;
+}
+
+/* Empty State */
+.empty-state {
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--text-muted);
+    font-size: 1.1em;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .okr-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .okr-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 16px;
+    }
+
+    .okr-actions {
+        width: 100%;
+        justify-content: flex-start;
+    }
+}

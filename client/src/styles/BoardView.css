@@ -1,0 +1,126 @@
+.board-view {
+    display: flex;
+    flex-direction: column;
+    gap: 32px;
+    padding: 24px;
+}
+
+.board-panel {
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 16px;
+    padding: 32px;
+    box-shadow: var(--shadow);
+}
+
+.panel-title {
+    margin: 0 0 24px 0;
+    font-size: 1.1em;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+}
+
+.stats-row {
+    display: flex;
+    gap: 32px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+}
+
+.stat-circle {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+}
+
+.stat-circle .stat-number {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    background: var(--bg-secondary);
+    border: 3px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2em;
+    font-weight: 700;
+    color: var(--text-primary);
+    transition: all 0.2s ease;
+}
+
+.stat-circle.ongoing .stat-number {
+    border-color: #2563eb;
+    color: #2563eb;
+    background: #EFF6FF;
+}
+
+.stat-circle.pending .stat-number {
+    border-color: #6B7280;
+    color: #6B7280;
+    background: #F9FAFB;
+}
+
+.stat-circle.overdue .stat-number {
+    border-color: #DC2626;
+    color: #DC2626;
+    background: #FEF2F2;
+}
+
+.stat-circle .stat-label {
+    font-size: 0.85em;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-align: center;
+    white-space: nowrap;
+}
+
+.create-task-btn {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    background: var(--primary-color);
+    color: white;
+    border: none;
+    font-size: 0.75em;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 8px;
+    line-height: 1.2;
+}
+
+.create-task-btn:hover {
+    background: var(--accent-color);
+    transform: scale(1.05);
+    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .board-panel {
+        padding: 20px;
+    }
+
+    .stats-row {
+        gap: 20px;
+    }
+
+    .stat-circle .stat-number {
+        width: 60px;
+        height: 60px;
+        font-size: 1.5em;
+    }
+
+    .create-task-btn {
+        width: 60px;
+        height: 60px;
+        font-size: 0.7em;
+    }
+}

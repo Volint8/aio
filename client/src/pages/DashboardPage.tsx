@@ -2,6 +2,10 @@ import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import BoardView from '../components/BoardView';
+import TaskTrackerView from '../components/TaskTrackerView';
+import TeamTrackerView from '../components/TeamTrackerView';
+import OkrView from '../components/OkrView';
 import '../styles/Dashboard.css';
 
 interface Tag {
@@ -182,8 +186,8 @@ interface ProjectRecord {
     taskCount?: number;
 }
 
-type DashboardSection = 'projects' | 'tracker' | 'team' | 'tags' | 'okrs' | 'appraisals';
-type TaskFilter = 'all' | 'my' | 'created' | 'in_progress' | 'completed' | 'overdue' | 'recently_deleted';
+type DashboardSection = 'board' | 'task-tracker' | 'team-tracker' | 'okr' | 'projects' | 'tracker' | 'team' | 'tags' | 'okrs' | 'appraisals';
+type TaskFilter = 'all' | 'my' | 'pending' | 'ongoing' | 'completed' | 'overdue' | 'created' | 'in_progress' | 'recently_deleted';
 type TrackerView = 'users' | 'teams';
 type ProjectsTab = 'clients' | 'projects';
 
@@ -400,12 +404,17 @@ const DashboardPage = () => {
     const trackerView: TrackerView = requestedTrackerView === 'teams' ? 'teams' : 'users';
 
     const currentSection: DashboardSection = useMemo(() => {
+        if (requestedSection === 'board') return 'board';
+        if (requestedSection === 'task-tracker') return 'task-tracker';
+        if (requestedSection === 'team-tracker' && canTrackTeam) return 'team-tracker';
+        if (requestedSection === 'okr') return 'okr';
         if (requestedSection === 'projects') return 'projects';
+        if (requestedSection === 'tracker') return 'tracker';
         if (requestedSection === 'team' && canTrackTeam) return 'team';
         if (requestedSection === 'tags' && isAdmin) return 'tags';
         if (requestedSection === 'okrs' && (isAdmin || isTeamLead || isMember)) return 'okrs';
         if (requestedSection === 'appraisals' && isAdmin) return 'appraisals';
-        return 'tracker';
+        return 'board';
     }, [requestedSection, canTrackTeam, isAdmin, isTeamLead, isMember]);
 
     const tagSourceMap = useMemo(() => {
@@ -1197,9 +1206,56 @@ const DashboardPage = () => {
     return (
         <div className="dashboard">
             <div className="dashboard-container">
+                {currentSection === 'board' && (
+                    <BoardView
+                        memberStats={memberStats}
+                        teamDistribution={teamDistribution}
+                        userRole={organization?.userRole as 'ADMIN' | 'TEAM_LEAD' | 'MEMBER'}
+                        onCreateTask={() => setShowCreateTaskModal(true)}
+                    />
+                )}
+
+                {currentSection === 'task-tracker' && (
+                    <TaskTrackerView
+                        tasks={tasks}
+                        filter={filter === 'recently_deleted' || filter === 'my' ? 'all' : filter === 'in_progress' ? 'ongoing' : filter === 'created' ? 'pending' : filter}
+                        onFilterChange={(f) => setFilter(f === 'all' ? 'all' : f === 'pending' ? 'created' : f === 'ongoing' ? 'in_progress' : f === 'completed' ? 'completed' : f === 'overdue' ? 'overdue' : 'all')}
+                        onTaskClick={(task) => setSelectedTaskId(task.id)}
+                        onCreateTask={() => setShowCreateTaskModal(true)}
+                        onSendAlert={() => setShowSendAlertModal(true)}
+                    />
+                )}
+
+                {currentSection === 'team-tracker' && canTrackTeam && (
+                    <TeamTrackerView
+                        tasks={tasks}
+                        members={(organization?.members || []).map(m => ({
+                            userId: m.userId,
+                            name: m.user.name || m.user.email
+                        }))}
+                        selectedMemberId={assigneeFilterId}
+                        onMemberSelect={(id) => setAssigneeFilterId(id)}
+                        filter={filter === 'recently_deleted' || filter === 'my' ? 'all' : filter === 'in_progress' ? 'ongoing' : filter === 'created' ? 'pending' : filter}
+                        onFilterChange={(f) => setFilter(f === 'all' ? 'all' : f === 'pending' ? 'created' : f === 'ongoing' ? 'in_progress' : f === 'completed' ? 'completed' : f === 'overdue' ? 'overdue' : 'all')}
+                        onTaskClick={(task) => setSelectedTaskId(task.id)}
+                        onCreateTask={() => setShowCreateTaskModal(true)}
+                        onSendAlert={() => setShowSendAlertModal(true)}
+                    />
+                )}
+
+                {currentSection === 'okr' && (
+                    <OkrView
+                        okrs={okrs}
+                        userRole={organization?.userRole as 'ADMIN' | 'TEAM_LEAD' | 'MEMBER'}
+                        onCreateTask={() => setShowCreateTaskModal(true)}
+                        onSendAlert={() => setShowSendAlertModal(true)}
+                        onEditOkr={handleOpenEditOkr}
+                        onDeleteOkr={handleDeleteOkr}
+                    />
+                )}
+
                 <div className="dashboard-header">
                     <div>
-                        <h1>Welcome to {organization?.name || 'Workspace'}, {user?.name || user?.email}</h1>
                         <p className="org-subtitle">
                             {organization?.userRole} • {organization?.members?.length || 0} Team Members
                         </p>

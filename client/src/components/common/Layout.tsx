@@ -80,34 +80,25 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     const isTeamLeadInCurrentOrg = currentOrgRole === 'TEAM_LEAD';
     const isMemberInCurrentOrg = currentOrgRole === 'MEMBER';
     const params = new URLSearchParams(location.search);
-    const dashboardSection = params.get('section') || 'tracker';
+    const dashboardSection = params.get('section') || 'board';
 
     const adminDashboardItems = useMemo(() => ([
-        { label: 'Projects', section: 'projects' },
-        { label: 'OKRs', section: 'okrs' },
-        { label: 'Tracker', section: 'tracker' },
-        { label: 'Tags', section: 'tags' },
-        { label: 'Team', section: 'team' },
-        { label: 'Appraisals', section: 'appraisals' }
+        { label: 'Board', section: 'board' },
+        { label: 'Task Tracker', section: 'task-tracker' },
+        { label: 'Team Tracker', section: 'team-tracker' },
+        { label: 'OKR', section: 'okr' }
     ]), []);
     const teamLeadDashboardItems = useMemo(() => ([
-        { label: 'Projects', section: 'projects' },
-        { label: 'OKRs', section: 'okrs' },
-        { label: 'Tracker', section: 'tracker' },
-        { label: 'Team', section: 'team' }
+        { label: 'Board', section: 'board' },
+        { label: 'Task Tracker', section: 'task-tracker' },
+        { label: 'Team Tracker', section: 'team-tracker' },
+        { label: 'OKR', section: 'okr' }
     ]), []);
     const memberDashboardItems = useMemo(() => ([
-        { label: 'Projects', section: 'projects' },
-        { label: 'OKRs', section: 'okrs' },
-        { label: 'Tracker', section: 'tracker' }
+        { label: 'Board', section: 'board' },
+        { label: 'Task Tracker', section: 'task-tracker' },
+        { label: 'OKR', section: 'okr' }
     ]), []);
-
-    const menuItems = [
-        {
-            label: 'Operations Board',
-            path: '/dashboard'
-        }
-    ];
 
     const selectedOrgId = localStorage.getItem('selectedOrgId');
     const selectedOrganization = organizations.find((org) => org.id === selectedOrgId);
@@ -124,7 +115,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     const getSidebarIcon = (key: string) => {
         const common = { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
         switch (key) {
-            case 'Operations Board':
+            case 'Board':
                 return (
                     <svg {...common}>
                         <rect x="3" y="3" width="7" height="7"></rect>
@@ -133,23 +124,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                         <rect x="14" y="14" width="7" height="7"></rect>
                     </svg>
                 );
-            case 'okrs':
-                return (
-                    <svg {...common}>
-                        <path d="M8 7h8"></path>
-                        <path d="M8 12h8"></path>
-                        <path d="M8 17h5"></path>
-                        <rect x="4" y="4" width="16" height="16" rx="2"></rect>
-                    </svg>
-                );
-            case 'tracker':
-                return (
-                    <svg {...common}>
-                        <circle cx="12" cy="12" r="8"></circle>
-                        <path d="M12 8v4l3 2"></path>
-                    </svg>
-                );
-            case 'projects':
+            case 'Task Tracker':
                 return (
                     <svg {...common}>
                         <rect x="3" y="5" width="18" height="14" rx="2"></rect>
@@ -157,14 +132,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                         <path d="M8 5V3h8v2"></path>
                     </svg>
                 );
-            case 'tags':
-                return (
-                    <svg {...common}>
-                        <path d="M20 10l-8 8-8-8V4h6l10 6z"></path>
-                        <circle cx="9" cy="9" r="1"></circle>
-                    </svg>
-                );
-            case 'team':
+            case 'Team Tracker':
                 return (
                     <svg {...common}>
                         <circle cx="9" cy="8" r="3"></circle>
@@ -173,10 +141,13 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                         <path d="M15 19c0-2 1.5-3.5 3.5-4"></path>
                     </svg>
                 );
-            case 'appraisals':
+            case 'OKR':
                 return (
                     <svg {...common}>
-                        <path d="M12 3l3.1 6.2L22 10l-5 4.8 1.2 6.9L12 18.8 5.8 21.7 7 14.8 2 10l6.9-.8L12 3z"></path>
+                        <path d="M8 7h8"></path>
+                        <path d="M8 12h8"></path>
+                        <path d="M8 17h5"></path>
+                        <rect x="4" y="4" width="16" height="16" rx="2"></rect>
                     </svg>
                 );
             default:
@@ -199,18 +170,6 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
                 <nav className="sidebar-nav">
                     <ul>
-                        {menuItems.map((item) => (
-                            <li key={item.path}>
-                                <div
-                                    className={`sidebar-link ${location.pathname === item.path && (item.path !== '/dashboard' || !location.search) ? 'active' : ''}`}
-                                    onClick={() => navigate(item.path)}
-                                >
-                                    <span className="sidebar-icon">{getSidebarIcon(item.label)}</span>
-                                    <span>{item.label}</span>
-                                </div>
-                            </li>
-                        ))}
-
                         {isAdminInCurrentOrg && location.pathname === '/dashboard' && (
                             <>
                                 <li style={{ marginTop: 12, marginBottom: 6, color: '#94A3B8', fontSize: '0.75em', textTransform: 'uppercase', padding: '0 16px' }}>
@@ -222,7 +181,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                                             className={`sidebar-link ${dashboardSection === item.section ? 'active' : ''}`}
                                             onClick={() => navigate(`/dashboard?section=${item.section}`)}
                                         >
-                                            <span className="sidebar-icon">{getSidebarIcon(item.section)}</span>
+                                            <span className="sidebar-icon">{getSidebarIcon(item.label)}</span>
                                             <span>{item.label}</span>
                                         </div>
                                     </li>
@@ -240,7 +199,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                                             className={`sidebar-link ${dashboardSection === item.section ? 'active' : ''}`}
                                             onClick={() => navigate(`/dashboard?section=${item.section}`)}
                                         >
-                                            <span className="sidebar-icon">{getSidebarIcon(item.section)}</span>
+                                            <span className="sidebar-icon">{getSidebarIcon(item.label)}</span>
                                             <span>{item.label}</span>
                                         </div>
                                     </li>
@@ -258,7 +217,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                                             className={`sidebar-link ${dashboardSection === item.section ? 'active' : ''}`}
                                             onClick={() => navigate(`/dashboard?section=${item.section}`)}
                                         >
-                                            <span className="sidebar-icon">{getSidebarIcon(item.section)}</span>
+                                            <span className="sidebar-icon">{getSidebarIcon(item.label)}</span>
                                             <span>{item.label}</span>
                                         </div>
                                     </li>
@@ -277,10 +236,27 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
             <main className="main-content">
                 <header className="top-bar">
-                    <h2>
-                        {location.pathname === '/dashboard' ? 'Operations Board' : 'Select Organization'}
-                    </h2>
+                    <div className="top-bar-left">
+                        <button
+                            className="btn-back"
+                            onClick={() => navigate('/dashboard')}
+                            title="Back to Board"
+                        >
+                            ←
+                        </button>
+                        <h2>
+                            {dashboardSection === 'board' ? 'Board' :
+                             dashboardSection === 'task-tracker' ? 'Task Tracker' :
+                             dashboardSection === 'team-tracker' ? 'Team Tracker' :
+                             dashboardSection === 'okr' ? 'OKR' : 'Dashboard'}
+                        </h2>
+                    </div>
                     <div className="top-bar-actions">
+                        {dashboardSection !== 'board' && (
+                            <button className="btn-send-alert" onClick={() => {}}>
+                                Send Alert
+                            </button>
+                        )}
                         <div className="notification-bell-container">
                             <button
                                 className={`notification-bell ${unreadCount > 0 ? 'has-unread' : ''}`}
