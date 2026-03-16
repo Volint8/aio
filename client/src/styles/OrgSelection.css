@@ -273,3 +273,139 @@
     font-weight: 600;
     color: var(--text-main);
 }
+
+/* Mobile responsive styles */
+@media (max-width: 768px) {
+    .org-selection-page {
+        padding: 32px 16px;
+    }
+    
+    .org-header {
+        margin-bottom: 32px;
+        padding-bottom: 20px;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 12px;
+    }
+    
+    .org-header h1 {
+        font-size: 1.5em;
+    }
+    
+    .org-grid {
+        grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+        gap: 20px;
+    }
+    
+    .org-card {
+        padding: 24px;
+    }
+    
+    .org-icon {
+        width: 56px;
+        height: 56px;
+        font-size: 1.3em;
+    }
+    
+    .org-card h3 {
+        font-size: 1.15em;
+    }
+    
+    .org-card p {
+        font-size: 0.85em;
+    }
+    
+    .btn-manage-team {
+        padding: 8px 12px;
+        font-size: 0.78em;
+    }
+    
+    .team-modal {
+        max-width: 95%;
+        width: 95%;
+    }
+    
+    .team-members-list {
+        max-height: 360px;
+    }
+}
+
+@media (max-width: 480px) {
+    .org-selection-page {
+        padding: 24px 12px;
+    }
+    
+    .org-header h1 {
+        font-size: 1.35em;
+    }
+    
+    .welcome-text {
+        font-size: 0.9em;
+    }
+    
+    .org-grid {
+        grid-template-columns: 1fr;
+        gap: 16px;
+    }
+    
+    .org-card {
+        padding: 20px 16px;
+        border-radius: 14px;
+    }
+    
+    .org-icon {
+        width: 48px;
+        height: 48px;
+        margin-bottom: 16px;
+        font-size: 1.2em;
+    }
+    
+    .org-card h3 {
+        font-size: 1.05em;
+    }
+    
+    .org-card p {
+        font-size: 0.8em;
+    }
+    
+    .role-badge {
+        font-size: 0.7em;
+        padding: 3px 10px;
+    }
+    
+    .btn-manage-team {
+        padding: 7px 12px;
+        font-size: 0.75em;
+        width: 100%;
+    }
+    
+    .create-card {
+        padding: 24px 16px;
+    }
+    
+    .modal {
+        padding: 24px 16px;
+        border-radius: 14px;
+    }
+    
+    .team-modal-header h2 {
+        font-size: 1.3em;
+    }
+    
+    .team-member-row {
+        padding: 10px;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 10px;
+    }
+    
+    .team-member-role {
+        width: 100%;
+        justify-content: flex-start;
+    }
+    
+    .team-member-role select {
+        flex: 1;
+        min-width: 120px;
+    }
+}

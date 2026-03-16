@@ -21,6 +21,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     const [selectedOrganization, setSelectedOrganization] = useState<OrgSummary | null>(null);
     const [notifications, setNotifications] = useState<any[]>([]);
     const [showNotifications, setShowNotifications] = useState(false);
+    const [sidebarOpen, setSidebarOpen] = useState(false);
 
     const fetchNotifications = () => {
         const orgId = localStorage.getItem('selectedOrgId');
@@ -153,7 +154,13 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
     return (
         <div className="app-container">
-            <aside className="sidebar">
+            {/* Mobile sidebar overlay */}
+            <div 
+                className={`sidebar-overlay ${sidebarOpen ? 'active' : ''}`} 
+                onClick={() => setSidebarOpen(false)}
+            />
+            
+            <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
                 <div className="sidebar-header">
                     <div className="sidebar-logo">
                         <img src="/images/image.png" alt="Apraizal Logo" style={{ height: '32px' }} />
@@ -171,7 +178,10 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                                     <li key={item.section}>
                                         <div
                                             className={`sidebar-link ${dashboardSection === item.section ? 'active' : ''}`}
-                                            onClick={() => navigate(`/dashboard?section=${item.section}`)}
+                                            onClick={() => {
+                                                navigate(`/dashboard?section=${item.section}`);
+                                                setSidebarOpen(false);
+                                            }}
                                         >
                                             <span className="sidebar-icon">{getSidebarIcon(item.label)}</span>
                                             <span>{item.label}</span>
@@ -189,7 +199,10 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                                     <li key={item.section}>
                                         <div
                                             className={`sidebar-link ${dashboardSection === item.section ? 'active' : ''}`}
-                                            onClick={() => navigate(`/dashboard?section=${item.section}`)}
+                                            onClick={() => {
+                                                navigate(`/dashboard?section=${item.section}`);
+                                                setSidebarOpen(false);
+                                            }}
                                         >
                                             <span className="sidebar-icon">{getSidebarIcon(item.label)}</span>
                                             <span>{item.label}</span>
@@ -207,7 +220,10 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                                     <li key={item.section}>
                                         <div
                                             className={`sidebar-link ${dashboardSection === item.section ? 'active' : ''}`}
-                                            onClick={() => navigate(`/dashboard?section=${item.section}`)}
+                                            onClick={() => {
+                                                navigate(`/dashboard?section=${item.section}`);
+                                                setSidebarOpen(false);
+                                            }}
                                         >
                                             <span className="sidebar-icon">{getSidebarIcon(item.label)}</span>
                                             <span>{item.label}</span>
@@ -229,6 +245,16 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
             <main className="main-content">
                 <header className="top-bar">
                     <div className="top-bar-left">
+                        <button
+                            className={`hamburger-menu ${sidebarOpen ? 'active' : ''}`}
+                            onClick={() => setSidebarOpen(!sidebarOpen)}
+                            aria-label="Toggle menu"
+                        >
+                            <span></span>
+                            <span></span>
+                            <span></span>
+                        </button>
+                        
                         <button
                             className="btn-back"
                             onClick={() => navigate('/dashboard')}

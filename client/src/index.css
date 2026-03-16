@@ -356,6 +356,90 @@ code {
   .org-display {
     max-width: 180px;
   }
+  
+  .top-bar-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+}
+
+/* Tablet and mobile responsive styles */
+@media (max-width: 1024px) {
+  .sidebar {
+    transform: translateX(-100%);
+    transition: transform 0.3s ease;
+  }
+
+  .sidebar.open {
+    transform: translateX(0);
+  }
+
+  .main-content {
+    margin-left: 0;
+    width: 100%;
+  }
+  
+  .top-bar {
+    padding: 0 16px;
+    height: 56px;
+  }
+  
+  .top-bar h2 {
+    display: none;
+  }
+  
+  .btn-back {
+    display: none;
+  }
+  
+  .org-label {
+    max-width: 150px;
+  }
+  
+  .user-pill span {
+    display: none;
+  }
+}
+
+/* Mobile responsive styles */
+@media (max-width: 768px) {
+  .top-bar {
+    padding: 0 12px;
+    height: 52px;
+  }
+  
+  .org-display {
+    padding: 0 8px;
+    height: 36px;
+    font-size: 0.85em;
+  }
+  
+  .org-label {
+    max-width: 120px;
+  }
+  
+  .user-pill {
+    padding: 4px 8px;
+    gap: 8px;
+  }
+  
+  .avatar {
+    width: 24px;
+    height: 24px;
+    font-size: 0.75em;
+  }
+  
+  .notification-bell {
+    width: 36px;
+    height: 36px;
+    font-size: 1.1em;
+  }
+  
+  .notifications-menu {
+    right: -16px;
+    width: 280px;
+  }
 }
 
 /* Utility Classes */
@@ -385,4 +469,98 @@ code {
 
 .mb-3 {
   margin-bottom: 24px;
+}
+
+/* Mobile-first responsive utilities */
+@media (max-width: 768px) {
+  /* Adjust base font size for mobile */
+  html {
+    font-size: 14px;
+  }
+
+  /* Prevent text size adjustment on orientation change */
+  body {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  /* Better tap targets for touch */
+  button, a, input, select, textarea {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  /* Remove tap highlight on mobile */
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+/* Hamburger menu styles */
+.hamburger-menu {
+  display: none;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  z-index: 1001;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+@media (max-width: 1024px) {
+  .hamburger-menu {
+    display: flex;
+  }
+}
+
+.hamburger-menu span {
+  display: block;
+  height: 2px;
+  width: 24px;
+  background: var(--text-main);
+  border-radius: 3px;
+  transition: all 0.3s ease;
+}
+
+.hamburger-menu.active span:nth-child(1) {
+  transform: translateY(6px) rotate(45deg);
+}
+
+.hamburger-menu.active span:nth-child(2) {
+  opacity: 0;
+}
+
+.hamburger-menu.active span:nth-child(3) {
+  transform: translateY(-6px) rotate(-45deg);
+}
+
+/* Mobile sidebar overlay */
+.sidebar-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.4);
+  backdrop-filter: blur(4px);
+  z-index: 98;
+  opacity: 0;
+  transition: opacity 0.3s ease, visibility 0.3s;
+  visibility: hidden;
+}
+
+@media (max-width: 1024px) {
+  .sidebar-overlay {
+    display: block;
+  }
+}
+
+.sidebar-overlay.active {
+  opacity: 1;
+  visibility: visible;
 }

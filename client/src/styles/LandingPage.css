@@ -256,9 +256,17 @@ main {
     .landing-nav {
         gap: 18px;
     }
+    
+    .landing-nav a {
+        font-size: 0.95rem;
+    }
 
     .hero {
         margin-top: 34px;
+    }
+    
+    .hero h1 {
+        line-height: 1.1;
     }
 
     .hero-actions {
@@ -268,6 +276,12 @@ main {
     .cta {
         min-width: min(350px, 100%);
         width: min(350px, 100%);
+        padding: 12px 20px;
+        font-size: 0.9rem;
+    }
+    
+    .hero-art {
+        margin-top: 32px;
     }
 
     .orb-2,
@@ -278,26 +292,70 @@ main {
     .hero-art img {
         width: 100%;
     }
+    
+    .about {
+        margin-top: 36px;
+        padding: clamp(18px, 4vw, 28px);
+    }
 }
 
 @media (max-width: 480px) {
     .landing-page {
         padding-top: 16px;
+        padding-bottom: 40px;
     }
 
     .landing-header {
         align-items: flex-start;
         flex-direction: column;
         gap: 10px;
+        background: linear-gradient(180deg, rgba(244, 247, 251, 0.98), rgba(244, 247, 251, 0.85));
+        padding: 8px 0;
     }
 
     .brand-text {
-        font-size: 1.7rem;
+        font-size: 1.5rem;
+    }
+    
+    .landing-nav {
+        width: 100%;
+        justify-content: center;
+        gap: 14px;
+    }
+    
+    .landing-nav a {
+        font-size: 0.85rem;
     }
 
     .hero-features {
-        gap: 10px;
+        gap: 8px;
         flex-wrap: wrap;
         justify-content: center;
+        font-size: clamp(0.9rem, 2vw, 1.4rem);
+    }
+    
+    .hero-actions {
+        flex-direction: column;
+        align-items: center;
+        gap: 12px;
+    }
+    
+    .cta {
+        width: 100%;
+        max-width: 320px;
+    }
+    
+    .orb-1,
+    .orb-3 {
+        width: 80px;
+        height: 80px;
+    }
+    
+    .about h2 {
+        font-size: clamp(1.2rem, 2.4vw, 1.6rem);
+    }
+    
+    .about p {
+        font-size: clamp(0.9rem, 1.5vw, 1rem);
     }
 }

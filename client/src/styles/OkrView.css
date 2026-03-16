@@ -235,18 +235,124 @@
 
 /* Responsive */
 @media (max-width: 768px) {
-    .okr-grid {
-        grid-template-columns: 1fr;
+    .okr-view {
+        padding: 16px;
+        gap: 20px;
     }
-
+    
     .okr-header {
         flex-direction: column;
         align-items: flex-start;
         gap: 16px;
     }
+    
+    .okr-title {
+        font-size: 1.3em;
+    }
 
     .okr-actions {
         width: 100%;
         justify-content: flex-start;
+    }
+    
+    .btn-create-task,
+    .btn-send-alert {
+        padding: 10px 16px;
+        font-size: 0.85em;
+    }
+    
+    .okr-grid {
+        gap: 16px;
+    }
+    
+    .okr-card {
+        padding: 20px;
+    }
+    
+    .okr-card-title {
+        font-size: 1.05em;
+    }
+    
+    .okr-key-results li {
+        font-size: 0.85em;
+    }
+}
+
+@media (max-width: 480px) {
+    .okr-view {
+        padding: 12px;
+    }
+    
+    .okr-header {
+        gap: 12px;
+    }
+    
+    .okr-title {
+        font-size: 1.15em;
+    }
+    
+    .okr-actions {
+        flex-direction: column;
+        gap: 10px;
+    }
+    
+    .btn-create-task,
+    .btn-send-alert {
+        width: 100%;
+        padding: 11px 16px;
+        font-size: 0.9em;
+        justify-content: center;
+    }
+    
+    .okr-grid {
+        grid-template-columns: 1fr;
+        gap: 12px;
+    }
+    
+    .okr-card {
+        padding: 16px;
+        border-radius: 12px;
+    }
+    
+    .okr-card-title {
+        font-size: 1em;
+    }
+    
+    .okr-status {
+        font-size: 0.65em;
+        padding: 3px 8px;
+    }
+    
+    .okr-card-description {
+        font-size: 0.85em;
+    }
+    
+    .okr-card-meta {
+        font-size: 0.8em;
+        flex-direction: column;
+        gap: 8px;
+    }
+    
+    .okr-key-results ul {
+        padding-left: 16px;
+    }
+    
+    .okr-key-results li {
+        font-size: 0.8em;
+        margin-bottom: 6px;
+    }
+    
+    .okr-card-actions {
+        flex-direction: column;
+        gap: 8px;
+    }
+    
+    .btn-edit,
+    .btn-delete {
+        width: 100%;
+        padding: 8px;
+        font-size: 0.85em;
+        text-align: center;
+        justify-content: center;
     }
 }

@@ -45,6 +45,32 @@
     gap: 12px;
 }
 
+/* Responsive padding for mobile */
+@media (max-width: 768px) {
+    .dashboard {
+        padding: 24px 16px;
+    }
+    
+    .dashboard-header h1 {
+        font-size: 1.6em;
+    }
+    
+    .org-subtitle {
+        font-size: 0.9em;
+    }
+    
+    .header-actions {
+        flex-wrap: wrap;
+        justify-content: flex-start;
+    }
+    
+    .header-actions .btn-primary,
+    .header-actions .btn-secondary {
+        padding: 10px 16px;
+        font-size: 0.85em;
+    }
+}
+
 /* Statistics Grid */
 .stats-grid {
     display: grid;
@@ -85,6 +111,32 @@
     color: var(--primary-color);
     letter-spacing: -1.5px;
     line-height: 1;
+}
+
+/* Mobile responsive stat cards */
+@media (max-width: 768px) {
+    .stat-card {
+        padding: 20px 16px;
+    }
+    
+    .stat-card h3 {
+        font-size: 0.7em;
+        letter-spacing: 0.8px;
+    }
+    
+    .stat-value {
+        font-size: 1.8em;
+    }
+}
+
+@media (max-width: 480px) {
+    .stat-card {
+        padding: 16px 12px;
+    }
+    
+    .stat-value {
+        font-size: 1.6em;
+    }
 }
 
 /* Specific Stat Emphasis */
@@ -410,6 +462,46 @@
 .task-card.overdue:hover {
     border-color: #DC2626;
     box-shadow: 0 0 0 1px #DC2626;
+}
+
+/* Mobile responsive task cards */
+@media (max-width: 768px) {
+    .task-card {
+        padding: 20px 16px;
+    }
+    
+    .task-header h3 {
+        font-size: 1.1em;
+    }
+    
+    .task-actions {
+        gap: 8px;
+    }
+    
+    .btn-action {
+        padding: 8px 12px;
+        font-size: 0.8em;
+    }
+    
+    .task-description {
+        font-size: 0.9em;
+    }
+}
+
+@media (max-width: 480px) {
+    .task-card {
+        padding: 16px 12px;
+    }
+    
+    .task-header h3 {
+        font-size: 1em;
+    }
+    
+    .priority-badge,
+    .status-badge {
+        font-size: 0.6em;
+        padding: 3px 8px;
+    }
 }
 
 .projects-tabs {
@@ -1253,14 +1345,38 @@
         grid-template-columns: 1fr;
     }
 
-    .task-detail-panel,
-    .task-detail-content {
-        max-height: none;
+    .task-detail-panel {
+        position: fixed;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        width: 100%;
+        max-width: 480px;
+        z-index: 2000;
+        border-radius: 0;
+        transform: translateX(100%);
+        opacity: 0;
+        visibility: hidden;
+        transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.3s ease, visibility 0.3s;
+        margin: 0;
+        height: 100vh;
+        max-height: 100vh;
+        box-shadow: -10px 0 30px rgba(15, 23, 42, 0.15);
+        border: none;
+        border-left: 1px solid var(--border-color);
     }
 
-    .task-detail-panel {
-        position: relative;
-        top: 0;
+    .task-detail-panel.open {
+        transform: translateX(0);
+        opacity: 1;
+        visibility: visible;
+    }
+
+    .task-detail-content {
+        height: 100%;
+        max-height: 100vh;
+        padding: 20px;
+        overflow-y: auto;
     }
 
     .team-invite-form {
@@ -1269,6 +1385,11 @@
 
     .tracker-hero {
         flex-direction: column;
+        padding: 20px;
+    }
+
+    .tracker-hero h2 {
+        font-size: 1.6em;
     }
 
     .tracker-hero-right,
@@ -1276,17 +1397,52 @@
         align-items: flex-start;
         justify-content: flex-start;
     }
+    
+    .projects-tabs {
+        width: 100%;
+        overflow-x: auto;
+    }
+    
+    .projects-tabs button {
+        flex-shrink: 0;
+    }
+}
+
+/* Mobile backdrop for task detail */
+.task-detail-backdrop {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.4);
+    backdrop-filter: blur(4px);
+    z-index: 1999;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.3s ease, visibility 0.3s;
+}
+
+@media (max-width: 1024px) {
+    .task-detail-backdrop.active {
+        display: block;
+        opacity: 1;
+        visibility: visible;
+    }
 }
 
 @media (max-width: 640px) {
     .stats-grid {
         grid-template-columns: 1fr;
+        gap: 16px;
     }
 
     .dashboard-header {
         flex-direction: column;
         align-items: flex-start;
         gap: 20px;
+    }
+    
+    .dashboard-header h1 {
+        font-size: 1.5em;
     }
 
     .comments-list {
@@ -1304,7 +1460,7 @@
     }
 
     .tracker-hero h2 {
-        font-size: 1.6em;
+        font-size: 1.4em;
     }
 
     .tracker-view-tabs {
@@ -1313,29 +1469,73 @@
 
     .tracker-view-tabs button {
         flex: 1;
+        padding: 8px 12px;
+        font-size: 0.85em;
     }
 
     .tracker-chart-grid {
-        height: 320px;
+        height: 280px;
+        padding: 20px 12px 48px;
+    }
+    
+    .tracker-chart-bars {
+        inset: 14px 12px 14px 48px;
+    }
+    
+    .tracker-bar-group {
+        flex: 0 0 64px;
     }
 
     .modal {
         padding: 20px;
         border-radius: 16px;
+        width: 95%;
+        max-width: 95%;
     }
 
     .form-row {
         grid-template-columns: 1fr;
         gap: 12px;
     }
+    
+    .filter-group {
+        width: 100%;
+        justify-content: flex-start;
+    }
+    
+    .btn-filter,
+    .tracker-select-filter {
+        padding: 8px 12px;
+        font-size: 0.8em;
+        min-width: 100px;
+    }
+    
+    .task-actions {
+        flex-wrap: wrap;
+    }
+    
+    .btn-action {
+        flex: 1 1 auto;
+        justify-content: center;
+    }
+    
+    .modal-actions {
+        flex-direction: column;
+        gap: 12px;
+    }
+    
+    .modal-actions .btn-primary,
+    .modal-actions .btn-secondary {
+        width: 100%;
+    }
 
     .count.overdue {
-    color: #ef4444;
-    background: #fee2e2;
-    padding: 2px 8px;
-    border-radius: 6px;
-    font-size: 0.85em;
-    font-weight: 700;
+        color: #ef4444;
+        background: #fee2e2;
+        padding: 2px 8px;
+        border-radius: 6px;
+        font-size: 0.85em;
+        font-weight: 700;
     }
 
     .stat-card.performance-highlight {

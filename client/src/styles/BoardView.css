@@ -104,12 +104,18 @@
 
 /* Responsive */
 @media (max-width: 768px) {
+    .board-view {
+        padding: 16px;
+        gap: 20px;
+    }
+    
     .board-panel {
         padding: 20px;
     }
 
     .stats-row {
         gap: 20px;
+        justify-content: center;
     }
 
     .stat-circle .stat-number {
@@ -117,10 +123,62 @@
         height: 60px;
         font-size: 1.5em;
     }
+    
+    .stat-circle .stat-label {
+        font-size: 0.8em;
+        max-width: 80px;
+        white-space: normal;
+    }
 
     .create-task-btn {
         width: 60px;
         height: 60px;
         font-size: 0.7em;
+    }
+}
+
+@media (max-width: 480px) {
+    .board-view {
+        padding: 12px;
+    }
+    
+    .board-panel {
+        padding: 16px;
+        border-radius: 12px;
+    }
+    
+    .stats-row {
+        flex-direction: column;
+        align-items: center;
+        gap: 16px;
+    }
+    
+    .stat-circle {
+        width: 100%;
+        flex-direction: row;
+        justify-content: center;
+        gap: 16px;
+    }
+    
+    .stat-circle .stat-number {
+        width: 50px;
+        height: 50px;
+        font-size: 1.3em;
+    }
+    
+    .stat-circle .stat-label {
+        font-size: 0.85em;
+        max-width: none;
+    }
+    
+    .create-task-btn {
+        width: 50px;
+        height: 50px;
+        font-size: 0.65em;
+    }
+    
+    .panel-title {
+        font-size: 0.95em;
+        letter-spacing: 0.5px;
     }
 }

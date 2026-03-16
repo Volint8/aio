@@ -1711,6 +1711,10 @@ const DashboardPage = () => {
                                     ))}
                                 </div>
 
+                                <div 
+                                    className={`task-detail-backdrop ${selectedTaskId ? 'active' : ''}`} 
+                                    onClick={() => setSelectedTaskId(null)}
+                                />
                                 <aside className={`task-detail-panel ${selectedTask ? 'open' : ''}`}>
                                     {selectedTask ? (
                                         <div className="task-detail-content" key={selectedTask.id}>

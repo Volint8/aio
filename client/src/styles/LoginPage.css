@@ -161,6 +161,16 @@
     border: 1px solid #fecaca;
 }
 
+.success-message {
+    color: #065f46;
+    background: #ecfdf5;
+    padding: 10px 12px;
+    border-radius: 8px;
+    margin-bottom: 16px;
+    font-size: 0.875em;
+    border: 1px solid #a7f3d0;
+}
+
 .login-card .btn-primary {
     width: 100%;
     padding: 14px;
@@ -258,23 +268,101 @@
 }
 
 @media (max-width: 640px) {
+    .login-page {
+        padding: 20px 16px;
+        align-items: flex-start;
+        padding-top: 40px;
+    }
+
     .login-card {
-        padding: 28px 20px 24px;
+        padding: 32px 24px 28px;
         border-radius: 18px;
+        max-width: 100%;
+    }
+
+    .login-header {
+        margin-bottom: 20px;
     }
 
     .login-header h1 {
         font-size: 1.8em;
+    }
+    
+    .brand-dot {
+        width: 10px;
+        height: 10px;
     }
 
     .tagline {
         font-size: 0.95em;
         flex-wrap: wrap;
         justify-content: center;
+        gap: 6px;
     }
 
     .login-card h2 {
-        font-size: 1.65em;
+        font-size: 1.5em;
         margin-bottom: 20px;
+    }
+    
+    .auth-mode-switch {
+        padding: 3px;
+        margin-bottom: 18px;
+    }
+    
+    .auth-mode-switch button {
+        padding: 10px;
+        font-size: 0.9em;
+    }
+    
+    .form-group {
+        margin-bottom: 16px;
+    }
+    
+    .form-group input {
+        padding: 12px 12px;
+        font-size: 1em;
+    }
+    
+    .login-card .btn-primary {
+        padding: 13px;
+        font-size: 1em;
+    }
+    
+    .suggestion-list {
+        gap: 6px;
+    }
+    
+    .suggestion-chip {
+        padding: 5px 10px;
+        font-size: 0.8em;
+    }
+}
+
+@media (max-width: 480px) {
+    .login-page {
+        padding: 16px 12px;
+        padding-top: 24px;
+    }
+    
+    .login-card {
+        padding: 28px 18px 24px;
+    }
+    
+    .login-header h1 {
+        font-size: 1.6em;
+    }
+    
+    .login-card h2 {
+        font-size: 1.35em;
+    }
+    
+    .tagline {
+        font-size: 0.9em;
+    }
+    
+    .otp-input {
+        font-size: 1.2em !important;
+        letter-spacing: 4px;
     }
 }
