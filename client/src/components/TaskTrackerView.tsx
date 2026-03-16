@@ -8,7 +8,7 @@ interface Task {
     status: string;
     priority: string;
     dueDate: string | null;
-    assignee?: {
+    assignee: {
         id: string;
         name: string | null;
         email: string;
@@ -18,19 +18,12 @@ interface Task {
         name: string | null;
         email: string;
     } | null;
-    project?: {
-        id: string;
-        name: string;
-        client?: {
-            id: string;
-            name: string;
-        } | null;
-    } | null;
     tag?: {
         id: string;
         name: string;
         color: string;
     } | null;
+    createdAt: string;
 }
 
 interface TaskTrackerViewProps {
@@ -104,7 +97,7 @@ const TaskTrackerView: React.FC<TaskTrackerViewProps> = ({
                     >
                         <div className="task-card-header">
                             <h3 className="task-card-title">{task.title}</h3>
-                            <span className={`priority-badge ${task.priority.toLowerCase()}`}>
+                            <span className={`priority-badge ${task.priority?.toLowerCase() || ''}`}>
                                 {task.priority}
                             </span>
                         </div>
@@ -115,11 +108,6 @@ const TaskTrackerView: React.FC<TaskTrackerViewProps> = ({
                             {task.assignee && (
                                 <span className="meta-item">
                                     <strong>Assignee:</strong> {task.assignee.name || task.assignee.email}
-                                </span>
-                            )}
-                            {task.project && (
-                                <span className="meta-item">
-                                    <strong>Project:</strong> {task.project.name}
                                 </span>
                             )}
                             {task.dueDate && (

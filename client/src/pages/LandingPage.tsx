@@ -8,38 +8,21 @@ const LandingPage = () => {
                 <div className="landing-brand">
                     <img src="/images/image.png" alt="Apraizal Logo" style={{ height: '40px' }} />
                 </div>
-
-                <nav className="landing-nav" aria-label="Main">
-                    <a href="#home">Home</a>
-                    <a href="#about">About Us</a>
-                </nav>
             </header>
 
             <main>
                 <section className="hero" aria-labelledby="landing-title">
-                    <h1 id="landing-title">All Your Work Appraisal, All In One Place</h1>
-                    <p className="hero-features">Organize <span aria-hidden="true">•</span> Track <span aria-hidden="true">•</span> Appraise</p>
+                    <h1 id="landing-title">Turn a year's worth of messy HR paperwork into a finished report with just one click.</h1>
+                    <p className="hero-features">
+                        <span className="feature-word">Organize</span><span aria-hidden="true">•</span>
+                        <span className="feature-word">Track</span><span aria-hidden="true">•</span>
+                        <span className="feature-word">Appraise</span>
+                    </p>
 
                     <div className="hero-actions">
                         <Link to="/login?mode=admin_signup" className="cta cta-primary">Get started</Link>
                         <Link to="/login" className="cta cta-secondary">Sign In</Link>
                     </div>
-
-                    <div className="hero-art" aria-hidden="true">
-                        <span className="orb orb-1"></span>
-                        <span className="orb orb-2"></span>
-                        <span className="orb orb-3"></span>
-                        <span className="orb orb-4"></span>
-                        <img src="/images/landing-hero.png" alt="" />
-                    </div>
-                </section>
-
-                <section id="about" className="about">
-                    <h2>About <img src="/images/image.png" alt="Apraizal Logo" style={{ height: '24px', verticalAlign: 'middle', display: 'inline-block' }} /></h2>
-                    <p>
-                        Apraizal helps teams manage objectives, track task ownership, and keep appraisals organized in one workflow.
-                        Admins, team leads, and members each get focused views so execution stays clear and measurable.
-                    </p>
                 </section>
             </main>
         </div>

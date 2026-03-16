@@ -196,7 +196,7 @@ const OrgSelectionPage = () => {
                                 {org.name.charAt(0).toUpperCase()}
                             </div>
                             <h3>{org.name}</h3>
-                            <span className={`role-badge ${org.userRole.toLowerCase()}`}>
+                            <span className={`role-badge ${org.userRole?.toLowerCase() || ''}`}>
                                 {org.userRole}
                             </span>
 
@@ -290,7 +290,7 @@ const OrgSelectionPage = () => {
                                         </div>
 
                                         <div className="team-member-role">
-                                            <span className={`role-badge ${member.role.toLowerCase()}`}>{member.role}</span>
+                                            <span className={`role-badge ${member.role?.toLowerCase() || ''}`}>{member.role}</span>
                                             <select
                                                 value={member.role}
                                                 disabled={updatingMemberId === member.id}
@@ -345,8 +345,8 @@ const OrgSelectionPage = () => {
                                                 <span>Expires {new Date(invite.expiresAt).toLocaleDateString()}</span>
                                             </div>
                                             <div className="team-member-role">
-                                                <span className={`role-badge ${invite.role.toLowerCase()}`}>{invite.role}</span>
-                                                <span className={`role-badge ${invite.status.toLowerCase()}`}>{invite.status}</span>
+                                                <span className={`role-badge ${invite.role?.toLowerCase() || ''}`}>{invite.role}</span>
+                                                <span className={`role-badge ${invite.status?.toLowerCase() || ''}`}>{invite.status}</span>
                                             </div>
                                         </div>
                                     ))}

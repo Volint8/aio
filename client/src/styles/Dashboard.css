@@ -725,6 +725,16 @@
     gap: 32px;
 }
 
+.team-stats-grid .task-card {
+    transition: all 0.2s ease;
+}
+
+.team-stats-grid .task-card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-lg);
+    border-color: var(--accent-color);
+}
+
 .team-invite-panel {
     margin-bottom: 20px;
     padding: 16px;
@@ -1318,7 +1328,6 @@
         grid-template-columns: 1fr;
         gap: 12px;
     }
-    }
 
     .count.overdue {
     color: #ef4444;
@@ -1446,11 +1455,35 @@
     .role-badge.overdue {
         background: #fee2e2;
         color: #ef4444;
-    }    .modal-actions {
-        margin-top: 24px;
-        flex-direction: column-reverse;
-        align-items: stretch;
     }
+
+    .team-member-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 10px 12px;
+        border-radius: 8px;
+        transition: background-color 0.2s ease;
+    }
+
+    .team-member-row:hover {
+        background: #f1f5f9;
+    }
+
+    .team-member-row .team-member-info strong {
+        transition: color 0.2s ease;
+    }
+
+    .team-member-row:hover .team-member-info strong {
+        color: #1d4ed8;
+        text-decoration: underline;
+    }
+}
+
+.modal-actions {
+    margin-top: 24px;
+    flex-direction: column-reverse;
+    align-items: stretch;
 }
 
 /* Work Submission */

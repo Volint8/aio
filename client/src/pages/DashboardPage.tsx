@@ -47,14 +47,6 @@ interface Task {
             name: string;
         };
     }>;
-    project?: {
-        id: string;
-        name: string;
-        client?: {
-            id: string;
-            name: string;
-        } | null;
-    } | null;
     tag?: Tag | null;
     createdAt: string;
     deletedAt?: string | null;
@@ -186,10 +178,9 @@ interface ProjectRecord {
     taskCount?: number;
 }
 
-type DashboardSection = 'board' | 'task-tracker' | 'team-tracker' | 'okr' | 'projects' | 'tracker' | 'team' | 'tags' | 'okrs' | 'appraisals';
+type DashboardSection = 'board' | 'task-tracker' | 'team-tracker' | 'okr' | 'tracker' | 'team' | 'tags' | 'okrs' | 'appraisals';
 type TaskFilter = 'all' | 'my' | 'pending' | 'ongoing' | 'completed' | 'overdue' | 'created' | 'in_progress' | 'recently_deleted';
 type TrackerView = 'users' | 'teams';
-type ProjectsTab = 'clients' | 'projects';
 
 interface MemberStatRecord {
     userId: string;
@@ -230,6 +221,9 @@ const COMMENTS_PREVIEW_COUNT = 4;
 const RETENTION_DAYS = 30;
 
 const DashboardPage = () => {
+    const location = useLocation();
+    const requestedFilter = (new URLSearchParams(location.search).get('filter') || 'all') as TaskFilter;
+
     const [tasks, setTasks] = useState<Task[]>([]);
     const [stats, setStats] = useState<Stats | null>(null);
     const [organization, setOrganization] = useState<Organization | null>(null);
@@ -244,7 +238,7 @@ const DashboardPage = () => {
     const [projects, setProjects] = useState<ProjectRecord[]>([]);
 
     const [loading, setLoading] = useState(true);
-    const [filter, setFilter] = useState<TaskFilter>('all');
+    const [filter, setFilter] = useState<TaskFilter>(requestedFilter);
     const [assigneeFilterId, setAssigneeFilterId] = useState<string | null>(null);
     const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
     const [expandedCommentThreads, setExpandedCommentThreads] = useState<Record<string, boolean>>({});
@@ -317,9 +311,7 @@ const DashboardPage = () => {
 
     const [showEditTaskModal, setShowEditTaskModal] = useState(false);
     const [showCreateClientModal, setShowCreateClientModal] = useState(false);
-    const [showCreateProjectModal, setShowCreateProjectModal] = useState(false);
     const [editingClient, setEditingClient] = useState<ClientRecord | null>(null);
-    const [editingProject, setEditingProject] = useState<ProjectRecord | null>(null);
     const [showEditOkrModal, setShowEditOkrModal] = useState(false);
     const [editingOkr, setEditingOkr] = useState<Okr | null>(null);
     const [showTagModal, setShowTagModal] = useState(false);
@@ -334,7 +326,6 @@ const DashboardPage = () => {
         assigneeId: '',
         supporterId: '',
         tagId: '',
-        projectId: '',
         alertTeamLead: false
     });
 
@@ -346,8 +337,7 @@ const DashboardPage = () => {
         dueDate: '',
         assigneeId: '',
         supporterId: '',
-        tagId: '',
-        projectId: ''
+        tagId: ''
     });
 
     const [newOkr, setNewOkr] = useState({
@@ -382,17 +372,12 @@ const DashboardPage = () => {
     const [inviteRole, setInviteRole] = useState('MEMBER');
     const [inviting, setInviting] = useState(false);
     const [teamError, setTeamError] = useState('');
-    const [projectsTab, setProjectsTab] = useState<ProjectsTab>('projects');
     const [clientFormName, setClientFormName] = useState('');
     const [clientFormVisibility, setClientFormVisibility] = useState('ORG_WIDE');
-    const [projectForm, setProjectForm] = useState({ name: '', clientId: '', visibility: 'ORG_WIDE' });
     const [taskClientFilter, setTaskClientFilter] = useState('all');
-    const [taskProjectFilter, setTaskProjectFilter] = useState('all');
 
     const { user } = useAuth();
     const navigate = useNavigate();
-    const location = useLocation();
-
     const requestedSection = (new URLSearchParams(location.search).get('section') || 'tracker') as DashboardSection;
     const requestedTrackerView = (new URLSearchParams(location.search).get('view') || 'users') as TrackerView;
     const isAdmin = organization?.userRole === 'ADMIN';
@@ -400,7 +385,6 @@ const DashboardPage = () => {
     const isMember = organization?.userRole === 'MEMBER';
     const canTrackTeam = organization?.userRole === 'ADMIN' || organization?.userRole === 'TEAM_LEAD';
     const canUseTrackerCharts = isAdmin || isTeamLead;
-    const canManageProjects = isTeamLead || isMember;
     const trackerView: TrackerView = requestedTrackerView === 'teams' ? 'teams' : 'users';
 
     const currentSection: DashboardSection = useMemo(() => {
@@ -408,7 +392,6 @@ const DashboardPage = () => {
         if (requestedSection === 'task-tracker') return 'task-tracker';
         if (requestedSection === 'team-tracker' && canTrackTeam) return 'team-tracker';
         if (requestedSection === 'okr') return 'okr';
-        if (requestedSection === 'projects') return 'projects';
         if (requestedSection === 'tracker') return 'tracker';
         if (requestedSection === 'team' && canTrackTeam) return 'team';
         if (requestedSection === 'tags' && isAdmin) return 'tags';
@@ -479,18 +462,6 @@ const DashboardPage = () => {
 
     const assignableUsers = (organization?.members || []).filter((member) => member.role !== 'ADMIN');
     const teamLeadUsers = (organization?.members || []).filter((member) => member.role === 'TEAM_LEAD');
-    const selectedCreateTaskProject = projects.find((project) => project.id === newTask.projectId) || null;
-    const selectedEditTaskProject = projects.find((project) => project.id === editTask.projectId) || null;
-    const trackerProjectOptions = taskClientFilter === 'all'
-        ? projects
-        : projects.filter((project) => project.clientId === taskClientFilter);
-
-    useEffect(() => {
-        if (taskProjectFilter === 'all') return;
-        if (!trackerProjectOptions.some((project) => project.id === taskProjectFilter)) {
-            setTaskProjectFilter('all');
-        }
-    }, [taskClientFilter, taskProjectFilter, projects]);
 
     useEffect(() => {
         if (selectedTaskId) {
@@ -521,12 +492,32 @@ const DashboardPage = () => {
             return;
         }
         fetchData();
-    }, [orgId, filter, taskClientFilter, taskProjectFilter, assigneeFilterId]);
+    }, [orgId, filter, taskClientFilter, assigneeFilterId]);
 
     const handleMemberClick = (userId: string) => {
         setAssigneeFilterId(userId);
         const params = new URLSearchParams(location.search);
         params.set('section', 'projects');
+        navigate(`/dashboard?${params.toString()}`);
+    };
+
+    const handleStatClick = (filterValue: TaskFilter) => {
+        const params = new URLSearchParams(location.search);
+        params.set('section', 'task-tracker');
+        params.set('filter', filterValue);
+        navigate(`/dashboard?${params.toString()}`);
+    };
+
+    const handleFilterClick = (filterValue: TaskFilter) => {
+        const params = new URLSearchParams(location.search);
+        params.set('filter', filterValue);
+        navigate(`/dashboard?${params.toString()}`);
+    };
+
+    const handleTeamClick = (teamId: string) => {
+        const params = new URLSearchParams(location.search);
+        params.set('section', 'team-tracker');
+        params.set('teamId', teamId);
         navigate(`/dashboard?${params.toString()}`);
     };
 
@@ -538,15 +529,13 @@ const DashboardPage = () => {
                     params: {
                         organizationId: orgId,
                         view: isDeletedView ? 'deleted' : 'active',
-                        ...(taskClientFilter !== 'all' ? { clientId: taskClientFilter } : {}),
-                        ...(taskProjectFilter !== 'all' ? { projectId: taskProjectFilter } : {})
+                        ...(taskClientFilter !== 'all' ? { clientId: taskClientFilter } : {})
                     }
                 }),
                 api.get('/tasks/stats', {
                     params: {
                         organizationId: orgId,
-                        ...(taskClientFilter !== 'all' ? { clientId: taskClientFilter } : {}),
-                        ...(taskProjectFilter !== 'all' ? { projectId: taskProjectFilter } : {})
+                        ...(taskClientFilter !== 'all' ? { clientId: taskClientFilter } : {})
                     }
                 }),
                 api.get(`/orgs/${orgId}`),
@@ -634,13 +623,6 @@ const DashboardPage = () => {
                 setNewTask((prev) => ({ ...prev, tagId: prev.tagId || tagsRes.data[0].id }));
                 setEditTask((prev) => ({ ...prev, tagId: prev.tagId || tagsRes.data[0].id }));
             }
-            if (projectsRes.data?.[0]?.id) {
-                setNewTask((prev) => ({ ...prev, projectId: prev.projectId || projectsRes.data[0].id }));
-                setEditTask((prev) => ({ ...prev, projectId: prev.projectId || projectsRes.data[0].id }));
-                setProjectForm((prev) => ({ ...prev, clientId: prev.clientId || projectsRes.data[0].clientId }));
-            } else if (clientsRes.data?.[0]?.id) {
-                setProjectForm((prev) => ({ ...prev, clientId: prev.clientId || clientsRes.data[0].id }));
-            }
         } catch (error: any) {
             console.error('Failed to fetch dashboard data:', error);
             // Set organization to null on error to prevent rendering with stale data
@@ -683,10 +665,6 @@ const DashboardPage = () => {
     const handleCreateTask = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
-            if (!newTask.projectId) {
-                alert('Project is required');
-                return;
-            }
             if (!newTask.assigneeId) {
                 alert('Primary assignee is required');
                 return;
@@ -707,7 +685,6 @@ const DashboardPage = () => {
                 assigneeId: '',
                 supporterId: '',
                 tagId: tags[0]?.id || '',
-                projectId: projects[0]?.id || '',
                 alertTeamLead: false
             });
             setShowCreateTaskModal(false);
@@ -727,18 +704,13 @@ const DashboardPage = () => {
             dueDate: task.dueDate ? task.dueDate.slice(0, 10) : '',
             assigneeId: task.assignee?.id || '',
             supporterId: task.supporter?.id || '',
-            tagId: task.tag?.id || tags[0]?.id || '',
-            projectId: task.project?.id || projects[0]?.id || ''
+            tagId: task.tag?.id || tags[0]?.id || ''
         });
         setShowEditTaskModal(true);
     };
 
     const handleUpdateTask = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!editTask.projectId) {
-            alert('Project is required');
-            return;
-        }
         if (!editTask.assigneeId) {
             alert('Primary assignee is required');
             return;
@@ -755,8 +727,7 @@ const DashboardPage = () => {
                 dueDate: editTask.dueDate || null,
                 assigneeId: editTask.assigneeId,
                 supporterId: editTask.supporterId || null,
-                tagId: editTask.tagId,
-                projectId: editTask.projectId
+                tagId: editTask.tagId
             });
             setShowEditTaskModal(false);
             await fetchData();
@@ -1046,64 +1017,6 @@ const DashboardPage = () => {
         }
     };
 
-    const handleDeleteClient = async (clientId: string) => {
-        if (!orgId || !window.confirm('Delete this client?')) return;
-        try {
-            await api.delete(`/orgs/${orgId}/clients/${clientId}`);
-            await fetchData();
-        } catch (error: any) {
-            const errorData = error.response?.data?.error;
-            alert((typeof errorData === 'object' ? errorData.message : errorData) || 'Failed to delete client');
-        }
-    };
-
-    const handleCreateProject = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!orgId || !projectForm.name.trim() || !projectForm.clientId) return;
-        try {
-            await api.post(`/orgs/${orgId}/projects`, {
-                name: projectForm.name,
-                clientId: projectForm.clientId,
-                visibility: projectForm.visibility
-            });
-            setProjectForm({ name: '', clientId: clients[0]?.id || '', visibility: 'ORG_WIDE' });
-            setShowCreateProjectModal(false);
-            await fetchData();
-        } catch (error: any) {
-            const errorData = error.response?.data?.error;
-            alert((typeof errorData === 'object' ? errorData.message : errorData) || 'Failed to create project');
-        }
-    };
-
-    const handleUpdateProject = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!orgId || !editingProject || !projectForm.name.trim() || !projectForm.clientId) return;
-        try {
-            await api.patch(`/orgs/${orgId}/projects/${editingProject.id}`, {
-                name: projectForm.name,
-                clientId: projectForm.clientId,
-                visibility: projectForm.visibility
-            });
-            setEditingProject(null);
-            setProjectForm({ name: '', clientId: clients[0]?.id || '', visibility: 'ORG_WIDE' });
-            await fetchData();
-        } catch (error: any) {
-            const errorData = error.response?.data?.error;
-            alert((typeof errorData === 'object' ? errorData.message : errorData) || 'Failed to update project');
-        }
-    };
-
-    const handleDeleteProject = async (projectId: string) => {
-        if (!orgId || !window.confirm('Delete this project?')) return;
-        try {
-            await api.delete(`/orgs/${orgId}/projects/${projectId}`);
-            await fetchData();
-        } catch (error: any) {
-            const errorData = error.response?.data?.error;
-            alert((typeof errorData === 'object' ? errorData.message : errorData) || 'Failed to delete project');
-        }
-    };
-
     const handleAddLink = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
@@ -1238,7 +1151,7 @@ const DashboardPage = () => {
                         tasks={tasks}
                         filter={filter === 'recently_deleted' || filter === 'my' ? 'all' : filter === 'in_progress' ? 'ongoing' : filter === 'created' ? 'pending' : filter}
                         onFilterChange={(f) => setFilter(f === 'all' ? 'all' : f === 'pending' ? 'created' : f === 'ongoing' ? 'in_progress' : f === 'completed' ? 'completed' : f === 'overdue' ? 'overdue' : 'all')}
-                        onTaskClick={(task) => setSelectedTaskId(task.id)}
+                        onTaskClick={(task) => handleOpenEditTask(task)}
                         onCreateTask={() => setShowCreateTaskModal(true)}
                         onSendAlert={() => setShowSendAlertModal(true)}
                     />
@@ -1247,15 +1160,17 @@ const DashboardPage = () => {
                 {currentSection === 'team-tracker' && canTrackTeam && (
                     <TeamTrackerView
                         tasks={tasks}
-                        members={(organization?.members || []).map(m => ({
-                            userId: m.userId,
-                            name: m.user.name || m.user.email
-                        }))}
+                        members={(organization?.members || [])
+                            .filter(m => m.userId !== user?.id)
+                            .map(m => ({
+                                userId: m.userId,
+                                name: m.user.name || m.user.email
+                            }))}
                         selectedMemberId={assigneeFilterId}
                         onMemberSelect={(id) => setAssigneeFilterId(id)}
                         filter={filter === 'recently_deleted' || filter === 'my' ? 'all' : filter === 'in_progress' ? 'ongoing' : filter === 'created' ? 'pending' : filter}
                         onFilterChange={(f) => setFilter(f === 'all' ? 'all' : f === 'pending' ? 'created' : f === 'ongoing' ? 'in_progress' : f === 'completed' ? 'completed' : f === 'overdue' ? 'overdue' : 'all')}
-                        onTaskClick={(task) => setSelectedTaskId(task.id)}
+                        onTaskClick={(task) => handleOpenEditTask(task)}
                         onCreateTask={() => setShowCreateTaskModal(true)}
                         onSendAlert={() => setShowSendAlertModal(true)}
                     />
@@ -1279,17 +1194,6 @@ const DashboardPage = () => {
                 )}
 
                 <div className="dashboard-header">
-                    <div>
-                        <p className="org-subtitle">
-                            {organization?.userRole} • {organization?.members?.length || 0} Team Members
-                        </p>
-                    </div>
-                    {currentSection === 'projects' && canManageProjects && (
-                        <div className="header-actions">
-                            <button onClick={() => setShowCreateClientModal(true)} className="btn-secondary">+ New Client</button>
-                            <button onClick={() => setShowCreateProjectModal(true)} className="btn-primary">+ New Project</button>
-                        </div>
-                    )}
                     {currentSection === 'tracker' && (
                         <div className="header-actions">
                             {assigneeFilterId && (
@@ -1390,7 +1294,7 @@ const DashboardPage = () => {
                                                         </button>
                                                     )}
                                                     <span className="role-badge low">{invite.role}</span>
-                                                    <span className={`role-badge ${invite.status.toLowerCase()}`}>{invite.status}</span>
+                                                    <span className={`role-badge ${invite.status?.toLowerCase() || ''}`}>{invite.status}</span>
                                                 </div>
                                             </div>
                                         ))}
@@ -1400,7 +1304,13 @@ const DashboardPage = () => {
                         )}
                         <div className="team-stats-grid">
                             {teams.map((team) => (
-                                <div key={team.id} className="task-card" style={{ padding: '20px' }}>
+                                <div
+                                    key={team.id}
+                                    className="task-card"
+                                    style={{ padding: '20px', cursor: 'pointer' }}
+                                    onClick={() => handleTeamClick(team.id)}
+                                    title={`Click to view ${team.name} tasks`}
+                                >
                                     <div className="tasks-header" style={{ marginBottom: 12 }}>
                                         <div>
                                             <h3 style={{ margin: 0 }}>{team.name}</h3>
@@ -1423,7 +1333,7 @@ const DashboardPage = () => {
                                             <span className="count created" title="Tasks Created">{team.stats.created} Created</span>
                                         </div>
                                         {isAdmin && (
-                                            <div className="header-actions" style={{ margin: 0 }}>
+                                            <div className="header-actions" style={{ margin: 0 }} onClick={(e) => e.stopPropagation()}>
                                                 <button className="btn-secondary" style={{ padding: '4px 8px', fontSize: '0.8em' }} onClick={() => openEditTeam(team)}>Edit</button>
                                                 <button className="btn-logout" style={{ padding: '4px 8px', fontSize: '0.8em' }} onClick={() => handleDeleteTeam(team.id)}>Delete</button>
                                             </div>
@@ -1462,106 +1372,6 @@ const DashboardPage = () => {
                                 </div>
                             ))}
                         </div>
-                    </div>
-                )}
-
-                {currentSection === 'projects' && (
-                    <div className="tasks-section">
-                        <div className="projects-tabs">
-                            <button
-                                type="button"
-                                className={projectsTab === 'projects' ? 'active' : ''}
-                                onClick={() => setProjectsTab('projects')}
-                            >
-                                Projects
-                            </button>
-                            <button
-                                type="button"
-                                className={projectsTab === 'clients' ? 'active' : ''}
-                                onClick={() => setProjectsTab('clients')}
-                            >
-                                Clients
-                            </button>
-                        </div>
-
-                        {projectsTab === 'projects' ? (
-                            <div className="tasks-list">
-                                {projects.map((project) => {
-                                    const isOwner = project.createdByUserId === user?.id;
-                                    return (
-                                        <div key={project.id} className="task-card" style={{ padding: '16px' }}>
-                                            <div className="tasks-header" style={{ marginBottom: 8 }}>
-                                                <div>
-                                                    <h3 style={{ margin: 0 }}>{project.name}</h3>
-                                                    <p className="org-subtitle" style={{ marginTop: 4 }}>
-                                                        Client: {project.client?.name || 'Unknown'} • Tasks: {project.taskCount || 0}
-                                                    </p>
-                                                </div>
-                                                {canManageProjects && isOwner && (
-                                                    <div className="header-actions">
-                                                        <button
-                                                            className="btn-secondary"
-                                                            onClick={() => {
-                                                                setEditingProject(project);
-                                                                setProjectForm({ name: project.name, clientId: project.clientId, visibility: project.visibility });
-                                                            }}
-                                                        >
-                                                            Edit
-                                                        </button>
-                                                        <button className="btn-logout" onClick={() => handleDeleteProject(project.id)}>
-                                                            Delete
-                                                        </button>
-                                                    </div>
-                                                )}
-                                            </div>
-                                            <p className="task-description" style={{ marginBottom: 0 }}>
-                                                Owner: {project.createdBy?.name || project.createdBy?.email || 'Unknown'} • Created:{' '}
-                                                {new Date(project.createdAt).toLocaleDateString()}
-                                            </p>
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        ) : (
-                            <div className="tasks-list">
-                                {clients.map((client) => {
-                                    const isOwner = client.createdByUserId === user?.id;
-                                    return (
-                                        <div key={client.id} className="task-card" style={{ padding: '16px' }}>
-                                            <div className="tasks-header" style={{ marginBottom: 8 }}>
-                                                <div>
-                                                    <h3 style={{ margin: 0 }}>{client.name}</h3>
-                                                    <p className="org-subtitle" style={{ marginTop: 4 }}>
-                                                        Projects: {client.projectCount || 0} • Tasks: {client.taskCount || 0}
-                                                    </p>
-                                                </div>
-                                                {canManageProjects && isOwner && (
-                                                    <div className="header-actions">
-                                                        <button
-                                                            className="btn-secondary"
-                                                            onClick={() => {
-                                                                setEditingClient(client);
-                                                                setClientFormName(client.name);
-                                                                setClientFormVisibility(client.visibility);
-                                                            }}
-                                                        >
-                                                            Edit
-                                                        </button>
-                                                        <button className="btn-logout" onClick={() => handleDeleteClient(client.id)}>
-                                                            Delete
-                                                        </button>
-                                                    </div>
-                                                )}
-                                            </div>
-                                            <p className="task-description" style={{ marginBottom: 0 }}>
-                                                Owner: {client.createdBy?.name || client.createdBy?.email || 'Unknown'} • Created:{' '}
-                                                {new Date(client.createdAt).toLocaleDateString()}
-                                            </p>
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        )}
                     </div>
                 )}
 
@@ -1810,18 +1620,18 @@ const DashboardPage = () => {
                         {!canUseTrackerCharts && stats && (
                             <div className="stats-grid">
                                 {(isMember || isTeamLead) && (
-                                    <div className="stat-card performance-highlight">
+                                    <div className="stat-card performance-highlight" title="View your performance metrics">
                                         <h3>My Performance</h3>
                                         <p className="stat-value">{memberStats.find(m => m.userId === user?.id)?.stats.temperature || '🔴 Low Activity'}</p>
                                         <small>Score: {memberStats.find(m => m.userId === user?.id)?.stats.performanceScore || 0}%</small>
                                     </div>
                                 )}
-                                <div className="stat-card" onClick={() => setFilter('all')}><h3>Total Workload</h3><p className="stat-value">{stats.total}</p></div>
-                                <div className="stat-card" onClick={() => setFilter('in_progress')}><h3>Ongoing Tasks</h3><p className="stat-value">{stats.ongoing}</p></div>
-                                <div className="stat-card" onClick={() => setFilter('completed')}><h3>Completed Work</h3><p className="stat-value">{stats.completed}</p></div>
-                                <div className="stat-card" onClick={() => setFilter('overdue')}><h3>Overdue</h3><p className="stat-value" style={{ color: '#ef4444' }}>{stats.overdue}</p></div>
+                                <div className="stat-card" onClick={() => handleStatClick('all')} title="View all tasks"><h3>Total Workload</h3><p className="stat-value">{stats.total}</p></div>
+                                <div className="stat-card" onClick={() => handleStatClick('in_progress')} title="View ongoing tasks"><h3>Ongoing Tasks</h3><p className="stat-value">{stats.ongoing}</p></div>
+                                <div className="stat-card" onClick={() => handleStatClick('completed')} title="View completed tasks"><h3>Completed Work</h3><p className="stat-value">{stats.completed}</p></div>
+                                <div className="stat-card" onClick={() => handleStatClick('overdue')} title="View overdue tasks"><h3>Overdue</h3><p className="stat-value" style={{ color: '#ef4444' }}>{stats.overdue}</p></div>
                                 {!isAdmin && (
-                                    <div className="stat-card" onClick={() => setFilter('my')}><h3>Your Focus</h3><p className="stat-value">{stats.myTasks}</p></div>
+                                    <div className="stat-card" onClick={() => handleStatClick('my')} title="View your assigned tasks"><h3>Your Focus</h3><p className="stat-value">{stats.myTasks}</p></div>
                                 )}
                             </div>
                         )}
@@ -1833,16 +1643,16 @@ const DashboardPage = () => {
                                     <p className="org-subtitle" style={{ margin: 0 }}>Your tasks + your team-linked tasks</p>
                                 )}
                                 <div className="filter-group">
-                                    <button type="button" className={`btn-filter ${filter === 'all' ? 'active' : ''}`} onClick={() => setFilter('all')}>All</button>
+                                    <button type="button" className={`btn-filter ${filter === 'all' ? 'active' : ''}`} onClick={() => handleFilterClick('all')}>All</button>
                                     {!isAdmin && (
-                                        <button type="button" className={`btn-filter ${filter === 'my' ? 'active' : ''}`} onClick={() => setFilter('my')}>My Tasks</button>
+                                        <button type="button" className={`btn-filter ${filter === 'my' ? 'active' : ''}`} onClick={() => handleFilterClick('my')}>My Tasks</button>
                                     )}
-                                    <button type="button" className={`btn-filter ${filter === 'created' ? 'active' : ''}`} onClick={() => setFilter('created')}>Pending</button>
-                                    <button type="button" className={`btn-filter ${filter === 'in_progress' ? 'active' : ''}`} onClick={() => setFilter('in_progress')}>Ongoing</button>
-                                    <button type="button" className={`btn-filter ${filter === 'completed' ? 'active' : ''}`} onClick={() => setFilter('completed')}>Completed</button>
-                                    <button type="button" className={`btn-filter overdue ${filter === 'overdue' ? 'active' : ''}`} onClick={() => setFilter('overdue')}>Overdue</button>
+                                    <button type="button" className={`btn-filter ${filter === 'created' ? 'active' : ''}`} onClick={() => handleFilterClick('created')}>Pending</button>
+                                    <button type="button" className={`btn-filter ${filter === 'in_progress' ? 'active' : ''}`} onClick={() => handleFilterClick('in_progress')}>Ongoing</button>
+                                    <button type="button" className={`btn-filter ${filter === 'completed' ? 'active' : ''}`} onClick={() => handleFilterClick('completed')}>Completed</button>
+                                    <button type="button" className={`btn-filter overdue ${filter === 'overdue' ? 'active' : ''}`} onClick={() => handleFilterClick('overdue')}>Overdue</button>
                                     {isAdmin && (
-                                        <button type="button" className={`btn-filter ${filter === 'recently_deleted' ? 'active' : ''}`} onClick={() => setFilter('recently_deleted')}>Recently Deleted</button>
+                                        <button type="button" className={`btn-filter ${filter === 'recently_deleted' ? 'active' : ''}`} onClick={() => handleFilterClick('recently_deleted')}>Recently Deleted</button>
                                     )}
                                     <select
                                         className="tracker-select-filter"
@@ -1852,16 +1662,6 @@ const DashboardPage = () => {
                                         <option value="all">All Clients</option>
                                         {clients.map((client) => (
                                             <option key={client.id} value={client.id}>{client.name}</option>
-                                        ))}
-                                    </select>
-                                    <select
-                                        className="tracker-select-filter"
-                                        value={taskProjectFilter}
-                                        onChange={(e) => setTaskProjectFilter(e.target.value)}
-                                    >
-                                        <option value="all">All Projects</option>
-                                        {trackerProjectOptions.map((project) => (
-                                            <option key={project.id} value={project.id}>{project.name}</option>
                                         ))}
                                     </select>
                                 </div>
@@ -1874,8 +1674,8 @@ const DashboardPage = () => {
                                             <div className="task-header">
                                                 <h3>{task.title}</h3>
                                                 <div className="task-badges">
-                                                    <span className={`priority-badge ${task.priority.toLowerCase()}`}>{task.priority}</span>
-                                                    <span className={`status-badge ${task.status.toLowerCase()}`}>{task.status.replace('_', ' ')}</span>
+                                                    <span className={`priority-badge ${task.priority?.toLowerCase() || ''}`}>{task.priority}</span>
+                                                    <span className={`status-badge ${task.status?.toLowerCase() || ''}`}>{task.status.replace('_', ' ')}</span>
                                                     {isOverdue(task) && (
                                                         <span className="status-badge overdue" title={`Due: ${new Date(task.dueDate!).toLocaleDateString()} (${getDaysOverdue(task)} days overdue)`}>
                                                             Overdue
@@ -1902,8 +1702,6 @@ const DashboardPage = () => {
                                                     <>
                                                         <div className="meta-item"><strong>Owner:</strong> {task.assignee?.name || task.assignee?.email || 'Unassigned'}</div>
                                                         <div className="meta-item"><strong>Supporter:</strong> {task.supporter?.name || task.supporter?.email || 'None'}</div>
-                                                        <div className="meta-item"><strong>Project:</strong> {task.project?.name || 'Unassigned'}</div>
-                                                        <div className="meta-item"><strong>Client:</strong> {task.project?.client?.name || 'Unassigned'}</div>
                                                         <div className="meta-item"><strong>Teams:</strong> {(task.taskTeams || []).map((tt) => tt.team.name).join(', ') || 'None'}</div>
                                                         <div className="meta-item"><strong>Comments:</strong> {task.comments?.length || 0}</div>
                                                     </>
@@ -1928,8 +1726,8 @@ const DashboardPage = () => {
                                                         ×
                                                     </button>
                                                     <div className="task-badges">
-                                                        <span className={`priority-badge ${selectedTask.priority.toLowerCase()}`}>{selectedTask.priority}</span>
-                                                        <span className={`status-badge ${selectedTask.status.toLowerCase()}`}>{selectedTask.status.replace('_', ' ')}</span>
+                                                        <span className={`priority-badge ${selectedTask.priority?.toLowerCase() || ''}`}>{selectedTask.priority}</span>
+                                                        <span className={`status-badge ${selectedTask.status?.toLowerCase() || ''}`}>{selectedTask.status.replace('_', ' ')}</span>
                                                         {selectedTask.tag && (
                                                             <span
                                                                 className="priority-badge low"
@@ -1945,8 +1743,6 @@ const DashboardPage = () => {
                                             <div className="task-meta">
                                                 <div className="meta-item"><strong>Owner:</strong> {selectedTask.assignee?.name || selectedTask.assignee?.email || 'Unassigned'}</div>
                                                 <div className="meta-item"><strong>Supporter:</strong> {selectedTask.supporter?.name || selectedTask.supporter?.email || 'None'}</div>
-                                                <div className="meta-item"><strong>Project:</strong> {selectedTask.project?.name || 'Unassigned'}</div>
-                                                <div className="meta-item"><strong>Client:</strong> {selectedTask.project?.client?.name || 'Unassigned'}</div>
                                                 <div className="meta-item"><strong>Teams:</strong> {(selectedTask.taskTeams || []).map((tt) => tt.team.name).join(', ') || 'None'}</div>
                                             </div>
 
@@ -2052,7 +1848,7 @@ const DashboardPage = () => {
                                                                     <span className="submission-author">
                                                                         {sub.user?.name || 'Unknown'}
                                                                     </span>
-                                                                    <span className={`submission-status status-${sub.status.toLowerCase()}`}>
+                                                                    <span className={`submission-status status-${sub.status?.toLowerCase() || ''}`}>
                                                                         {sub.status}
                                                                     </span>
                                                                 </div>
@@ -2255,103 +2051,6 @@ const DashboardPage = () => {
                 </div>
             )}
 
-            {showCreateProjectModal && (
-                <div className="modal-overlay" onClick={() => setShowCreateProjectModal(false)}>
-                    <div className="modal" onClick={(e) => e.stopPropagation()}>
-                        <h2>Create Project</h2>
-                        <form onSubmit={handleCreateProject}>
-                            <div className="form-group">
-                                <label>Project Name</label>
-                                <input
-                                    type="text"
-                                    value={projectForm.name}
-                                    onChange={(e) => setProjectForm({ ...projectForm, name: e.target.value })}
-                                    required
-                                    autoFocus
-                                />
-                            </div>
-                            <div className="form-group">
-                                <label>Client</label>
-                                <select
-                                    value={projectForm.clientId}
-                                    onChange={(e) => setProjectForm({ ...projectForm, clientId: e.target.value })}
-                                    required
-                                >
-                                    <option value="">Select client</option>
-                                    {clients.map((client) => (
-                                        <option key={client.id} value={client.id}>{client.name}</option>
-                                    ))}
-                                </select>
-                            </div>
-                            <div className="form-group">
-                                <label>Visibility</label>
-                                <select
-                                    value={projectForm.visibility}
-                                    onChange={(e) => setProjectForm({ ...projectForm, visibility: e.target.value })}
-                                >
-                                    <option value="ORG_WIDE">Organization-wide (All members)</option>
-                                    <option value="CREATOR_ONLY">Only me (Creator)</option>
-                                </select>
-                            </div>
-                            <div className="modal-notice">
-                                <small>This project will be visible to all team members and team leads.</small>
-                            </div>
-                            <div className="modal-actions">
-                                <button type="button" onClick={() => setShowCreateProjectModal(false)} className="btn-secondary">Cancel</button>
-                                <button type="submit" className="btn-primary">Create Project</button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            )}
-
-            {editingProject && (
-                <div className="modal-overlay" onClick={() => setEditingProject(null)}>
-                    <div className="modal" onClick={(e) => e.stopPropagation()}>
-                        <h2>Edit Project</h2>
-                        <form onSubmit={handleUpdateProject}>
-                            <div className="form-group">
-                                <label>Project Name</label>
-                                <input
-                                    type="text"
-                                    value={projectForm.name}
-                                    onChange={(e) => setProjectForm({ ...projectForm, name: e.target.value })}
-                                    required
-                                    autoFocus
-                                />
-                            </div>
-                            <div className="form-group">
-                                <label>Client</label>
-                                <select
-                                    value={projectForm.clientId}
-                                    onChange={(e) => setProjectForm({ ...projectForm, clientId: e.target.value })}
-                                    required
-                                >
-                                    <option value="">Select client</option>
-                                    {clients.map((client) => (
-                                        <option key={client.id} value={client.id}>{client.name}</option>
-                                    ))}
-                                </select>
-                            </div>
-                            <div className="form-group">
-                                <label>Visibility</label>
-                                <select
-                                    value={projectForm.visibility}
-                                    onChange={(e) => setProjectForm({ ...projectForm, visibility: e.target.value })}
-                                >
-                                    <option value="ORG_WIDE">Organization-wide (All members)</option>
-                                    <option value="CREATOR_ONLY">Only me (Creator)</option>
-                                </select>
-                            </div>
-                            <div className="modal-actions">
-                                <button type="button" onClick={() => setEditingProject(null)} className="btn-secondary">Cancel</button>
-                                <button type="submit" className="btn-primary">Save Project</button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            )}
-
             {showCreateTaskModal && (
                 <div className="modal-overlay" onClick={() => setShowCreateTaskModal(false)}>
                     <div className="modal large" onClick={(e) => e.stopPropagation()}>
@@ -2364,18 +2063,6 @@ const DashboardPage = () => {
                             <div className="form-group">
                                 <label>Description</label>
                                 <textarea value={newTask.description} onChange={(e) => setNewTask({ ...newTask, description: e.target.value })} rows={4} />
-                            </div>
-                            <div className="form-group">
-                                <label>Project *</label>
-                                <select value={newTask.projectId} onChange={(e) => setNewTask({ ...newTask, projectId: e.target.value })} required>
-                                    <option value="">Select a project</option>
-                                    {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
-                                </select>
-                                {selectedCreateTaskProject && (
-                                    <div className="selected-tag-preview">
-                                        <span>Client: <strong>{selectedCreateTaskProject.client?.name || 'Unknown'}</strong></span>
-                                    </div>
-                                )}
                             </div>
                             <div className="form-group">
                                 <label>Tag *</label>
@@ -2465,18 +2152,6 @@ const DashboardPage = () => {
                             <div className="form-group">
                                 <label>Description</label>
                                 <textarea value={editTask.description} onChange={(e) => setEditTask({ ...editTask, description: e.target.value })} rows={4} />
-                            </div>
-                            <div className="form-group">
-                                <label>Project *</label>
-                                <select value={editTask.projectId} onChange={(e) => setEditTask({ ...editTask, projectId: e.target.value })} required>
-                                    <option value="">Select a project</option>
-                                    {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
-                                </select>
-                                {selectedEditTaskProject && (
-                                    <div className="selected-tag-preview">
-                                        <span>Client: <strong>{selectedEditTaskProject.client?.name || 'Unknown'}</strong></span>
-                                    </div>
-                                )}
                             </div>
                             <div className="form-group">
                                 <label>Tag *</label>

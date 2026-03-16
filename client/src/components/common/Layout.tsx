@@ -244,11 +244,6 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                         </h2>
                     </div>
                     <div className="top-bar-actions">
-                        {dashboardSection !== 'board' && (
-                            <button className="btn-send-alert" onClick={() => {}}>
-                                Send Alert
-                            </button>
-                        )}
                         <div className="notification-bell-container">
                             <button
                                 className={`notification-bell ${unreadCount > 0 ? 'has-unread' : ''}`}

@@ -66,7 +66,7 @@ const OkrView: React.FC<OkrViewProps> = ({
                     <div key={okr.id} className="okr-card">
                         <div className="okr-card-header">
                             <h3 className="okr-card-title">{okr.title}</h3>
-                            <span className={`okr-status ${okr.status.toLowerCase()}`}>
+                            <span className={`okr-status ${okr.status?.toLowerCase() || ''}`}>
                                 {okr.status}
                             </span>
                         </div>
