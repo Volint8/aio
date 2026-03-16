@@ -269,6 +269,8 @@ code {
   display: flex;
   flex-direction: column;
   min-width: 0;
+  width: calc(100% - 260px);
+  max-width: none;
 }
 
 .top-bar {
@@ -279,6 +281,9 @@ code {
   align-items: center;
   justify-content: space-between;
   padding: 0 40px;
+  width: 100%;
+  max-width: none;
+  box-sizing: border-box;
   position: sticky;
   top: 0;
   z-index: 90;

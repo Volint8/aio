@@ -290,7 +290,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                         </div>
                     </div>
                 </header>
-                <div className="content">
+                <div className="content" style={{ width: '100%', maxWidth: 'none' }}>
                     {children}
                 </div>
             </main>

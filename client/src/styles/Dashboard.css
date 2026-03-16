@@ -1338,107 +1338,6 @@
     font-weight: 700;
     }
 
-    .notification-bell-container {
-        position: relative;
-        margin-right: 16px;
-    }
-
-    .notification-bell {
-        background: #f1f5f9;
-        border: none;
-        border-radius: 50%;
-        width: 40px;
-        height: 40px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        cursor: pointer;
-        font-size: 1.2em;
-        position: relative;
-    }
-
-    .notification-bell:hover {
-        background: #e2e8f0;
-    }
-
-    .unread-badge {
-        position: absolute;
-        top: -2px;
-        right: -2px;
-        background: #ef4444;
-        color: white;
-        font-size: 10px;
-        padding: 2px 5px;
-        border-radius: 10px;
-        font-weight: 700;
-    }
-
-    .notifications-menu {
-        position: absolute;
-        top: 50px;
-        right: 0;
-        width: 320px;
-        background: white;
-        border-radius: 12px;
-        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
-        border: 1px solid #e2e8f0;
-        z-index: 1001;
-        max-height: 400px;
-        overflow-y: auto;
-    }
-
-    .notifications-header {
-        padding: 12px 16px;
-        font-weight: 700;
-        border-bottom: 1px solid #e2e8f0;
-        color: #1e293b;
-    }
-
-    .notification-item {
-        padding: 12px 16px;
-        border-bottom: 1px solid #f1f5f9;
-        cursor: pointer;
-    }
-
-    .notification-item:hover {
-        background: #f8fafc;
-    }
-
-    .notification-item.unread {
-        background: #f0f9ff;
-    }
-
-    .notification-sender {
-        font-weight: 700;
-        font-size: 0.85em;
-    }
-
-    .notification-type {
-        font-size: 0.75em;
-        color: #2563eb;
-        text-transform: uppercase;
-        font-weight: 700;
-        margin: 2px 0;
-    }
-
-    .notification-message {
-        font-size: 0.9em;
-        color: #475569;
-    }
-
-    .notification-time {
-        font-size: 0.7em;
-        color: #94a3b8;
-        margin-top: 4px;
-    }
-
-    .notification-empty {
-        padding: 20px;
-        text-align: center;
-        color: #94a3b8;
-        font-size: 0.9em;
-    }
-
     .stat-card.performance-highlight {
         background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
         border: 1px solid #bfdbfe;
@@ -1710,6 +1609,107 @@
     color: var(--primary-color);
 }
 
+.notification-bell-container {
+    position: relative;
+    margin-right: 16px;
+}
+
+.notification-bell {
+    background: #f1f5f9;
+    border: none;
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 1.2em;
+    position: relative;
+}
+
+.notification-bell:hover {
+    background: #e2e8f0;
+}
+
+.unread-badge {
+    position: absolute;
+    top: -2px;
+    right: -2px;
+    background: #ef4444;
+    color: white;
+    font-size: 10px;
+    padding: 2px 5px;
+    border-radius: 10px;
+    font-weight: 700;
+}
+
+.notifications-menu {
+    position: absolute;
+    top: 50px;
+    right: 0;
+    width: 320px;
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+    border: 1px solid #e2e8f0;
+    z-index: 1001;
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.notifications-header {
+    padding: 12px 16px;
+    font-weight: 700;
+    border-bottom: 1px solid #e2e8f0;
+    color: #1e293b;
+}
+
+.notification-item {
+    padding: 12px 16px;
+    border-bottom: 1px solid #f1f5f9;
+    cursor: pointer;
+}
+
+.notification-item:hover {
+    background: #f8fafc;
+}
+
+.notification-item.unread {
+    background: #f0f9ff;
+}
+
+.notification-sender {
+    font-weight: 700;
+    font-size: 0.85em;
+}
+
+.notification-type {
+    font-size: 0.75em;
+    color: #2563eb;
+    text-transform: uppercase;
+    font-weight: 700;
+    margin: 2px 0;
+}
+
+.notification-message {
+    font-size: 0.9em;
+    color: #475569;
+}
+
+.notification-time {
+    font-size: 0.7em;
+    color: #94a3b8;
+    margin-top: 4px;
+}
+
+.notification-empty {
+    padding: 20px;
+    text-align: center;
+    color: #94a3b8;
+    font-size: 0.9em;
+}
+
 .btn-send-alert {
     background: transparent;
     border: 1px solid var(--primary-color);
@@ -1726,4 +1726,3 @@
     background: var(--primary-color);
     color: white;
 }
-
