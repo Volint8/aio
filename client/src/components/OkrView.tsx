@@ -33,6 +33,7 @@ interface OkrViewProps {
     userRole: 'ADMIN' | 'TEAM_LEAD' | 'MEMBER';
     onCreateTask: () => void;
     onSendAlert: () => void;
+    onCreateOkr?: () => void;
     onEditOkr?: (okr: Okr) => void;
     onDeleteOkr?: (okrId: string) => void;
 }
@@ -42,6 +43,7 @@ const OkrView: React.FC<OkrViewProps> = ({
     userRole,
     onCreateTask,
     onSendAlert,
+    onCreateOkr,
     onEditOkr,
     onDeleteOkr
 }) => {
@@ -52,6 +54,15 @@ const OkrView: React.FC<OkrViewProps> = ({
             <div className="okr-view-header">
                 <h1>Objectives {currentYear}</h1>
                 <div className="okr-view-actions">
+                    {userRole === 'ADMIN' && onCreateOkr && (
+                        <button className="btn-primary-green" onClick={onCreateOkr}>
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                <line x1="12" y1="5" x2="12" y2="19"></line>
+                                <line x1="5" y1="12" x2="19" y2="12"></line>
+                            </svg>
+                            New OKR
+                        </button>
+                    )}
                     <button className="btn-outline-blue" onClick={onSendAlert}>
                         Send Alert
                     </button>

@@ -178,7 +178,7 @@ interface ProjectRecord {
     taskCount?: number;
 }
 
-type DashboardSection = 'board' | 'task-tracker' | 'team-tracker' | 'okr' | 'tracker' | 'team' | 'tags' | 'okrs' | 'appraisals';
+type DashboardSection = 'board' | 'task-tracker' | 'team-tracker' | 'okr' | 'tracker' | 'team' | 'tags' | 'appraisals';
 type TaskFilter = 'all' | 'my' | 'pending' | 'ongoing' | 'completed' | 'overdue' | 'created' | 'in_progress' | 'recently_deleted';
 type TrackerView = 'users' | 'teams';
 
@@ -395,7 +395,6 @@ const DashboardPage = () => {
         if (requestedSection === 'tracker') return 'tracker';
         if (requestedSection === 'team' && canTrackTeam) return 'team';
         if (requestedSection === 'tags' && isAdmin) return 'tags';
-        if (requestedSection === 'okrs' && (isAdmin || isTeamLead || isMember)) return 'okrs';
         if (requestedSection === 'appraisals' && isAdmin) return 'appraisals';
         return 'board';
     }, [requestedSection, canTrackTeam, isAdmin, isTeamLead, isMember]);
@@ -1182,6 +1181,7 @@ const DashboardPage = () => {
                         userRole={organization.userRole as 'ADMIN' | 'TEAM_LEAD' | 'MEMBER'}
                         onCreateTask={() => setShowCreateTaskModal(true)}
                         onSendAlert={() => setShowSendAlertModal(true)}
+                        onCreateOkr={() => setShowCreateOkrModal(true)}
                         onEditOkr={handleOpenEditOkr}
                         onDeleteOkr={handleDeleteOkr}
                     />
@@ -1209,21 +1209,6 @@ const DashboardPage = () => {
                             <button onClick={() => setShowCreateTaskModal(true)} className="btn-primary">
                                 + New Task
                             </button>
-                        </div>
-                    )}
-                    {currentSection === 'tags' && isAdmin && (
-                        <div className="header-actions">
-                            <button onClick={() => setShowCreateOkrModal(true)} className="btn-primary">+ New OKR</button>
-                        </div>
-                    )}
-                    {currentSection === 'okrs' && isAdmin && (
-                        <div className="header-actions">
-                            <button onClick={() => setShowCreateOkrModal(true)} className="btn-primary">+ New OKR</button>
-                        </div>
-                    )}
-                    {currentSection === 'appraisals' && isAdmin && (
-                        <div className="header-actions">
-                            <button onClick={() => setShowCreateAppraisalModal(true)} className="btn-primary">Generate Appraisal</button>
                         </div>
                     )}
                     {currentSection === 'team' && isAdmin && (
