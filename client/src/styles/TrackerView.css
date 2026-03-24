@@ -1,389 +1,223 @@
 .tracker-view {
     display: flex;
     flex-direction: column;
-    gap: 24px;
-    padding: 24px;
+    gap: 32px;
+    padding: 0;
 }
 
-.tracker-header {
+.tracker-view-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    margin-bottom: 8px;
 }
 
-.tracker-title {
-    margin: 0;
+.tracker-view-header h1 {
     font-size: 1.5em;
     font-weight: 700;
-    color: var(--primary-color);
+    color: #0F172A;
+    margin: 0;
 }
 
-.tracker-actions {
+.tracker-view-actions {
     display: flex;
     gap: 12px;
 }
 
-.btn-create-task,
-.btn-send-alert {
+.btn-primary-green {
+    background: var(--secondary-green);
+    color: white;
+    border: none;
     padding: 10px 20px;
-    border-radius: 8px;
-    font-size: 0.9em;
+    border-radius: 10px;
     font-weight: 600;
+    font-size: 0.9em;
     cursor: pointer;
     transition: all 0.2s ease;
-    border: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
 }
 
-.btn-create-task {
-    background: var(--primary-color);
-    color: white;
+.btn-primary-green:hover {
+    background: #0D6E3C;
+    transform: translateY(-1px);
 }
 
-.btn-create-task:hover {
-    background: var(--accent-color);
-}
-
-.btn-send-alert {
+.btn-outline-blue {
     background: transparent;
-    color: var(--primary-color);
-    border: 1px solid var(--primary-color);
+    color: var(--primary-blue);
+    border: 1px solid var(--primary-blue);
+    padding: 10px 20px;
+    border-radius: 10px;
+    font-weight: 600;
+    font-size: 0.9em;
+    cursor: pointer;
+    transition: all 0.2s ease;
 }
 
-.btn-send-alert:hover {
-    background: var(--primary-color);
-    color: white;
+.btn-outline-blue:hover {
+    background: rgba(29, 112, 226, 0.05);
 }
 
 /* Filter Tabs */
-.filter-tabs {
+.tracker-tabs {
     display: flex;
-    gap: 8px;
-    border-bottom: 2px solid var(--border-color);
-    padding-bottom: 0;
+    gap: 24px;
+    border-bottom: 1px solid #F1F5F9;
+    margin-bottom: 8px;
 }
 
-.filter-tab {
-    padding: 10px 20px;
+.tracker-tab {
+    padding: 12px 4px;
     background: transparent;
     border: none;
     border-bottom: 2px solid transparent;
-    margin-bottom: -2px;
-    cursor: pointer;
-    font-size: 0.9em;
-    font-weight: 600;
-    color: var(--text-muted);
-    transition: all 0.2s ease;
-}
-
-.filter-tab:hover {
-    color: var(--primary-color);
-}
-
-.filter-tab.active {
-    color: var(--primary-color);
-    border-bottom-color: var(--primary-color);
-}
-
-/* Member Selector */
-.member-selector {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex-wrap: wrap;
-}
-
-.member-btn {
-    background: transparent;
-    border: none;
-    padding: 8px 12px;
     cursor: pointer;
     font-size: 0.95em;
     font-weight: 600;
-    color: var(--text-muted);
-    transition: all 0.2s ease;
-    border-radius: 6px;
-}
-
-.member-btn:hover {
-    background: var(--bg-secondary);
-    color: var(--primary-color);
-}
-
-.member-btn.active {
-    color: var(--primary-color);
-    background: var(--bg-secondary);
-}
-
-.member-separator {
-    color: var(--border-color);
-    font-weight: 400;
-}
-
-/* Task Grid */
-.task-grid {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 20px;
-}
-
-.tracker-view .task-card {
-    background: var(--card-bg);
-    border: 1px solid var(--border-color);
-    border-radius: 12px;
-    padding: 20px;
-    box-shadow: var(--shadow);
-    cursor: pointer;
+    color: #64748B;
     transition: all 0.2s ease;
 }
 
-.tracker-view .task-card:hover {
-    border-color: var(--accent-color);
-    box-shadow: var(--shadow-lg);
-    transform: translateY(-2px);
+.tracker-tab:hover {
+    color: var(--primary-blue);
 }
 
-.tracker-view .task-card-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    gap: 12px;
-    margin-bottom: 12px;
+.tracker-tab.active {
+    color: var(--primary-blue);
+    border-bottom-color: var(--primary-blue);
 }
 
-.tracker-view .task-card-title {
-    margin: 0;
-    font-size: 1.1em;
+/* Table Design */
+.tracker-table-container {
+    background: white;
+    border: 1px solid #F1F5F9;
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+
+.tracker-table {
+    width: 100%;
+    border-collapse: collapse;
+    text-align: left;
+}
+
+.tracker-table th {
+    background: #F8FAF7; /* Very light green hint to match sidebar */
+    padding: 16px 24px;
+    font-size: 0.8em;
     font-weight: 700;
-    color: var(--text-primary);
-    flex: 1;
-}
-
-.tracker-view .priority-badge {
-    padding: 4px 10px;
-    border-radius: 6px;
-    font-size: 0.7em;
-    font-weight: 800;
+    color: #64748B;
     text-transform: uppercase;
-    letter-spacing: 0.5px;
-    white-space: nowrap;
+    letter-spacing: 0.05em;
+    border-bottom: 1px solid #F1F5F9;
 }
 
-.tracker-view .priority-badge.high {
-    background: #FEF2F2;
-    color: #991B1B;
-    border: 1px solid #FEE2E2;
+.tracker-table td {
+    padding: 18px 24px;
+    font-size: 0.95em;
+    color: #334155;
+    border-bottom: 1px solid #F1F5F9;
+    vertical-align: middle;
 }
 
-.tracker-view .priority-badge.medium {
-    background: #FEF3C7;
-    color: #92400E;
-    border: 1px solid #FDE68A;
+.tracker-table tr:last-child td {
+    border-bottom: none;
 }
 
-.tracker-view .priority-badge.low {
-    background: #F0FDF4;
-    color: #166534;
-    border: 1px solid #DCFCE7;
+.tracker-table tr.task-row {
+    cursor: pointer;
+    transition: background-color 0.2s ease;
 }
 
-.tracker-view .task-card-description {
-    margin: 0 0 12px 0;
-    font-size: 0.9em;
-    color: var(--text-secondary);
-    line-height: 1.5;
+.tracker-table tr.task-row:hover {
+    background-color: #F8FAFC;
 }
 
-.tracker-view .task-card-meta {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    font-size: 0.85em;
-    color: var(--text-muted);
+.task-title-cell {
+    font-weight: 600;
+    color: #0F172A;
 }
 
-.tracker-view .meta-item {
-    display: flex;
-    gap: 6px;
-}
-
-.tracker-view .meta-item strong {
-    color: var(--text-secondary);
-}
-
-.tracker-view .task-tag {
+.task-tag-pill {
     display: inline-block;
-    margin-top: 12px;
-    padding: 4px 10px;
-    border-radius: 6px;
-    font-size: 0.75em;
+    padding: 4px 12px;
+    border-radius: 100px;
+    font-size: 0.8em;
+    font-weight: 600;
+    border: 1px solid transparent;
+}
+
+.owner-cell {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.owner-avatar {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: #F1F5F9;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.7em;
     font-weight: 700;
-    border: 1px solid;
-    background: transparent;
+    color: #64748B;
+    background: var(--primary-blue);
+    color: white;
+}
+
+/* Status Badges */
+.status-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 12px;
+    border-radius: 100px;
+    font-size: 0.8em;
+    font-weight: 600;
+}
+
+.status-pill.created { background: #F1F5F9; color: #475569; }
+.status-pill.in_progress { background: #E0F2FE; color: #0369A1; }
+.status-pill.completed { background: #DCFCE7; color: #166534; }
+.status-pill.overdue { background: #FEE2E2; color: #991B1B; }
+
+/* Priority Badges */
+.priority-indicator {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.priority-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+}
+
+.priority-dot.high { background: #EF4444; }
+.priority-dot.medium { background: #F59E0B; }
+.priority-dot.low { background: #10B981; }
+
+.timeline-cell {
+    color: #64748B;
+    font-size: 0.9em;
 }
 
 /* Empty State */
-.empty-state {
+.tracker-empty {
+    padding: 60px;
     text-align: center;
-    padding: 60px 20px;
-    color: var(--text-muted);
-    font-size: 1.1em;
+    color: #94A3B8;
 }
 
 /* Responsive */
-@media (max-width: 768px) {
-    .tracker-view {
-        padding: 16px;
-        gap: 20px;
-    }
-    
-    .tracker-header {
-        flex-direction: column;
-        align-items: flex-start;
-        gap: 16px;
-    }
-    
-    .tracker-title {
-        font-size: 1.3em;
-    }
-
-    .tracker-actions {
-        width: 100%;
-        justify-content: flex-start;
-    }
-    
-    .btn-create-task,
-    .btn-send-alert {
-        padding: 10px 16px;
-        font-size: 0.85em;
-    }
-    
-    .filter-tabs {
-        width: 100%;
+@media (max-width: 1024px) {
+    .tracker-table-container {
         overflow-x: auto;
-        flex-shrink: 0;
-    }
-    
-    .filter-tab {
-        padding: 10px 16px;
-        font-size: 0.85em;
-        white-space: nowrap;
-    }
-    
-    .member-selector {
-        gap: 6px;
-    }
-    
-    .member-btn {
-        padding: 8px 10px;
-        font-size: 0.85em;
-    }
-    
-    .member-separator {
-        display: none;
-    }
-    
-    .member-btn {
-        background: #f1f5f9;
-    }
-    
-    .task-grid {
-        grid-template-columns: 1fr;
-        gap: 16px;
-    }
-    
-    .tracker-view .task-card {
-        padding: 16px;
-    }
-    
-    .tracker-view .task-card-title {
-        font-size: 1em;
-    }
-}
-
-@media (max-width: 480px) {
-    .tracker-view {
-        padding: 12px;
-    }
-    
-    .tracker-header {
-        gap: 12px;
-    }
-    
-    .tracker-title {
-        font-size: 1.15em;
-    }
-    
-    .tracker-actions {
-        flex-direction: column;
-        gap: 10px;
-    }
-    
-    .btn-create-task,
-    .btn-send-alert {
-        width: 100%;
-        padding: 11px 16px;
-        font-size: 0.9em;
-        justify-content: center;
-    }
-    
-    .filter-tabs {
-        border-bottom: none;
-        padding: 4px;
-        background: #f8fafc;
-        border-radius: 10px;
-    }
-    
-    .filter-tab {
-        padding: 8px 12px;
-        font-size: 0.8em;
-    }
-    
-    .filter-tab.active {
-        border-bottom: none;
-        background: #fff;
-        box-shadow: 0 1px 3px rgba(15, 23, 42, 0.1);
-    }
-    
-    .member-selector {
-        flex-wrap: wrap;
-    }
-    
-    .member-btn {
-        padding: 6px 10px;
-        font-size: 0.8em;
-        border-radius: 8px;
-    }
-    
-    .task-grid {
-        gap: 12px;
-    }
-    
-    .tracker-view .task-card {
-        padding: 14px;
-        border-radius: 10px;
-    }
-    
-    .tracker-view .task-card-title {
-        font-size: 0.95em;
-    }
-    
-    .tracker-view .priority-badge {
-        font-size: 0.65em;
-        padding: 3px 8px;
-    }
-    
-    .tracker-view .task-card-description {
-        font-size: 0.85em;
-        margin-bottom: 10px;
-    }
-    
-    .tracker-view .task-card-meta {
-        font-size: 0.8em;
-    }
-    
-    .tracker-view .task-tag {
-        margin-top: 8px;
-        padding: 3px 8px;
-        font-size: 0.7em;
     }
 }

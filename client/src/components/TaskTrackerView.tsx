@@ -44,9 +44,9 @@ const TaskTrackerView: React.FC<TaskTrackerViewProps> = ({
     onSendAlert
 }) => {
     const filters: Array<{ key: 'all' | 'pending' | 'ongoing' | 'completed' | 'overdue'; label: string }> = [
-        { key: 'all', label: 'All' },
+        { key: 'all', label: 'All Tasks' },
         { key: 'pending', label: 'Pending' },
-        { key: 'ongoing', label: 'Ongoing' },
+        { key: 'ongoing', label: 'In Progress' },
         { key: 'completed', label: 'Completed' },
         { key: 'overdue', label: 'Overdue' }
     ];
@@ -62,25 +62,37 @@ const TaskTrackerView: React.FC<TaskTrackerViewProps> = ({
         return true;
     });
 
+    const getInitials = (name: string) => {
+        return name.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2);
+    };
+
+    const getStatusLabel = (status: string) => {
+        return status.replace('_', ' ').toLowerCase();
+    };
+
     return (
         <div className="tracker-view">
-            <div className="tracker-header">
-                <h1 className="tracker-title">Task Tracker</h1>
-                <div className="tracker-actions">
-                    <button className="btn-create-task" onClick={onCreateTask}>
-                        Create Task +
-                    </button>
-                    <button className="btn-send-alert" onClick={onSendAlert}>
+            <div className="tracker-view-header">
+                <h1>Task Tracker</h1>
+                <div className="tracker-view-actions">
+                    <button className="btn-outline-blue" onClick={onSendAlert}>
                         Send Alert
+                    </button>
+                    <button className="btn-primary-green" onClick={onCreateTask}>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                            <line x1="12" y1="5" x2="12" y2="19"></line>
+                            <line x1="5" y1="12" x2="19" y2="12"></line>
+                        </svg>
+                        New Task
                     </button>
                 </div>
             </div>
 
-            <div className="filter-tabs">
+            <div className="tracker-tabs">
                 {filters.map(f => (
                     <button
                         key={f.key}
-                        className={`filter-tab ${filter === f.key ? 'active' : ''}`}
+                        className={`tracker-tab ${filter === f.key ? 'active' : ''}`}
                         onClick={() => onFilterChange(f.key)}
                     >
                         {f.label}
@@ -88,51 +100,67 @@ const TaskTrackerView: React.FC<TaskTrackerViewProps> = ({
                 ))}
             </div>
 
-            <div className="task-grid">
-                {filteredTasks.map(task => (
-                    <div
-                        key={task.id}
-                        className="task-card"
-                        onClick={() => onTaskClick(task)}
-                    >
-                        <div className="task-card-header">
-                            <h3 className="task-card-title">{task.title}</h3>
-                            <span className={`priority-badge ${task.priority?.toLowerCase() || ''}`}>
-                                {task.priority}
-                            </span>
-                        </div>
-                        {task.description && (
-                            <p className="task-card-description">{task.description}</p>
+            <div className="tracker-table-container">
+                <table className="tracker-table">
+                    <thead>
+                        <tr>
+                            <th>Task Name</th>
+                            <th>Focus / Unit</th>
+                            <th>Owner</th>
+                            <th>Status</th>
+                            <th>Priority</th>
+                            <th>Timeline</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {filteredTasks.length > 0 ? (
+                            filteredTasks.map(task => (
+                                <tr key={task.id} className="task-row" onClick={() => onTaskClick(task)}>
+                                    <td className="task-title-cell">{task.title}</td>
+                                    <td>
+                                        {task.tag ? (
+                                            <span 
+                                                className="task-tag-pill" 
+                                                style={{ backgroundColor: `${task.tag.color}15`, color: task.tag.color, borderColor: `${task.tag.color}30` }}
+                                            >
+                                                {task.tag.name}
+                                            </span>
+                                        ) : '-'}
+                                    </td>
+                                    <td>
+                                        <div className="owner-cell">
+                                            <div className="owner-avatar">
+                                                {getInitials(task.assignee?.name || task.assignee?.email || 'U')}
+                                            </div>
+                                            <span>{task.assignee?.name || task.assignee?.email.split('@')[0]}</span>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <span className={`status-pill ${task.status.toLowerCase()}`}>
+                                            {getStatusLabel(task.status)}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <div className="priority-indicator">
+                                            <span className={`priority-dot ${task.priority.toLowerCase()}`}></span>
+                                            <span>{task.priority}</span>
+                                        </div>
+                                    </td>
+                                    <td className="timeline-cell">
+                                        {task.dueDate ? new Date(task.dueDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '-'}
+                                    </td>
+                                </tr>
+                            ))
+                        ) : (
+                            <tr>
+                                <td colSpan={6} className="tracker-empty">
+                                    No tasks found in this category.
+                                </td>
+                            </tr>
                         )}
-                        <div className="task-card-meta">
-                            {task.assignee && (
-                                <span className="meta-item">
-                                    <strong>Assignee:</strong> {task.assignee.name || task.assignee.email}
-                                </span>
-                            )}
-                            {task.dueDate && (
-                                <span className="meta-item">
-                                    <strong>Due:</strong> {new Date(task.dueDate).toLocaleDateString()}
-                                </span>
-                            )}
-                        </div>
-                        {task.tag && (
-                            <span
-                                className="task-tag"
-                                style={{ borderColor: task.tag.color, color: task.tag.color }}
-                            >
-                                {task.tag.name}
-                            </span>
-                        )}
-                    </div>
-                ))}
+                    </tbody>
+                </table>
             </div>
-
-            {filteredTasks.length === 0 && (
-                <div className="empty-state">
-                    <p>No tasks found</p>
-                </div>
-            )}
         </div>
     );
 };

@@ -49,14 +49,18 @@ const OkrView: React.FC<OkrViewProps> = ({
 
     return (
         <div className="okr-view">
-            <div className="okr-header">
-                <h1 className="okr-title">OKR {currentYear}</h1>
-                <div className="okr-actions">
-                    <button className="btn-create-task" onClick={onCreateTask}>
-                        Create Task +
-                    </button>
-                    <button className="btn-send-alert" onClick={onSendAlert}>
+            <div className="okr-view-header">
+                <h1>Objectives {currentYear}</h1>
+                <div className="okr-view-actions">
+                    <button className="btn-outline-blue" onClick={onSendAlert}>
                         Send Alert
+                    </button>
+                    <button className="btn-primary-green" onClick={onCreateTask}>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                            <line x1="12" y1="5" x2="12" y2="19"></line>
+                            <line x1="5" y1="12" x2="19" y2="12"></line>
+                        </svg>
+                        New Task
                     </button>
                 </div>
             </div>
@@ -66,71 +70,77 @@ const OkrView: React.FC<OkrViewProps> = ({
                     <div key={okr.id} className="okr-card">
                         <div className="okr-card-header">
                             <h3 className="okr-card-title">{okr.title}</h3>
-                            <span className={`okr-status ${okr.status?.toLowerCase() || ''}`}>
+                            <span className={`okr-status-pill ${okr.status?.toLowerCase() || ''}`}>
                                 {okr.status}
                             </span>
                         </div>
+                        
                         {okr.description && (
                             <p className="okr-card-description">{okr.description}</p>
                         )}
+
                         <div className="okr-card-meta">
-                            <span className="meta-item">
-                                <strong>Start:</strong> {new Date(okr.periodStart).toLocaleDateString()}
+                            <span className="okr-meta-item">
+                                <strong>Start:</strong> {new Date(okr.periodStart).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
                             </span>
-                            <span className="meta-item">
-                                <strong>End:</strong> {new Date(okr.periodEnd).toLocaleDateString()}
+                            <span className="okr-meta-item">
+                                <strong>End:</strong> {new Date(okr.periodEnd).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
                             </span>
                         </div>
+
                         {okr.keyResults && okr.keyResults.length > 0 && (
                             <div className="okr-key-results">
-                                <strong>Key Results</strong>
-                                <ul>
+                                <h4>Key Results</h4>
+                                <div className="okr-kr-list">
                                     {okr.keyResults.map(kr => (
-                                        <li key={kr.id}>
-                                            {kr.title}
+                                        <div key={kr.id} className="okr-kr-item">
+                                            <span>{kr.title}</span>
                                             <span
-                                                className="kr-tag"
-                                                style={{ borderColor: kr.tag.color, color: kr.tag.color }}
+                                                className="okr-kr-tag"
+                                                style={{ backgroundColor: `${kr.tag.color}15`, color: kr.tag.color, borderColor: `${kr.tag.color}30` }}
                                             >
                                                 {kr.tag.name}
                                             </span>
-                                        </li>
+                                        </div>
                                     ))}
-                                </ul>
+                                </div>
                             </div>
                         )}
-                        {okr.assignments && okr.assignments.some(a => a.targetType === 'TEAM' && a.team) && (
-                            <div className="okr-assignments">
-                                <strong>Assigned To:</strong>{' '}
-                                {okr.assignments
-                                    .filter(a => a.targetType === 'TEAM' && a.team)
-                                    .map(a => a.team!.name)
-                                    .join(', ')}
-                            </div>
-                        )}
-                        {userRole === 'ADMIN' && (
-                            <div className="okr-card-actions">
-                                <button
-                                    className="btn-edit"
-                                    onClick={() => onEditOkr?.(okr)}
-                                >
-                                    Edit
-                                </button>
-                                <button
-                                    className="btn-delete"
-                                    onClick={() => onDeleteOkr?.(okr.id)}
-                                >
-                                    Delete
-                                </button>
-                            </div>
-                        )}
+
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 'auto' }}>
+                            {okr.assignments && okr.assignments.some(a => a.targetType === 'TEAM' && a.team) && (
+                                <div className="okr-assignments">
+                                    Assigned to: {okr.assignments
+                                        .filter(a => a.targetType === 'TEAM' && a.team)
+                                        .map(a => a.team!.name)
+                                        .join(', ')}
+                                </div>
+                            )}
+
+                            {userRole === 'ADMIN' && (
+                                <div className="okr-card-footer">
+                                    <button
+                                        className="btn-okr-action btn-okr-edit"
+                                        onClick={() => onEditOkr?.(okr)}
+                                    >
+                                        Edit
+                                    </button>
+                                    <button
+                                        className="btn-okr-action btn-okr-delete"
+                                        onClick={() => onDeleteOkr?.(okr.id)}
+                                    >
+                                        Delete
+                                    </button>
+                                </div>
+                            )}
+                        </div>
                     </div>
                 ))}
             </div>
 
             {okrs.length === 0 && (
-                <div className="empty-state">
-                    <p>No OKRs found</p>
+                <div className="tracker-empty">
+                    <p>No objectives found for the selected period.</p>
                 </div>
             )}
         </div>

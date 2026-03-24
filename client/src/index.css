@@ -1,23 +1,19 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
 
 :root {
-  --primary-color: #0F172A;
-  /* Deep Navy/Slate */
-  --primary-hover: #1E293B;
-  --accent-color: #2563EB;
-  /* Slightly punchier Blue */
-  --accent-hover: #1D4ED8;
+  --primary-blue: #1D70E2;
+  --primary-hover: #1557B0;
+  --secondary-green: #108548;
+  --secondary-hover: #0D6E3B;
   --bg-color: #F8FAFC;
   --card-bg: #FFFFFF;
   --text-main: #0F172A;
   --text-muted: #64748B;
   --border-color: #E2E8F0;
-  --success-color: #22C55E;
-  /* Standardized Green */
+  --success-color: #108548;
   --warning-color: #F59E0B;
   --danger-color: #EF4444;
-  --radius: 12px;
-  /* Slightly more rounded for premium feel */
+  --radius: 8px;
   --shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
   --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
 }
@@ -28,7 +24,7 @@
 
 body {
   margin: 0;
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: 'Poppins', sans-serif;
   background-color: var(--bg-color);
   color: var(--text-main);
   line-height: 1.5;
@@ -42,7 +38,7 @@ code {
 /* Updated Button Styles */
 .btn-primary {
   padding: 12px 24px;
-  background-color: var(--primary-color);
+  background-color: var(--primary-blue);
   color: white;
   border: none;
   border-radius: var(--radius);
@@ -70,7 +66,7 @@ code {
 
 .btn-secondary {
   padding: 10px 24px;
-  background-color: #F1F5F9;
+  background-color: white;
   color: var(--text-main);
   border: 1px solid var(--border-color);
   border-radius: var(--radius);
@@ -81,7 +77,29 @@ code {
 }
 
 .btn-secondary:hover {
-  background-color: #E2E8F0;
+  background-color: #F8FAFC;
+  border-color: var(--primary-blue);
+  color: var(--primary-blue);
+}
+
+.btn-success {
+  padding: 12px 24px;
+  background-color: var(--secondary-green);
+  color: white;
+  border: none;
+  border-radius: var(--radius);
+  font-size: 0.95em;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  font-family: inherit;
+  box-shadow: 0 4px 12px rgba(16, 133, 72, 0.2);
+}
+
+.btn-success:hover:not(:disabled) {
+  background-color: var(--secondary-hover);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(16, 133, 72, 0.3);
 }
 
 .btn-logout {

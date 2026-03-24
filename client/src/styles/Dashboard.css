@@ -81,35 +81,40 @@
 
 .stat-card {
     background: var(--card-bg);
-    padding: 24px;
-    border-radius: var(--radius);
+    padding: 32px 24px;
+    border-radius: 16px;
     box-shadow: var(--shadow);
     border: 1px solid var(--border-color);
     transition: all 0.2s ease;
     cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    gap: 8px;
 }
 
 .stat-card:hover {
-    transform: translateY(-2px);
+    transform: translateY(-4px);
     box-shadow: var(--shadow-lg);
-    border-color: var(--accent-color);
+    border-color: var(--primary-blue);
 }
 
 .stat-card h3 {
-    margin: 0 0 12px 0;
+    margin: 0;
     color: var(--text-muted);
-    font-size: 0.75em;
+    font-size: 0.8em;
     font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 1.2px;
+    letter-spacing: 1px;
 }
 
 .stat-value {
-    font-size: 2.2em;
-    font-weight: 800;
+    font-size: 2.4em;
+    font-weight: 700;
     margin: 0;
-    color: var(--primary-color);
-    letter-spacing: -1.5px;
+    color: var(--text-main);
     line-height: 1;
 }
 
@@ -165,36 +170,32 @@
 }
 
 .tracker-hero {
-    border-radius: 18px;
-    border: 1px solid var(--border-color);
-    background: linear-gradient(120deg, rgba(248, 250, 252, 0.95), rgba(236, 242, 249, 0.95));
+    border-radius: 20px;
+    background: var(--primary-blue);
+    background-image: linear-gradient(135deg, rgba(29, 112, 226, 0.95), rgba(15, 23, 42, 0.95)), 
+                      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100%25' height='100%25' viewBox='0 0 1600 800'%3E%3Cpath fill='%23ffffff' fill-opacity='0.1' d='M-100 600 Q200 450 400 600 T900 600 T1400 600 T1900 600 V800 H-100 Z' /%3E%3Cpath fill='%23ffffff' fill-opacity='0.15' d='M-100 700 Q300 550 500 700 T1000 700 T1500 700 T2000 700 V800 H-100 Z' /%3E%3C/svg%3E");
+    background-size: cover;
+    background-position: center;
     box-shadow: var(--shadow);
-    padding: 28px 30px;
+    padding: 40px;
     display: flex;
     justify-content: space-between;
     gap: 24px;
     overflow: hidden;
     position: relative;
+    color: white;
 }
 
 .tracker-hero::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background: repeating-linear-gradient(
-        105deg,
-        rgba(255, 255, 255, 0.2) 0px,
-        rgba(255, 255, 255, 0.2) 10px,
-        transparent 10px,
-        transparent 50px
-    );
-    pointer-events: none;
+    display: none;
 }
+
 
 .tracker-hero h2 {
     margin: 0;
-    font-size: 2em;
-    color: var(--text-main);
+    font-size: 2.2em;
+    font-weight: 700;
+    color: white;
     position: relative;
     z-index: 1;
 }
@@ -210,8 +211,10 @@
 
 .tracker-hero-right p {
     margin: 0;
-    color: var(--text-main);
-    font-size: 1.02em;
+    color: white;
+    opacity: 0.9;
+    font-size: 1.05em;
+    font-weight: 500;
 }
 
 .tracker-legend {
@@ -226,9 +229,9 @@
     display: inline-flex;
     align-items: center;
     gap: 8px;
-    font-size: 0.92em;
+    font-size: 0.85em;
     font-weight: 600;
-    color: var(--text-main);
+    color: white;
 }
 
 .legend-chip::before {
@@ -240,19 +243,21 @@
 }
 
 .legend-chip.pending::before {
-    background: #2563eb;
+    background: #FFFFFF;
+    opacity: 0.3;
 }
 
 .legend-chip.ongoing::before {
-    background: #16a34a;
+    background: var(--secondary-green);
 }
 
 .legend-chip.completed::before {
-    background: #64748b;
+    background: #FFFFFF;
+    opacity: 0.6;
 }
 
 .legend-chip.overdue::before {
-    background: #ef4444;
+    background: var(--danger-color);
 }
 
 .tracker-view-tabs {
@@ -564,6 +569,7 @@
 .task-description-compact {
     display: -webkit-box;
     -webkit-line-clamp: 2;
+    line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
     margin: 0 0 10px 0;
