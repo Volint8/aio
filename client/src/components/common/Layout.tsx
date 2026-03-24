@@ -12,35 +12,8 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     const navigate = useNavigate();
     const location = useLocation();
     const [currentOrgRole, setCurrentOrgRole] = useState(localStorage.getItem('selectedOrgRole') || '');
-    const [notifications, setNotifications] = useState<any[]>([]);
-    const [showNotifications, setShowNotifications] = useState(false);
     const [sidebarOpen, setSidebarOpen] = useState(false);
-
-    const fetchNotifications = () => {
-        const orgId = localStorage.getItem('selectedOrgId');
-        if (!orgId) return;
-
-        api.get('/notifications', { params: { organizationId: orgId } })
-            .then(res => setNotifications(res.data))
-            .catch(() => { });
-    };
-
-    useEffect(() => {
-        fetchNotifications();
-        const interval = setInterval(fetchNotifications, 60000);
-        return () => clearInterval(interval);
-    }, [location.pathname]);
-
-    const unreadCount = notifications.filter(n => !n.isRead).length;
-
-    const handleMarkAsRead = async (id: string) => {
-        try {
-            await api.patch(`/notifications/${id}/read`);
-            setNotifications(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n));
-        } catch (error) {
-            console.error('Failed to mark as read:', error);
-        }
-    };
+    const [selectedOrgName, setSelectedOrgName] = useState(localStorage.getItem('selectedOrgName') || '');
 
     useEffect(() => {
         const orgId = localStorage.getItem('selectedOrgId');
@@ -51,10 +24,14 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         api.get(`/orgs/${orgId}`)
             .then((res) => {
                 const role = res.data?.userRole || '';
+                const orgName = res.data?.name || '';
                 setCurrentOrgRole(role);
+                setSelectedOrgName(orgName);
+                localStorage.setItem('selectedOrgName', orgName);
             })
             .catch(() => {
                 setCurrentOrgRole(localStorage.getItem('selectedOrgRole') || '');
+                setSelectedOrgName(localStorage.getItem('selectedOrgName') || '');
             });
     }, [location.pathname]);
 
@@ -68,7 +45,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         { label: 'Dashboard', section: 'board', icon: 'dashboard' },
         { label: 'OKRs', section: 'okr', icon: 'okr' },
         { label: 'Trackers', section: 'task-tracker', icon: 'trackers' },
-        { label: 'Team', section: 'team-tracker', icon: 'team' },
+        { label: 'Team', section: 'team', icon: 'team' },
         { label: 'Appraisals', section: 'appraisals', icon: 'appraisals' }
     ]), []);
 
@@ -158,11 +135,11 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     return (
         <div className="app-container">
             {/* Mobile sidebar overlay */}
-            <div 
-                className={`sidebar-overlay ${sidebarOpen ? 'active' : ''}`} 
+            <div
+                className={`sidebar-overlay ${sidebarOpen ? 'active' : ''}`}
                 onClick={() => setSidebarOpen(false)}
             />
-            
+
             <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
                 <div className="sidebar-header" style={{ borderBottom: 'none', padding: '40px 24px 20px' }}>
                     <div className="sidebar-logo">
@@ -223,43 +200,13 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                             <span></span>
                         </button>
                     </div>
-                    <div className="top-bar-actions" style={{ gap: '20px' }}>
-                        <div className="notification-bell-container">
-                            <button
-                                className={`notification-bell ${unreadCount > 0 ? 'has-unread' : ''}`}
-                                onClick={() => setShowNotifications(!showNotifications)}
-                                style={{ background: 'none', border: 'none', fontSize: '1.2em', cursor: 'pointer', position: 'relative' }}
-                            >
-                                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#64748B" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                    <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
-                                    <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
-                                </svg>
-                                {unreadCount > 0 && <span className="unread-badge" style={{ position: 'absolute', top: '-5px', right: '-5px', background: 'var(--danger-color)', color: 'white', fontSize: '10px', padding: '2px 5px', borderRadius: '10px' }}>{unreadCount}</span>}
-                            </button>
-
-                            {showNotifications && (
-                                <div className="notifications-menu" style={{ boxShadow: '0 10px 25px rgba(0,0,0,0.1)', border: '1px solid #F1F5F9' }}>
-                                    <div className="notifications-header">Notifications</div>
-                                    <div className="notifications-list">
-                                        {notifications.length === 0 ? (
-                                            <div className="notification-empty">No notifications</div>
-                                        ) : (
-                                            notifications.map(n => (
-                                                <div
-                                                    key={n.id}
-                                                    className={`notification-item ${n.isRead ? 'read' : 'unread'}`}
-                                                    onClick={() => !n.isRead && handleMarkAsRead(n.id)}
-                                                >
-                                                    <div className="notification-sender">From: {n.sender.name || n.sender.email}</div>
-                                                    <div className="notification-type">{n.type.replace('_', ' ')}</div>
-                                                    <div className="notification-message">{n.message}</div>
-                                                    <div className="notification-time">{new Date(n.createdAt).toLocaleString()}</div>
-                                                </div>
-                                            ))
-                                        )}
-                                    </div>
-                                </div>
-                            )}
+                    <div className="top-bar-actions" style={{ gap: '20px', alignItems: 'center' }}>
+                        <div className="org-display" style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', background: '#F1F5F9', borderRadius: '10px', fontWeight: 600, color: '#0F172A' }}>
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+                                <polyline points="9 22 9 12 15 12 15 22"></polyline>
+                            </svg>
+                            {selectedOrgName || 'Organization'}
                         </div>
 
                         <div className="user-pill" style={{ background: 'none', padding: '0' }}>

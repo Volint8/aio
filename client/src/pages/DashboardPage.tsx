@@ -378,7 +378,7 @@ const DashboardPage = () => {
 
     const { user } = useAuth();
     const navigate = useNavigate();
-    const requestedSection = (new URLSearchParams(location.search).get('section') || 'tracker') as DashboardSection;
+    const requestedSection = (new URLSearchParams(location.search).get('section') || 'board') as DashboardSection;
     const requestedTrackerView = (new URLSearchParams(location.search).get('view') || 'users') as TrackerView;
     const isAdmin = organization?.userRole === 'ADMIN';
     const isTeamLead = organization?.userRole === 'TEAM_LEAD';
@@ -493,11 +493,8 @@ const DashboardPage = () => {
         fetchData();
     }, [orgId, filter, taskClientFilter, assigneeFilterId]);
 
-    const handleMemberClick = (userId: string) => {
-        setAssigneeFilterId(userId);
-        const params = new URLSearchParams(location.search);
-        params.set('section', 'projects');
-        navigate(`/dashboard?${params.toString()}`);
+    const getInitials = (name: string) => {
+        return name.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2);
     };
 
     const handleStatClick = (filterValue: TaskFilter) => {
@@ -549,6 +546,7 @@ const DashboardPage = () => {
             ]);
 
             const role = orgRes.data.userRole;
+            const orgMembers = orgRes.data.members || [];
             localStorage.setItem('selectedOrgRole', role);
 
             if (role === 'ADMIN') {
@@ -560,7 +558,12 @@ const DashboardPage = () => {
                 ]);
                 setTeams(teamsRes.data || []);
                 setInvites(invitesRes.data || []);
-                setMemberStats(memberStatsRes.data || []);
+                // Filter out ADMIN users from member stats
+                const filteredMemberStats = (memberStatsRes.data || []).filter((m: any) => {
+                    const member = orgMembers.find((orgMember: any) => orgMember.userId === m.userId);
+                    return member?.role !== 'ADMIN';
+                });
+                setMemberStats(filteredMemberStats);
                 setTeamDistribution(distributionRes.data || []);
             } else if (role === 'TEAM_LEAD') {
                 const [memberStatsRes, distRes] = await Promise.all([
@@ -577,7 +580,12 @@ const DashboardPage = () => {
                     people: item.people || []
                 })));
                 setInvites([]);
-                setMemberStats(memberStatsRes.data || []);
+                // Filter out ADMIN users from member stats
+                const filteredMemberStats = (memberStatsRes.data || []).filter((m: any) => {
+                    const member = orgMembers.find((orgMember: any) => orgMember.userId === m.userId);
+                    return member?.role !== 'ADMIN';
+                });
+                setMemberStats(filteredMemberStats);
                 setTeamDistribution(distributionData);
             } else {
                 setTeams([]);
@@ -1219,143 +1227,151 @@ const DashboardPage = () => {
                 </div>
 
                 {currentSection === 'team' && canTrackTeam && (
-                    <div className="team-stats-view">
-                        <div className="tasks-header">
-                            <h2>{isTeamLead ? 'My Team Work Distribution' : 'Team Work Distribution'}</h2>
-                        </div>
+                    <div className="team-management-view">
                         {isAdmin && (
-                            <div className="team-invite-panel">
-                                <h3>Team Invites</h3>
-                                {teamError && <p className="team-error">{teamError}</p>}
-                                <form className="team-invite-form" onSubmit={handleInviteMember}>
-                                    <input
-                                        type="text"
-                                        value={inviteName}
-                                        onChange={(e) => setInviteName(e.target.value)}
-                                        placeholder="Full name (optional)"
-                                    />
-                                    <input
-                                        type="email"
-                                        value={inviteEmail}
-                                        onChange={(e) => setInviteEmail(e.target.value)}
-                                        placeholder="name@company.com"
-                                        required
-                                    />
-                                    <select value={inviteRole} onChange={(e) => setInviteRole(e.target.value)}>
-                                        <option value="MEMBER">Member</option>
-                                        <option value="TEAM_LEAD">Team Lead</option>
-                                    </select>
-                                    <button type="submit" className="btn-primary" disabled={inviting}>
-                                        {inviting ? 'Sending...' : 'Send Invite'}
-                                    </button>
-                                </form>
+                            <>
+                                <div className="team-invite-panel">
+                                    <h3>Invite Team Members</h3>
+                                    {teamError && <p className="team-error">{teamError}</p>}
+                                    <form className="team-invite-form" onSubmit={handleInviteMember}>
+                                        <input
+                                            type="text"
+                                            value={inviteName}
+                                            onChange={(e) => setInviteName(e.target.value)}
+                                            placeholder="Full name (optional)"
+                                        />
+                                        <input
+                                            type="email"
+                                            value={inviteEmail}
+                                            onChange={(e) => setInviteEmail(e.target.value)}
+                                            placeholder="name@company.com"
+                                            required
+                                        />
+                                        <select value={inviteRole} onChange={(e) => setInviteRole(e.target.value)}>
+                                            <option value="MEMBER">Member</option>
+                                            <option value="TEAM_LEAD">Team Lead</option>
+                                        </select>
+                                        <button type="submit" className="btn-primary" disabled={inviting}>
+                                            {inviting ? 'Sending...' : 'Send Invite'}
+                                        </button>
+                                    </form>
 
-                                {invites.length > 0 && (
-                                    <div className="team-invites-list">
-                                        {invites.slice(0, 8).map((invite) => (
-                                            <div key={invite.id} className="team-invite-row">
-                                                <div className="team-member-info">
-                                                    <div>
-                                                        {invite.name ? (
-                                                            <>
-                                                                <strong>{invite.name}</strong>
-                                                                <span className="invite-email">{invite.email}</span>
-                                                            </>
-                                                        ) : (
-                                                            <strong>{invite.email}</strong>
-                                                        )}
-                                                    </div>
-                                                    <span>Expires {new Date(invite.expiresAt).toLocaleDateString()}</span>
-                                                </div>
-                                                <div className="team-member-role">
-                                                    {invite.status === 'PENDING' && (
-                                                        <button
-                                                            type="button"
-                                                            className="btn-secondary"
-                                                            style={{ padding: '4px 10px', fontSize: '0.8em', marginRight: '8px' }}
-                                                            onClick={() => handleResendInvite(invite.id)}
-                                                        >
-                                                            Resend
-                                                        </button>
-                                                    )}
-                                                    <span className="role-badge low">{invite.role}</span>
-                                                    <span className={`role-badge ${invite.status?.toLowerCase() || ''}`}>{invite.status}</span>
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
-                        )}
-                        <div className="team-stats-grid">
-                            {teams.map((team) => (
-                                <div
-                                    key={team.id}
-                                    className="task-card"
-                                    style={{ padding: '20px', cursor: 'pointer' }}
-                                    onClick={() => handleTeamClick(team.id)}
-                                    title={`Click to view ${team.name} tasks`}
-                                >
-                                    <div className="tasks-header" style={{ marginBottom: 12 }}>
-                                        <div>
-                                            <h3 style={{ margin: 0 }}>{team.name}</h3>
-                                            <p className="org-subtitle" style={{ marginTop: 4 }}>Lead: {team.leadUser.name || team.leadUser.email}</p>
-                                        </div>
-                                        <div style={{ textAlign: 'right' }}>
-                                            <div style={{ fontSize: '1.2em', fontWeight: 700, color: '#2563eb' }}>{team.stats.completed}%</div>
-                                            <div style={{ fontSize: '0.7em', color: '#64748b', textTransform: 'uppercase', fontWeight: 700 }}>Completion Rate</div>
-                                        </div>
-                                    </div>
-
-                                    <div className="stat-bar-container" style={{ marginBottom: 10 }}>
-                                        <div className="stat-bar created" style={{ width: `${(team.stats.created / (team.stats.total || 1)) * 100}%` }}></div>
-                                        <div className="stat-bar progress" style={{ width: `${(team.stats.inProgress / (team.stats.total || 1)) * 100}%` }}></div>
-                                        <div className="stat-bar completed" style={{ width: `${(team.stats.completed / (team.stats.total || 1)) * 100}%` }}></div>
-                                    </div>
-                                    <div className="member-counts" style={{ justifyContent: 'space-between', marginBottom: 12 }}>
-                                        <div style={{ display: 'flex', gap: 8 }}>
-                                            <span className="count completed" title="Tasks Completed">{team.stats.completed} Completed</span>
-                                            <span className="count created" title="Tasks Created">{team.stats.created} Created</span>
-                                        </div>
-                                        {isAdmin && (
-                                            <div className="header-actions" style={{ margin: 0 }} onClick={(e) => e.stopPropagation()}>
-                                                <button className="btn-secondary" style={{ padding: '4px 8px', fontSize: '0.8em' }} onClick={() => openEditTeam(team)}>Edit</button>
-                                                <button className="btn-logout" style={{ padding: '4px 8px', fontSize: '0.8em' }} onClick={() => handleDeleteTeam(team.id)}>Delete</button>
-                                            </div>
-                                        )}
-                                    </div>
-
-                                    <div>
-                                        <strong>People</strong>
-                                        <div className="team-members-list" style={{ marginTop: 8 }}>
-                                            {(team.people || team.members || []).map((person: any) => (
-                                                <div
-                                                    className="team-member-row"
-                                                    key={person.userId || person.id}
-                                                    onClick={() => handleMemberClick(person.userId || person.id)}
-                                                    style={{ cursor: 'pointer' }}
-                                                >
+                                    {invites.length > 0 && (
+                                        <div className="team-invites-list">
+                                            <h4>Pending Invites</h4>
+                                            {invites.map((invite) => (
+                                                <div key={invite.id} className="team-invite-row">
                                                     <div className="team-member-info">
-                                                        <strong style={{ color: '#2563eb' }}>{person.name || person.email}</strong>
-                                                        <div style={{ fontSize: '0.8em', display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
-                                                            <span>{person.role}</span>
-                                                            <span title={`Score: ${person.stats?.performanceScore || 0}%`}>
-                                                                • {person.stats?.temperature || '🔴 Low Activity'}
-                                                            </span>
+                                                        <div>
+                                                            {invite.name ? (
+                                                                <>
+                                                                    <strong>{invite.name}</strong>
+                                                                    <span className="invite-email">{invite.email}</span>
+                                                                </>
+                                                            ) : (
+                                                                <strong>{invite.email}</strong>
+                                                            )}
                                                         </div>
                                                     </div>
                                                     <div className="team-member-role">
-                                                        <span className="role-badge created" title="Pending">{person.stats?.pending || 0}</span>
-                                                        <span className="role-badge in_progress" title="Ongoing">{person.stats?.ongoing || 0}</span>
-                                                        <span className="role-badge completed" title="Completed">{person.stats?.completed || 0}</span>
-                                                        <span className="role-badge overdue" title="Overdue">{person.stats?.overdue || 0}</span>
+                                                        {invite.status === 'PENDING' && (
+                                                            <button
+                                                                type="button"
+                                                                className="btn-secondary"
+                                                                style={{ padding: '4px 10px', fontSize: '0.8em', marginRight: '8px' }}
+                                                                onClick={() => handleResendInvite(invite.id)}
+                                                            >
+                                                                Resend
+                                                            </button>
+                                                        )}
+                                                        <span className="role-badge low">{invite.role}</span>
+                                                        <span className={`role-badge ${invite.status?.toLowerCase() || ''}`}>{invite.status}</span>
                                                     </div>
                                                 </div>
                                             ))}
                                         </div>
-                                    </div>
+                                    )}
                                 </div>
-                            ))}
+
+                                <div className="teams-list-section">
+                                    <h3>Teams</h3>
+                                    {teams.length === 0 ? (
+                                        <p className="empty-state">No teams yet. Create your first team to get started.</p>
+                                    ) : (
+                                        <div className="teams-grid">
+                                            {teams.map((team) => (
+                                                <div
+                                                    key={team.id}
+                                                    className="team-card"
+                                                >
+                                                    <div
+                                                        onClick={() => handleTeamClick(team.id)}
+                                                        style={{ cursor: 'pointer', flex: 1 }}
+                                                    >
+                                                        <h4>{team.name}</h4>
+                                                        <p className="team-lead">Lead: {team.leadUser.name || team.leadUser.email}</p>
+                                                        <p className="team-members-count">{(team.people || []).filter((p) => p.role !== 'ADMIN').length || 0} members</p>
+                                                    </div>
+                                                    <div className="team-card-actions" style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+                                                        <button
+                                                            className="btn-secondary"
+                                                            style={{ padding: '4px 10px', fontSize: '0.8em' }}
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                openEditTeam(team);
+                                                            }}
+                                                        >
+                                                            Edit
+                                                        </button>
+                                                        <button
+                                                            className="btn-logout"
+                                                            style={{ padding: '4px 10px', fontSize: '0.8em' }}
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                handleDeleteTeam(team.id);
+                                                            }}
+                                                        >
+                                                            Delete
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            </>
+                        )}
+
+                        <div className="team-members-section">
+                            <h3>{isAdmin ? 'All Members' : 'Team Members'}</h3>
+                            <div className="team-members-list">
+                                {(organization?.members || []).filter((member) => member.role !== 'ADMIN').map((member) => (
+                                    <div
+                                        key={member.id}
+                                        className="team-member-row"
+                                        onClick={() => {
+                                            setAssigneeFilterId(member.userId);
+                                            const params = new URLSearchParams(location.search);
+                                            params.set('section', 'team-tracker');
+                                            navigate(`/dashboard?${params.toString()}`);
+                                        }}
+                                        style={{ cursor: 'pointer' }}
+                                    >
+                                        <div className="team-member-info">
+                                            <div className="member-avatar">
+                                                {getInitials(member.user.name || member.user.email)}
+                                            </div>
+                                            <div>
+                                                <strong>{member.user.name || member.user.email}</strong>
+                                                <span>{member.role}</span>
+                                            </div>
+                                        </div>
+                                        <div className="team-member-role">
+                                            <span className="view-tasks-link">View Tasks →</span>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
                         </div>
                     </div>
                 )}
