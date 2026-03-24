@@ -1400,7 +1400,7 @@ const DashboardPage = () => {
                     </div>
                 )}
 
-                {currentSection === 'okrs' && (isAdmin || isTeamLead || isMember) && (
+                {currentSection === 'okr' && (isAdmin || isTeamLead || isMember) && (
                     <div className="tasks-section">
                         <div className="tasks-header"><h2>{(isTeamLead || isMember) ? 'My Team OKRs' : 'Global OKRs'}</h2></div>
                         <div className="tasks-list">
