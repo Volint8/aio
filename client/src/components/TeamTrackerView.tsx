@@ -41,6 +41,7 @@ interface TeamTrackerViewProps {
     onTaskClick: (task: Task) => void;
     onCreateTask: () => void;
     onSendAlert: () => void;
+    tags?: Array<{ id: string; name: string; color: string }>;
 }
 
 const TeamTrackerView: React.FC<TeamTrackerViewProps> = ({
@@ -52,8 +53,12 @@ const TeamTrackerView: React.FC<TeamTrackerViewProps> = ({
     onFilterChange,
     onTaskClick,
     onCreateTask,
-    onSendAlert
+    onSendAlert,
+    tags = []
 }) => {
+    const [priorityFilter, setPriorityFilter] = React.useState<string>('all');
+    const [tagFilter, setTagFilter] = React.useState<string>('all');
+
     const filters: Array<{ key: 'all' | 'pending' | 'ongoing' | 'completed' | 'overdue'; label: string }> = [
         { key: 'all', label: 'All Tasks' },
         { key: 'pending', label: 'Pending' },
@@ -63,15 +68,23 @@ const TeamTrackerView: React.FC<TeamTrackerViewProps> = ({
     ];
 
     const filteredTasks = tasks.filter(task => {
+        // Member filter
         if (selectedMemberId && task.assignee?.id !== selectedMemberId) return false;
-        
-        if (filter === 'all') return true;
+
+        // Status filter
         if (filter === 'pending') return task.status === 'CREATED';
         if (filter === 'ongoing') return task.status === 'IN_PROGRESS';
         if (filter === 'completed') return task.status === 'COMPLETED';
         if (filter === 'overdue') {
             return task.status !== 'COMPLETED' && task.dueDate && new Date(task.dueDate) < new Date();
         }
+
+        // Priority filter
+        if (priorityFilter !== 'all' && task.priority !== priorityFilter) return false;
+
+        // Tag/OKR filter
+        if (tagFilter !== 'all' && task.tag?.id !== tagFilter) return false;
+
         return true;
     });
 
@@ -130,6 +143,45 @@ const TeamTrackerView: React.FC<TeamTrackerViewProps> = ({
                         {f.label}
                     </button>
                 ))}
+            </div>
+
+            <div className="tracker-filters" style={{ display: 'flex', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' }}>
+                <select
+                    value={priorityFilter}
+                    onChange={(e) => setPriorityFilter(e.target.value)}
+                    className="tracker-filter-select"
+                    style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border-color)', background: '#fff', fontSize: '0.9em', minWidth: '140px' }}
+                >
+                    <option value="all">All Priorities</option>
+                    <option value="LOW">Low</option>
+                    <option value="MEDIUM">Medium</option>
+                    <option value="HIGH">High</option>
+                </select>
+
+                <select
+                    value={tagFilter}
+                    onChange={(e) => setTagFilter(e.target.value)}
+                    className="tracker-filter-select"
+                    style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border-color)', background: '#fff', fontSize: '0.9em', minWidth: '160px' }}
+                >
+                    <option value="all">All OKRs</option>
+                    {tags.map(t => (
+                        <option key={t.id} value={t.id}>{t.name}</option>
+                    ))}
+                </select>
+
+                {(priorityFilter !== 'all' || tagFilter !== 'all') && (
+                    <button
+                        onClick={() => {
+                            setPriorityFilter('all');
+                            setTagFilter('all');
+                        }}
+                        className="btn-secondary"
+                        style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid var(--border-color)', background: '#fff', fontSize: '0.9em', cursor: 'pointer' }}
+                    >
+                        Clear Filters
+                    </button>
+                )}
             </div>
 
             <div className="tracker-table-container">

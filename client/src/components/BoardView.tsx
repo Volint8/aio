@@ -48,7 +48,7 @@ interface BoardViewProps {
 
 const BoardView: React.FC<BoardViewProps> = ({
     memberStats,
-    teamDistribution: _teamDistribution,
+    teamDistribution,
     userRole,
     onCreateTask,
     onNavigate,
@@ -71,8 +71,10 @@ const BoardView: React.FC<BoardViewProps> = ({
     );
 
     // Count team members and team leads (for Admin)
+    // @ts-ignore - teamMembersCount kept for potential future use
     const teamMembersCount = organizationMembers.filter(m => m.role === 'MEMBER').length;
     const teamLeadsCount = organizationMembers.filter(m => m.role === 'TEAM_LEAD').length;
+    const teamsCount = teamDistribution.length;
 
     // Calculate individual stats (current user)
     const currentUserStats = memberStats.find(m => m.userId === user?.id)
@@ -108,8 +110,8 @@ const BoardView: React.FC<BoardViewProps> = ({
                         {userRole === 'ADMIN' ? (
                             <>
                                 <div className="board-stat-card">
-                                    <span className="board-stat-label">Team Members</span>
-                                    <span className="board-stat-value">{teamMembersCount.toString().padStart(2, '0')}</span>
+                                    <span className="board-stat-label">Teams</span>
+                                    <span className="board-stat-value">{teamsCount.toString().padStart(2, '0')}</span>
                                 </div>
                                 <div className="board-stat-card">
                                     <span className="board-stat-label">Team Leads</span>

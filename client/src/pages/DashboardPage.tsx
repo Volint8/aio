@@ -235,7 +235,8 @@ const DashboardPage = () => {
     const [memberStats, setMemberStats] = useState<MemberStatRecord[]>([]);
     const [teamDistribution, setTeamDistribution] = useState<TeamDistributionRecord[]>([]);
     const [clients, setClients] = useState<ClientRecord[]>([]);
-    const [projects, setProjects] = useState<ProjectRecord[]>([]);
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const [_projects, setProjects] = useState<ProjectRecord[]>([]);
 
     const [loading, setLoading] = useState(true);
     const [filter, setFilter] = useState<TaskFilter>(requestedFilter);
@@ -1193,6 +1194,8 @@ const DashboardPage = () => {
                         onTaskClick={(task) => handleOpenEditTask(task)}
                         onCreateTask={() => setShowCreateTaskModal(true)}
                         onSendAlert={() => setShowSendAlertModal(true)}
+                        assignableUsers={assignableUsers.map(m => ({ userId: m.userId, name: m.user.name, email: m.user.email }))}
+                        tags={tags}
                     />
                 )}
 
@@ -1212,6 +1215,7 @@ const DashboardPage = () => {
                         onTaskClick={(task) => handleOpenEditTask(task)}
                         onCreateTask={() => setShowCreateTaskModal(true)}
                         onSendAlert={() => setShowSendAlertModal(true)}
+                        tags={tags}
                     />
                 )}
 
@@ -2062,18 +2066,55 @@ const DashboardPage = () => {
                                 <label>Tag *</label>
                                 <select value={newTask.tagId} onChange={(e) => setNewTask({ ...newTask, tagId: e.target.value })} required>
                                     <option value="">Select a tag</option>
-                                    {availableTags.map((tag) => <option key={tag.id} value={tag.id}>{tag.name}{tagSourceMap[tag.id] ? ` - ${tagSourceMap[tag.id].krTitle}` : ''}</option>)}
+                                    {availableTags.map((tag) => {
+                                        const okrInfo = tagSourceMap[tag.id];
+                                        const displayText = okrInfo 
+                                            ? `${tag.name} - ${okrInfo.krTitle}`
+                                            : tag.name;
+                                        return (
+                                            <option 
+                                                key={tag.id} 
+                                                value={tag.id}
+                                                title={okrInfo ? `OKR: ${okrInfo.okrTitle} | KR: ${okrInfo.krTitle}` : ''}
+                                            >
+                                                {displayText}
+                                            </option>
+                                        );
+                                    })}
                                 </select>
                                 {selectedCreateTaskTag && (
                                     <div className="selected-tag-preview" style={{ marginTop: '8px', padding: '8px 12px', background: '#F1F5F9', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-                                        <span className="color-preview-chip" style={{ background: selectedCreateTaskTag.color, width: '12px', height: '12px', borderRadius: '3px', display: 'inline-block', marginRight: '8px' }} aria-hidden="true"></span>
-                                        <span style={{ fontSize: '0.9em', color: 'var(--text-main)' }}>Selected: <strong>{selectedCreateTaskTag.name}</strong></span>
-                                        {tagSourceMap[selectedCreateTaskTag.id] && (
-                                            <div style={{ fontSize: '0.8em', color: 'var(--text-muted)', marginTop: '4px' }}>
-                                                <div><strong>OKR:</strong> {tagSourceMap[selectedCreateTaskTag.id].okrTitle}</div>
-                                                <div><strong>Key Result:</strong> {tagSourceMap[selectedCreateTaskTag.id].krTitle}</div>
+                                        <span className="color-preview-chip" style={{ background: selectedCreateTaskTag.color, width: '12px', height: '12px', borderRadius: '3px', display: 'inline-block', marginRight: '8px', flexShrink: 0 }} aria-hidden="true"></span>
+                                        <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
+                                            <span style={{ fontSize: '0.9em', color: 'var(--text-main)', flexShrink: 0 }}>Selected:</span>
+                                            <div style={{ flex: 1, minWidth: 0 }}>
+                                                <div style={{ fontWeight: 600, color: 'var(--text-main)', marginBottom: '4px' }}>
+                                                    <span title={selectedCreateTaskTag.name}>{selectedCreateTaskTag.name}</span>
+                                                </div>
+                                                {tagSourceMap[selectedCreateTaskTag.id] && (
+                                                    <div style={{ fontSize: '0.8em', color: 'var(--text-muted)' }}>
+                                                        <div style={{ marginBottom: '2px' }}>
+                                                            <strong>OKR:</strong>{' '}
+                                                            <span title={tagSourceMap[selectedCreateTaskTag.id].okrTitle}>
+                                                                {tagSourceMap[selectedCreateTaskTag.id].okrTitle.length > 60 
+                                                                    ? `${tagSourceMap[selectedCreateTaskTag.id].okrTitle.substring(0, 60)}...`
+                                                                    : tagSourceMap[selectedCreateTaskTag.id].okrTitle
+                                                                }
+                                                            </span>
+                                                        </div>
+                                                        <div>
+                                                            <strong>Key Result:</strong>{' '}
+                                                            <span title={tagSourceMap[selectedCreateTaskTag.id].krTitle}>
+                                                                {tagSourceMap[selectedCreateTaskTag.id].krTitle.length > 60
+                                                                    ? `${tagSourceMap[selectedCreateTaskTag.id].krTitle.substring(0, 60)}...`
+                                                                    : tagSourceMap[selectedCreateTaskTag.id].krTitle
+                                                                }
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                )}
                                             </div>
-                                        )}
+                                        </div>
                                     </div>
                                 )}
                             </div>
@@ -2157,18 +2198,55 @@ const DashboardPage = () => {
                                 <label>Tag *</label>
                                 <select value={editTask.tagId} onChange={(e) => setEditTask({ ...editTask, tagId: e.target.value })} required>
                                     <option value="">Select a tag</option>
-                                    {availableTags.map((tag) => <option key={tag.id} value={tag.id}>{tag.name}{tagSourceMap[tag.id] ? ` - ${tagSourceMap[tag.id].krTitle}` : ''}</option>)}
+                                    {availableTags.map((tag) => {
+                                        const okrInfo = tagSourceMap[tag.id];
+                                        const displayText = okrInfo 
+                                            ? `${tag.name} - ${okrInfo.krTitle}`
+                                            : tag.name;
+                                        return (
+                                            <option 
+                                                key={tag.id} 
+                                                value={tag.id}
+                                                title={okrInfo ? `OKR: ${okrInfo.okrTitle} | KR: ${okrInfo.krTitle}` : ''}
+                                            >
+                                                {displayText}
+                                            </option>
+                                        );
+                                    })}
                                 </select>
                                 {selectedEditTaskTag && (
                                     <div className="selected-tag-preview" style={{ marginTop: '8px', padding: '8px 12px', background: '#F1F5F9', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-                                        <span className="color-preview-chip" style={{ background: selectedEditTaskTag.color, width: '12px', height: '12px', borderRadius: '3px', display: 'inline-block', marginRight: '8px' }} aria-hidden="true"></span>
-                                        <span style={{ fontSize: '0.9em', color: 'var(--text-main)' }}>Selected: <strong>{selectedEditTaskTag.name}</strong></span>
-                                        {tagSourceMap[selectedEditTaskTag.id] && (
-                                            <div style={{ fontSize: '0.8em', color: 'var(--text-muted)', marginTop: '4px' }}>
-                                                <div><strong>OKR:</strong> {tagSourceMap[selectedEditTaskTag.id].okrTitle}</div>
-                                                <div><strong>Key Result:</strong> {tagSourceMap[selectedEditTaskTag.id].krTitle}</div>
+                                        <span className="color-preview-chip" style={{ background: selectedEditTaskTag.color, width: '12px', height: '12px', borderRadius: '3px', display: 'inline-block', marginRight: '8px', flexShrink: 0 }} aria-hidden="true"></span>
+                                        <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
+                                            <span style={{ fontSize: '0.9em', color: 'var(--text-main)', flexShrink: 0 }}>Selected:</span>
+                                            <div style={{ flex: 1, minWidth: 0 }}>
+                                                <div style={{ fontWeight: 600, color: 'var(--text-main)', marginBottom: '4px' }}>
+                                                    <span title={selectedEditTaskTag.name}>{selectedEditTaskTag.name}</span>
+                                                </div>
+                                                {tagSourceMap[selectedEditTaskTag.id] && (
+                                                    <div style={{ fontSize: '0.8em', color: 'var(--text-muted)' }}>
+                                                        <div style={{ marginBottom: '2px' }}>
+                                                            <strong>OKR:</strong>{' '}
+                                                            <span title={tagSourceMap[selectedEditTaskTag.id].okrTitle}>
+                                                                {tagSourceMap[selectedEditTaskTag.id].okrTitle.length > 60 
+                                                                    ? `${tagSourceMap[selectedEditTaskTag.id].okrTitle.substring(0, 60)}...`
+                                                                    : tagSourceMap[selectedEditTaskTag.id].okrTitle
+                                                                }
+                                                            </span>
+                                                        </div>
+                                                        <div>
+                                                            <strong>Key Result:</strong>{' '}
+                                                            <span title={tagSourceMap[selectedEditTaskTag.id].krTitle}>
+                                                                {tagSourceMap[selectedEditTaskTag.id].krTitle.length > 60
+                                                                    ? `${tagSourceMap[selectedEditTaskTag.id].krTitle.substring(0, 60)}...`
+                                                                    : tagSourceMap[selectedEditTaskTag.id].krTitle
+                                                                }
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                )}
                                             </div>
-                                        )}
+                                        </div>
                                     </div>
                                 )}
                             </div>
@@ -2236,7 +2314,6 @@ const DashboardPage = () => {
                                 >
                                     <option value="INDIVIDUAL">Individual Member</option>
                                     <option value="TEAM">Entire Team</option>
-                                    <option value="PROJECT">Project Group</option>
                                 </select>
                             </div>
 
@@ -2254,9 +2331,6 @@ const DashboardPage = () => {
                                     {alertForm.targetType === 'TEAM' && teamDistribution.map(t => (
                                         <option key={t.teamId} value={t.teamId}>{t.teamName}</option>
                                     ))}
-                                    {alertForm.targetType === 'PROJECT' && projects.map(p => (
-                                        <option key={p.id} value={p.id}>{p.name}</option>
-                                    ))}
                                 </select>
                             </div>
 
@@ -2269,6 +2343,7 @@ const DashboardPage = () => {
                                     <option value="DEADLINE_REMINDER">Deadline Reminder</option>
                                     <option value="PRIORITY_ALERT">Task Priority Notification</option>
                                     <option value="FEEDBACK">Feedback Message</option>
+                                    <option value="OTHER">Other</option>
                                 </select>
                             </div>
 
