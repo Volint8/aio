@@ -1296,14 +1296,7 @@ const DashboardPage = () => {
                                                 <div key={invite.id} className="team-invite-row">
                                                     <div className="team-member-info">
                                                         <div>
-                                                            {invite.name ? (
-                                                                <>
-                                                                    <strong>{invite.name}</strong>
-                                                                    <span className="invite-email">{invite.email}</span>
-                                                                </>
-                                                            ) : (
-                                                                <strong>{invite.email}</strong>
-                                                            )}
+                                                            <strong>{invite.name || invite.email}</strong>
                                                         </div>
                                                     </div>
                                                     <div className="team-member-role">
