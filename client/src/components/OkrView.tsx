@@ -36,6 +36,7 @@ interface OkrViewProps {
     onCreateOkr?: () => void;
     onEditOkr?: (okr: Okr) => void;
     onDeleteOkr?: (okrId: string) => void;
+    onNavigate?: (path: string) => void;
 }
 
 const OkrView: React.FC<OkrViewProps> = ({
@@ -45,7 +46,8 @@ const OkrView: React.FC<OkrViewProps> = ({
     onSendAlert,
     onCreateOkr,
     onEditOkr,
-    onDeleteOkr
+    onDeleteOkr,
+    onNavigate
 }) => {
     const currentYear = new Date().getFullYear();
 
@@ -108,7 +110,9 @@ const OkrView: React.FC<OkrViewProps> = ({
                                             <span>{kr.title}</span>
                                             <span
                                                 className="okr-kr-tag"
-                                                style={{ backgroundColor: `${kr.tag.color}15`, color: kr.tag.color, borderColor: `${kr.tag.color}30` }}
+                                                style={{ backgroundColor: `${kr.tag.color}15`, color: kr.tag.color, borderColor: `${kr.tag.color}30`, cursor: 'pointer' }}
+                                                onClick={() => onNavigate?.('/dashboard?section=okr')}
+                                                title="Click to view all OKRs"
                                             >
                                                 {kr.tag.name}
                                             </span>
@@ -119,12 +123,21 @@ const OkrView: React.FC<OkrViewProps> = ({
                         )}
 
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 'auto' }}>
-                            {okr.assignments && okr.assignments.some(a => a.targetType === 'TEAM' && a.team) && (
+                            {okr.assignments && okr.assignments.some(a => a.targetType === 'TEAM' && a.team) ? (
                                 <div className="okr-assignments">
                                     Assigned to: {okr.assignments
                                         .filter(a => a.targetType === 'TEAM' && a.team)
                                         .map(a => a.team!.name)
                                         .join(', ')}
+                                </div>
+                            ) : (
+                                <div className="okr-no-team" style={{ fontSize: '0.85em', color: '#DC2626', fontWeight: 600 }}>
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'inline', marginRight: '4px', verticalAlign: 'middle' }}>
+                                        <circle cx="12" cy="12" r="10"></circle>
+                                        <line x1="12" y1="8" x2="12" y2="12"></line>
+                                        <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                                    </svg>
+                                    No team assigned
                                 </div>
                             )}
 

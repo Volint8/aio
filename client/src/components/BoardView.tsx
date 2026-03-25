@@ -38,15 +38,25 @@ interface BoardViewProps {
     }>;
     userRole: 'ADMIN' | 'TEAM_LEAD' | 'MEMBER';
     onCreateTask: () => void;
+    onNavigate?: (path: string) => void;
+    organizationName?: string;
+    organizationMembers?: Array<{
+        userId: string;
+        role: string;
+    }>;
 }
 
 const BoardView: React.FC<BoardViewProps> = ({
     memberStats,
+    teamDistribution: _teamDistribution,
     userRole,
-    onCreateTask
+    onCreateTask,
+    onNavigate,
+    organizationName,
+    organizationMembers = []
 }) => {
     const { user } = useAuth();
-    
+
     // Calculate team totals (for Team Lead/Admin)
     const teamTotals = memberStats.reduce(
         (acc, member) => ({
@@ -60,9 +70,13 @@ const BoardView: React.FC<BoardViewProps> = ({
         { members: 0, pending: 0, ongoing: 0, completed: 0, overdue: 0, total: 0 }
     );
 
+    // Count team members and team leads (for Admin)
+    const teamMembersCount = organizationMembers.filter(m => m.role === 'MEMBER').length;
+    const teamLeadsCount = organizationMembers.filter(m => m.role === 'TEAM_LEAD').length;
+
     // Calculate individual stats (current user)
-    const currentUserStats = memberStats.find(m => m.userId === user?.id) 
-        || memberStats[0] 
+    const currentUserStats = memberStats.find(m => m.userId === user?.id)
+        || memberStats[0]
         || { userId: '', name: 'User', stats: { pending: 0, ongoing: 0, completed: 0, overdue: 0, total: 0 } };
 
     const canViewTeam = userRole === 'ADMIN' || userRole === 'TEAM_LEAD';
@@ -71,33 +85,65 @@ const BoardView: React.FC<BoardViewProps> = ({
         <div className="board-view">
             {/* Welcome Banner */}
             <div className="welcome-banner">
-                <h1>Welcome back, {user?.name || 'User'}!</h1>
-                <p>Track your team's progress and stay on top of your tasks.</p>
+                <h1>Welcome, {userRole === 'ADMIN' ? (organizationName || 'Team') : (user?.name || 'User')}!</h1>
+                <p>{userRole === 'ADMIN' ? "Track your organisation's progress" : "Track your team's progress and stay on top of your tasks."}</p>
             </div>
 
             {/* Team Stats Section */}
             {canViewTeam && (
                 <>
                     <div className="board-panel-header">
-                        <h2>Team Overview</h2>
+                        <h2>{userRole === 'ADMIN' ? 'Overview' : 'Team Overview'}</h2>
+                        {userRole === 'ADMIN' && (
+                            <button className="board-create-btn" onClick={() => onNavigate?.('/dashboard?section=team')}>
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                    <line x1="12" y1="5" x2="12" y2="19"></line>
+                                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                                </svg>
+                                Create Team
+                            </button>
+                        )}
                     </div>
                     <div className="board-stats-grid">
-                        <div className="board-stat-card">
-                            <span className="board-stat-label">Team Members</span>
-                            <span className="board-stat-value">{teamTotals.members.toString().padStart(2, '0')}</span>
-                        </div>
-                        <div className="board-stat-card">
-                            <span className="board-stat-label">Ongoing Tasks</span>
-                            <span className="board-stat-value">{teamTotals.ongoing.toString().padStart(2, '0')}</span>
-                        </div>
-                        <div className="board-stat-card">
-                            <span className="board-stat-label">Pending</span>
-                            <span className="board-stat-value">{teamTotals.pending.toString().padStart(2, '0')}</span>
-                        </div>
-                        <div className="board-stat-card">
-                            <span className="board-stat-label" style={{ color: '#EF4444' }}>Overdue</span>
-                            <span className="board-stat-value" style={{ color: '#EF4444' }}>{teamTotals.overdue.toString().padStart(2, '0')}</span>
-                        </div>
+                        {userRole === 'ADMIN' ? (
+                            <>
+                                <div className="board-stat-card">
+                                    <span className="board-stat-label">Team Members</span>
+                                    <span className="board-stat-value">{teamMembersCount.toString().padStart(2, '0')}</span>
+                                </div>
+                                <div className="board-stat-card">
+                                    <span className="board-stat-label">Team Leads</span>
+                                    <span className="board-stat-value">{teamLeadsCount.toString().padStart(2, '0')}</span>
+                                </div>
+                                <div className="board-stat-card">
+                                    <span className="board-stat-label">Ongoing Tasks</span>
+                                    <span className="board-stat-value">{teamTotals.ongoing.toString().padStart(2, '0')}</span>
+                                </div>
+                                <div className="board-stat-card">
+                                    <span className="board-stat-label">Completed Tasks</span>
+                                    <span className="board-stat-value">{teamTotals.completed.toString().padStart(2, '0')}</span>
+                                </div>
+                            </>
+                        ) : (
+                            <>
+                                <div className="board-stat-card">
+                                    <span className="board-stat-label">Team Members</span>
+                                    <span className="board-stat-value">{teamTotals.members.toString().padStart(2, '0')}</span>
+                                </div>
+                                <div className="board-stat-card">
+                                    <span className="board-stat-label">Ongoing Tasks</span>
+                                    <span className="board-stat-value">{teamTotals.ongoing.toString().padStart(2, '0')}</span>
+                                </div>
+                                <div className="board-stat-card">
+                                    <span className="board-stat-label">Pending</span>
+                                    <span className="board-stat-value">{teamTotals.pending.toString().padStart(2, '0')}</span>
+                                </div>
+                                <div className="board-stat-card">
+                                    <span className="board-stat-label" style={{ color: '#EF4444' }}>Overdue</span>
+                                    <span className="board-stat-value" style={{ color: '#EF4444' }}>{teamTotals.overdue.toString().padStart(2, '0')}</span>
+                                </div>
+                            </>
+                        )}
                     </div>
                 </>
             )}

@@ -400,16 +400,44 @@ const DashboardPage = () => {
     }, [requestedSection, canTrackTeam, isAdmin, isTeamLead, isMember]);
 
     const tagSourceMap = useMemo(() => {
-        const map: Record<string, { okrTitle: string; krTitle: string }> = {};
+        const map: Record<string, { okrTitle: string; krTitle: string; periodEnd: string }> = {};
+        const now = new Date();
         okrs.forEach(okr => {
-            okr.keyResults?.forEach(kr => {
-                if (kr.tag) {
-                    map[kr.tag.id] = { okrTitle: okr.title, krTitle: kr.title };
-                }
-            });
+            // Only include tags from OKRs that haven't expired
+            const periodEnd = new Date(okr.periodEnd);
+            const isExpired = periodEnd < now;
+            
+            if (!isExpired) {
+                okr.keyResults?.forEach(kr => {
+                    if (kr.tag) {
+                        map[kr.tag.id] = { okrTitle: okr.title, krTitle: kr.title, periodEnd: okr.periodEnd };
+                    }
+                });
+            }
         });
         return map;
     }, [okrs]);
+
+    // Filter tags to only show active ones (from non-expired OKRs or tags not linked to any OKR)
+    const availableTags = useMemo(() => {
+        const now = new Date();
+        return tags.filter(tag => {
+            const okrInfo = tagSourceMap[tag.id];
+            // If tag is not in map, check if it was from an expired OKR
+            if (!okrInfo) {
+                // Find if this tag belongs to any expired OKR
+                const linkedOkr = okrs.find(okr => 
+                    okr.keyResults?.some(kr => kr.tag?.id === tag.id)
+                );
+                if (linkedOkr) {
+                    const periodEnd = new Date(linkedOkr.periodEnd);
+                    return periodEnd >= now; // Only include if not expired
+                }
+                return true; // Tag not linked to any OKR, include it
+            }
+            return true; // Tag is in active OKR, include it
+        });
+    }, [tags, tagSourceMap, okrs]);
 
     const userChartData = memberStats.map((item) => ({
         id: item.userId,
@@ -837,6 +865,7 @@ const DashboardPage = () => {
         }
     };
 
+    // @ts-ignore - Function kept for potential future use
     const handleMakeOkrGlobal = async (okrId: string) => {
         try {
             await api.patch(`/orgs/${orgId}/okrs/${okrId}`, {
@@ -1150,6 +1179,9 @@ const DashboardPage = () => {
                         teamDistribution={teamDistribution}
                         userRole={organization?.userRole as 'ADMIN' | 'TEAM_LEAD' | 'MEMBER'}
                         onCreateTask={() => setShowCreateTaskModal(true)}
+                        onNavigate={(path) => navigate(path)}
+                        organizationName={organization?.name}
+                        organizationMembers={(organization?.members || []).map(m => ({ userId: m.userId, role: m.role }))}
                     />
                 )}
 
@@ -1192,6 +1224,7 @@ const DashboardPage = () => {
                         onCreateOkr={() => setShowCreateOkrModal(true)}
                         onEditOkr={handleOpenEditOkr}
                         onDeleteOkr={handleDeleteOkr}
+                        onNavigate={(path) => navigate(path)}
                     />
                 )}
 
@@ -1387,96 +1420,48 @@ const DashboardPage = () => {
                             }}>+ New Tag</button>
                         </div>
                         <div className="tasks-list">
-                            {tags.map((tag: any) => (
-                                <div key={tag.id} className="task-card" style={{ padding: '16px' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                            <span style={{ width: 14, height: 14, borderRadius: 999, background: tag.color, display: 'inline-block', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}></span>
-                                            <div>
-                                                <strong style={{ fontSize: '1.1em' }} title={tagSourceMap[tag.id] ? `Objective: ${tagSourceMap[tag.id].okrTitle} | KR: ${tagSourceMap[tag.id].krTitle}` : ''}>
-                                                    {tag.name}
-                                                </strong>
-                                                <div style={{ fontSize: '0.85em', color: 'var(--text-muted)', marginTop: 2 }}>
-                                                    Used in {tag.taskCount || 0} tasks
+                            {tags.map((tag: any) => {
+                                const okrInfo = tagSourceMap[tag.id];
+                                const hasOkr = !!okrInfo;
+                                return (
+                                    <div key={tag.id} className="task-card" style={{ padding: '16px' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                            <div 
+                                                style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: hasOkr ? 'pointer' : 'default' }}
+                                                onClick={() => {
+                                                    if (hasOkr) {
+                                                        navigate('/dashboard?section=okr');
+                                                    }
+                                                }}
+                                                title={hasOkr ? `Click to view OKR: ${okrInfo.okrTitle}` : ''}
+                                            >
+                                                <span style={{ width: 14, height: 14, borderRadius: 999, background: tag.color, display: 'inline-block', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}></span>
+                                                <div>
+                                                    <strong style={{ fontSize: '1.1em', color: hasOkr ? 'var(--primary-color)' : 'inherit' }}>
+                                                        {tag.name}
+                                                    </strong>
+                                                    <div style={{ fontSize: '0.85em', color: 'var(--text-muted)', marginTop: 2 }}>
+                                                        Used in {tag.taskCount || 0} tasks
+                                                        {hasOkr && (
+                                                            <span style={{ marginLeft: '8px', color: 'var(--primary-color)' }}>
+                                                                → {okrInfo.okrTitle}
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                 </div>
                                             </div>
-                                        </div>
-                                        <div className="header-actions" style={{ margin: 0 }}>
-                                            <button className="btn-secondary" style={{ padding: '4px 8px', fontSize: '0.8em' }} onClick={() => {
-                                                setEditingTag(tag);
-                                                setTagForm({ name: tag.name, color: tag.color });
-                                                setShowTagModal(true);
-                                            }}>Edit</button>
-                                            <button className="btn-logout" style={{ padding: '4px 8px', fontSize: '0.8em' }} onClick={() => handleDeleteTag(tag.id)}>Delete</button>
-                                        </div>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                )}
-
-                {currentSection === 'okr' && (isAdmin || isTeamLead || isMember) && (
-                    <div className="tasks-section">
-                        <div className="tasks-header"><h2>{(isTeamLead || isMember) ? 'My Team OKRs' : 'Global OKRs'}</h2></div>
-                        <div className="tasks-list">
-                            {okrs.map((okr) => (
-                                <div key={okr.id} className="task-card" style={{ padding: '20px' }}>
-                                    <div className="task-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                                        <div style={{ flex: 1 }}>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                                <h3 style={{ margin: 0 }}>{okr.title}</h3>
-                                                <span className={`priority-badge ${okr.status === 'COMPLETED' ? 'low' : 'medium'}`} style={{
-                                                    backgroundColor: okr.status === 'COMPLETED' ? 'var(--success-color)' : 'var(--warning-color)',
-                                                    color: 'white',
-                                                    borderColor: 'transparent'
-                                                }}>
-                                                    {okr.status}
-                                                </span>
-                                            </div>
-                                            <p className="task-description" style={{ marginTop: 8 }}>{okr.description || 'No description'}</p>
-                                        </div>
-                                        {isAdmin && (
                                             <div className="header-actions" style={{ margin: 0 }}>
-                                                <button className="btn-secondary" style={{ padding: '4px 8px', fontSize: '0.8em' }} onClick={() => handleOpenEditOkr(okr)}>Edit</button>
-                                                {okr.assignments && okr.assignments.length > 0 && (
-                                                    <button className="btn-secondary" style={{ padding: '4px 8px', fontSize: '0.8em' }} onClick={() => handleMakeOkrGlobal(okr.id)}>Make Global</button>
-                                                )}
-                                                <button className="btn-logout" style={{ padding: '4px 8px', fontSize: '0.8em' }} onClick={() => handleDeleteOkr(okr.id)}>Delete</button>
+                                                <button className="btn-secondary" style={{ padding: '4px 8px', fontSize: '0.8em' }} onClick={() => {
+                                                    setEditingTag(tag);
+                                                    setTagForm({ name: tag.name, color: tag.color });
+                                                    setShowTagModal(true);
+                                                }}>Edit</button>
+                                                <button className="btn-logout" style={{ padding: '4px 8px', fontSize: '0.8em' }} onClick={() => handleDeleteTag(tag.id)}>Delete</button>
                                             </div>
-                                        )}
-                                    </div>
-                                    <div className="task-header" style={{ marginTop: 4 }}>
-                                        {(okr.assignments && okr.assignments.length > 0) && (
-                                            <div className="task-meta" style={{ marginTop: 8 }}>
-                                                {okr.assignments.filter((a) => a.targetType === 'TEAM' && a.team).some((a) => a.targetType === 'TEAM') && (
-                                                    <div style={{ marginBottom: 4 }}>
-                                                        <strong>Assigned To:</strong>{' '}
-                                                        {okr.assignments
-                                                            .filter((a) => a.targetType === 'TEAM' && a.team)
-                                                            .map((a) => a.team!.name)
-                                                            .join(', ')}
-                                                    </div>
-                                                )}
-                                            </div>
-                                        )}
-                                        <div className="task-meta">
-                                            <span><strong>Start:</strong> {new Date(okr.periodStart).toLocaleDateString()}</span>
-                                            <span><strong>End:</strong> {new Date(okr.periodEnd).toLocaleDateString()}</span>
                                         </div>
                                     </div>
-                                    <div style={{ marginTop: 12 }}>
-                                        <strong>Key Results</strong>
-                                        <ul style={{ margin: '8px 0 0 16px', padding: 0 }}>
-                                            {(okr.keyResults || []).map((kr) => (
-                                                <li key={kr.id} style={{ marginBottom: 6 }}>
-                                                    {kr.title} <span className="priority-badge low" style={{ borderColor: kr.tag.color, color: kr.tag.color }} title={`Objective: ${okr.title} | KR: ${kr.title}`}>{kr.tag.name}</span>
-                                                </li>
-                                            ))}
-                                        </ul>
-                                    </div>
-                                </div>
-                            ))}
+                                );
+                            })}
                         </div>
                     </div>
                 )}
@@ -1685,10 +1670,16 @@ const DashboardPage = () => {
                                                     {task.tag && (
                                                         <span
                                                             className="priority-badge low"
-                                                            style={{ borderColor: task.tag.color, color: task.tag.color }}
+                                                            style={{ borderColor: task.tag.color, color: task.tag.color, cursor: tagSourceMap[task.tag.id] ? 'pointer' : 'default' }}
                                                             title={tagSourceMap[task.tag.id] ? `Objective: ${tagSourceMap[task.tag.id].okrTitle} | KR: ${tagSourceMap[task.tag.id].krTitle}` : ''}
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                if (task.tag && tagSourceMap[task.tag.id]) {
+                                                                    navigate('/dashboard?section=okr');
+                                                                }
+                                                            }}
                                                         >
-                                                            {task.tag.name}
+                                                            {task.tag.name}{task.tag && tagSourceMap[task.tag.id] && ' →'}
                                                         </span>
                                                     )}
                                                 </div>
@@ -1736,10 +1727,15 @@ const DashboardPage = () => {
                                                         {selectedTask.tag && (
                                                             <span
                                                                 className="priority-badge low"
-                                                                style={{ borderColor: selectedTask.tag.color, color: selectedTask.tag.color }}
+                                                                style={{ borderColor: selectedTask.tag.color, color: selectedTask.tag.color, cursor: tagSourceMap[selectedTask.tag.id] ? 'pointer' : 'default' }}
                                                                 title={tagSourceMap[selectedTask.tag.id] ? `Objective: ${tagSourceMap[selectedTask.tag.id].okrTitle} | KR: ${tagSourceMap[selectedTask.tag.id].krTitle}` : ''}
+                                                                onClick={() => {
+                                                                    if (selectedTask.tag && tagSourceMap[selectedTask.tag.id]) {
+                                                                        navigate('/dashboard?section=okr');
+                                                                    }
+                                                                }}
                                                             >
-                                                                {selectedTask.tag.name}
+                                                                {selectedTask.tag.name}{selectedTask.tag && tagSourceMap[selectedTask.tag.id] && ' →'}
                                                             </span>
                                                         )}
                                                     </div>
@@ -2073,12 +2069,18 @@ const DashboardPage = () => {
                                 <label>Tag *</label>
                                 <select value={newTask.tagId} onChange={(e) => setNewTask({ ...newTask, tagId: e.target.value })} required>
                                     <option value="">Select a tag</option>
-                                    {tags.map((tag) => <option key={tag.id} value={tag.id}>{tag.name}</option>)}
+                                    {availableTags.map((tag) => <option key={tag.id} value={tag.id}>{tag.name}{tagSourceMap[tag.id] ? ` - ${tagSourceMap[tag.id].krTitle}` : ''}</option>)}
                                 </select>
                                 {selectedCreateTaskTag && (
-                                    <div className="selected-tag-preview">
-                                        <span className="color-preview-chip" style={{ background: selectedCreateTaskTag.color }} aria-hidden="true"></span>
-                                        <span>Selected tag: <strong title={tagSourceMap[selectedCreateTaskTag.id] ? `Objective: ${tagSourceMap[selectedCreateTaskTag.id].okrTitle} | KR: ${tagSourceMap[selectedCreateTaskTag.id].krTitle}` : ''}>{selectedCreateTaskTag.name}</strong></span>
+                                    <div className="selected-tag-preview" style={{ marginTop: '8px', padding: '8px 12px', background: '#F1F5F9', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                                        <span className="color-preview-chip" style={{ background: selectedCreateTaskTag.color, width: '12px', height: '12px', borderRadius: '3px', display: 'inline-block', marginRight: '8px' }} aria-hidden="true"></span>
+                                        <span style={{ fontSize: '0.9em', color: 'var(--text-main)' }}>Selected: <strong>{selectedCreateTaskTag.name}</strong></span>
+                                        {tagSourceMap[selectedCreateTaskTag.id] && (
+                                            <div style={{ fontSize: '0.8em', color: 'var(--text-muted)', marginTop: '4px' }}>
+                                                <div><strong>OKR:</strong> {tagSourceMap[selectedCreateTaskTag.id].okrTitle}</div>
+                                                <div><strong>Key Result:</strong> {tagSourceMap[selectedCreateTaskTag.id].krTitle}</div>
+                                            </div>
+                                        )}
                                     </div>
                                 )}
                             </div>
@@ -2162,12 +2164,18 @@ const DashboardPage = () => {
                                 <label>Tag *</label>
                                 <select value={editTask.tagId} onChange={(e) => setEditTask({ ...editTask, tagId: e.target.value })} required>
                                     <option value="">Select a tag</option>
-                                    {tags.map((tag) => <option key={tag.id} value={tag.id}>{tag.name}</option>)}
+                                    {availableTags.map((tag) => <option key={tag.id} value={tag.id}>{tag.name}{tagSourceMap[tag.id] ? ` - ${tagSourceMap[tag.id].krTitle}` : ''}</option>)}
                                 </select>
                                 {selectedEditTaskTag && (
-                                    <div className="selected-tag-preview">
-                                        <span className="color-preview-chip" style={{ background: selectedEditTaskTag.color }} aria-hidden="true"></span>
-                                        <span>Selected tag: <strong title={tagSourceMap[selectedEditTaskTag.id] ? `Objective: ${tagSourceMap[selectedEditTaskTag.id].okrTitle} | KR: ${tagSourceMap[selectedEditTaskTag.id].krTitle}` : ''}>{selectedEditTaskTag.name}</strong></span>
+                                    <div className="selected-tag-preview" style={{ marginTop: '8px', padding: '8px 12px', background: '#F1F5F9', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                                        <span className="color-preview-chip" style={{ background: selectedEditTaskTag.color, width: '12px', height: '12px', borderRadius: '3px', display: 'inline-block', marginRight: '8px' }} aria-hidden="true"></span>
+                                        <span style={{ fontSize: '0.9em', color: 'var(--text-main)' }}>Selected: <strong>{selectedEditTaskTag.name}</strong></span>
+                                        {tagSourceMap[selectedEditTaskTag.id] && (
+                                            <div style={{ fontSize: '0.8em', color: 'var(--text-muted)', marginTop: '4px' }}>
+                                                <div><strong>OKR:</strong> {tagSourceMap[selectedEditTaskTag.id].okrTitle}</div>
+                                                <div><strong>Key Result:</strong> {tagSourceMap[selectedEditTaskTag.id].krTitle}</div>
+                                            </div>
+                                        )}
                                     </div>
                                 )}
                             </div>
@@ -2447,26 +2455,30 @@ const DashboardPage = () => {
 
                             <div className="form-group">
                                 <label>Supported By (Contributing Teams)</label>
-                                <div style={{ maxHeight: 150, overflowY: 'auto', border: '1px solid var(--border-color)', borderRadius: 8, padding: 8 }}>
-                                    {teams.map((team) => (
-                                        <label key={team.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', cursor: 'pointer' }}>
-                                            <input
-                                                type="checkbox"
-                                                checked={newOkr.supportedByTeamIds.includes(team.id)}
-                                                onChange={(e) => {
-                                                    const checked = e.target.checked;
-                                                    setNewOkr((prev) => ({
-                                                        ...prev,
-                                                        supportedByTeamIds: checked
-                                                            ? [...prev.supportedByTeamIds, team.id]
-                                                            : prev.supportedByTeamIds.filter((id) => id !== team.id)
-                                                    }));
-                                                }}
-                                            />
-                                            <span>{team.name}</span>
-                                        </label>
-                                    ))}
-                                </div>
+                                {teams.length > 0 ? (
+                                    <div style={{ maxHeight: 150, overflowY: 'auto', border: '1px solid var(--border-color)', borderRadius: 8, padding: 8 }}>
+                                        {teams.map((team) => (
+                                            <label key={team.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', cursor: 'pointer' }}>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={newOkr.supportedByTeamIds.includes(team.id)}
+                                                    onChange={(e) => {
+                                                        const checked = e.target.checked;
+                                                        setNewOkr((prev) => ({
+                                                            ...prev,
+                                                            supportedByTeamIds: checked
+                                                                ? [...prev.supportedByTeamIds, team.id]
+                                                                : prev.supportedByTeamIds.filter((id) => id !== team.id)
+                                                        }));
+                                                    }}
+                                                />
+                                                <span>{team.name}</span>
+                                            </label>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <p style={{ fontSize: '0.85em', color: 'var(--text-muted)', margin: '8px 0' }}>No teams available. Create teams first to assign them as supporters.</p>
+                                )}
                             </div>
 
                             <h3 style={{ marginTop: 8 }}>Key Results</h3>
@@ -2581,26 +2593,30 @@ const DashboardPage = () => {
 
                             <div className="form-group">
                                 <label>Supported By (Contributing Teams)</label>
-                                <div style={{ maxHeight: 150, overflowY: 'auto', border: '1px solid var(--border-color)', borderRadius: 8, padding: 8 }}>
-                                    {teams.map((team) => (
-                                        <label key={team.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', cursor: 'pointer' }}>
-                                            <input
-                                                type="checkbox"
-                                                checked={editOkrForm.supportedByTeamIds.includes(team.id)}
-                                                onChange={(e) => {
-                                                    const checked = e.target.checked;
-                                                    setEditOkrForm((prev) => ({
-                                                        ...prev,
-                                                        supportedByTeamIds: checked
-                                                            ? [...prev.supportedByTeamIds, team.id]
-                                                            : prev.supportedByTeamIds.filter((id) => id !== team.id)
-                                                    }));
-                                                }}
-                                            />
-                                            <span>{team.name}</span>
-                                        </label>
-                                    ))}
-                                </div>
+                                {teams.length > 0 ? (
+                                    <div style={{ maxHeight: 150, overflowY: 'auto', border: '1px solid var(--border-color)', borderRadius: 8, padding: 8 }}>
+                                        {teams.map((team) => (
+                                            <label key={team.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', cursor: 'pointer' }}>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={editOkrForm.supportedByTeamIds.includes(team.id)}
+                                                    onChange={(e) => {
+                                                        const checked = e.target.checked;
+                                                        setEditOkrForm((prev) => ({
+                                                            ...prev,
+                                                            supportedByTeamIds: checked
+                                                                ? [...prev.supportedByTeamIds, team.id]
+                                                                : prev.supportedByTeamIds.filter((id) => id !== team.id)
+                                                        }));
+                                                    }}
+                                                />
+                                                <span>{team.name}</span>
+                                            </label>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <p style={{ fontSize: '0.85em', color: 'var(--text-muted)', margin: '8px 0' }}>No teams available. Create teams first to assign them as supporters.</p>
+                                )}
                             </div>
 
                             <h3 style={{ marginTop: 8 }}>Key Results</h3>

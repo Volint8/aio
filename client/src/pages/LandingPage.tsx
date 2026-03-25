@@ -7,7 +7,6 @@ const LandingPage = () => {
             <header className="landing-header">
                 <div className="landing-brand">
                     <img src="/images/image.png" alt="Apraizal Logo" style={{ height: '36px' }} />
-                    <span>Apraizal</span>
                 </div>
                 <nav className="landing-nav">
                     <a href="#features">Features</a>

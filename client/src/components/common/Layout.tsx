@@ -144,7 +144,6 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                 <div className="sidebar-header" style={{ borderBottom: 'none', padding: '40px 24px 20px' }}>
                     <div className="sidebar-logo">
                         <img src="/images/image.png" alt="Apraizal Logo" style={{ height: '36px' }} />
-                        <span style={{ fontSize: '1.2em', fontWeight: 700, marginLeft: '8px', color: '#0F172A' }}>Apraizal</span>
                     </div>
                 </div>
 

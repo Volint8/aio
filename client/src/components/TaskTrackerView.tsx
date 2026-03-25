@@ -105,7 +105,7 @@ const TaskTrackerView: React.FC<TaskTrackerViewProps> = ({
                     <thead>
                         <tr>
                             <th>Task Name</th>
-                            <th>Focus / Unit</th>
+                            <th>OKR</th>
                             <th>Owner</th>
                             <th>Status</th>
                             <th>Priority</th>
