@@ -17,7 +17,7 @@ const LandingPage = () => {
             <main>
                 <section className="landing-hero" aria-labelledby="landing-title">
                     <div className="hero-content-wrapper">
-                        <h1 id="landing-title">Modern Performance Management for High-Growth Teams.</h1>
+                        <h1 id="landing-title">Turn a year's worth of messy HR paperwork into a finished report with just one click.</h1>
                         <p className="hero-features">
                             <span className="feature-word">Organize</span>
                             <span className="feature-dot" aria-hidden="true">•</span>

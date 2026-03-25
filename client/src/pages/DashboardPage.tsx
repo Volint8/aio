@@ -1293,14 +1293,14 @@ const DashboardPage = () => {
                                         </button>
                                     </form>
 
-                                    {invites.length > 0 && (
+                                            {invites.length > 0 && (
                                         <div className="team-invites-list">
                                             <h4>Pending Invites</h4>
                                             {invites.map((invite) => (
                                                 <div key={invite.id} className="team-invite-row">
                                                     <div className="team-member-info">
                                                         <div>
-                                                            <strong>{invite.name || invite.email}</strong>
+                                                            <strong>{invite.name && invite.name.trim() ? invite.name : invite.email}</strong>
                                                         </div>
                                                     </div>
                                                     <div className="team-member-role">

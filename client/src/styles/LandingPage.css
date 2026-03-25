@@ -112,13 +112,11 @@
 .cta-primary {
     background: var(--primary-blue);
     color: white;
-    box-shadow: 0 10px 25px -5px rgba(29, 112, 226, 0.4);
 }
 
 .cta-primary:hover {
     background: var(--primary-hover);
     transform: translateY(-2px);
-    box-shadow: 0 15px 30px -5px rgba(29, 112, 226, 0.5);
 }
 
 .cta-secondary {
