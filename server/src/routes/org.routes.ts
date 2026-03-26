@@ -18,10 +18,6 @@ import {
     createClient,
     updateClient,
     deleteClient,
-    listProjects,
-    createProject,
-    updateProject,
-    deleteProject,
     createTag,
     listTags,
     updateTag,
@@ -57,11 +53,6 @@ router.get('/:id/clients', authenticateToken, listClients);
 router.post('/:id/clients', authenticateToken, createClient);
 router.patch('/:id/clients/:clientId', authenticateToken, updateClient);
 router.delete('/:id/clients/:clientId', authenticateToken, deleteClient);
-
-router.get('/:id/projects', authenticateToken, listProjects);
-router.post('/:id/projects', authenticateToken, createProject);
-router.patch('/:id/projects/:projectId', authenticateToken, updateProject);
-router.delete('/:id/projects/:projectId', authenticateToken, deleteProject);
 
 router.post('/:id/tags', authenticateToken, createTag);
 router.get('/:id/tags', authenticateToken, listTags);

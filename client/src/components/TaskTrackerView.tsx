@@ -35,6 +35,7 @@ interface TaskTrackerViewProps {
     onSendAlert: () => void;
     assignableUsers?: Array<{ userId: string; name: string | null; email: string }>;
     tags?: Array<{ id: string; name: string; color: string }>;
+    hideOwnerFilter?: boolean;
 }
 
 const TaskTrackerView: React.FC<TaskTrackerViewProps> = ({
@@ -45,7 +46,8 @@ const TaskTrackerView: React.FC<TaskTrackerViewProps> = ({
     onCreateTask,
     onSendAlert,
     assignableUsers = [],
-    tags = []
+    tags = [],
+    hideOwnerFilter = false
 }) => {
     const [priorityFilter, setPriorityFilter] = React.useState<string>('all');
     const [assigneeFilter, setAssigneeFilter] = React.useState<string>('all');
@@ -131,17 +133,19 @@ const TaskTrackerView: React.FC<TaskTrackerViewProps> = ({
                     <option value="HIGH">High</option>
                 </select>
 
-                <select
-                    value={assigneeFilter}
-                    onChange={(e) => setAssigneeFilter(e.target.value)}
-                    className="tracker-filter-select"
-                    style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border-color)', background: '#fff', fontSize: '0.9em', minWidth: '160px' }}
-                >
-                    <option value="all">All Owners</option>
-                    {assignableUsers.map(u => (
-                        <option key={u.userId} value={u.userId}>{u.name || u.email}</option>
-                    ))}
-                </select>
+                {!hideOwnerFilter && (
+                    <select
+                        value={assigneeFilter}
+                        onChange={(e) => setAssigneeFilter(e.target.value)}
+                        className="tracker-filter-select"
+                        style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border-color)', background: '#fff', fontSize: '0.9em', minWidth: '160px' }}
+                    >
+                        <option value="all">All Owners</option>
+                        {assignableUsers.map(u => (
+                            <option key={u.userId} value={u.userId}>{u.name || u.email}</option>
+                        ))}
+                    </select>
+                )}
 
                 <select
                     value={tagFilter}
@@ -155,7 +159,7 @@ const TaskTrackerView: React.FC<TaskTrackerViewProps> = ({
                     ))}
                 </select>
 
-                {(priorityFilter !== 'all' || assigneeFilter !== 'all' || tagFilter !== 'all') && (
+                {(priorityFilter !== 'all' || (!hideOwnerFilter && assigneeFilter !== 'all') || tagFilter !== 'all') && (
                     <button
                         onClick={() => {
                             setPriorityFilter('all');

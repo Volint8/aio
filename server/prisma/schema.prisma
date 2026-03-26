@@ -33,7 +33,6 @@ model User {
   createdAppraisals         Appraisal[]          @relation("AppraisalCreator")
   subjectAppraisals         Appraisal[]          @relation("AppraisalSubject")
   createdClients            Client[]             @relation("ClientCreator")
-  createdProjects           Project[]            @relation("ProjectCreator")
   workSubmissions           WorkSubmission[]
   notificationsSent         Notification[]       @relation("NotificationSender")
   activityLogs              ActivityLog[]
@@ -55,7 +54,6 @@ model Organization {
   okrs           Okr[]
   appraisals     Appraisal[]
   clients        Client[]
-  projects       Project[]
   notifications  Notification[]
 }
 
@@ -83,7 +81,6 @@ model Task {
   assigneeId     String?
   supporterId    String?
   tagId          String?
-  projectId      String
   deletedAt      DateTime?
   deletedById    String?
   createdAt      DateTime         @default(now())
@@ -97,13 +94,10 @@ model Task {
   submissions    WorkSubmission[]
   activityLogs   ActivityLog[]
   tag            Tag?             @relation(fields: [tagId], references: [id])
-  project        Project          @relation(fields: [projectId], references: [id])
   taskTeams      TaskTeam[]
 
   @@index([organizationId, deletedAt])
   @@index([deletedAt])
-  @@index([projectId])
-  @@index([organizationId, projectId, status, deletedAt])
 }
 
 model Comment {
@@ -278,28 +272,8 @@ model Client {
   updatedAt       DateTime     @updatedAt
   organization    Organization @relation(fields: [organizationId], references: [id])
   createdBy       User         @relation("ClientCreator", fields: [createdByUserId], references: [id])
-  projects        Project[]
 
   @@unique([organizationId, normalizedName])
-}
-
-model Project {
-  id              String       @id @default(uuid())
-  organizationId  String
-  clientId        String
-  name            String
-  normalizedName  String
-  createdByUserId String
-  visibility      String       @default("ORG_WIDE") // ORG_WIDE, CREATOR_ONLY
-  createdAt       DateTime     @default(now())
-  updatedAt       DateTime     @updatedAt
-  organization    Organization @relation(fields: [organizationId], references: [id])
-  client          Client       @relation(fields: [clientId], references: [id])
-  createdBy       User         @relation("ProjectCreator", fields: [createdByUserId], references: [id])
-  tasks           Task[]
-
-  @@unique([clientId, normalizedName])
-  @@index([organizationId])
 }
 
 model TaskTeam {

@@ -50,13 +50,6 @@ export const sendAlert = async (req: Request, res: Response) => {
         include: { user: { select: { email: true } } }
       });
       recipientEmails = members.map(m => m.user.email);
-    } else if (targetType === 'PROJECT') {
-      // Find all assignees of tasks in this project
-      const tasks = await prisma.task.findMany({
-        where: { projectId: targetId, organizationId, deletedAt: null },
-        select: { assignee: { select: { email: true } } }
-      });
-      recipientEmails = Array.from(new Set(tasks.map(t => t.assignee?.email).filter(Boolean) as string[]));
     }
 
     // Send emails
@@ -101,10 +94,7 @@ export const getNotifications = async (req: Request, res: Response) => {
         organizationId: organizationId as string,
         OR: [
           { targetType: 'INDIVIDUAL', targetId: userId },
-          ...(membership?.teamId ? [{ targetType: 'TEAM', targetId: membership.teamId }] : []),
-          // For simplicity, we'll fetch project notifications if the user is assigned to any task in that project
-          // but a more robust way would be to check project access.
-          { targetType: 'PROJECT' } 
+          ...(membership?.teamId ? [{ targetType: 'TEAM', targetId: membership.teamId }] : [])
         ]
       },
       include: {

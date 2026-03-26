@@ -158,26 +158,6 @@ interface ClientRecord {
     };
 }
 
-interface ProjectRecord {
-    id: string;
-    name: string;
-    clientId: string;
-    organizationId: string;
-    createdByUserId: string;
-    visibility: string;
-    createdAt: string;
-    client: {
-        id: string;
-        name: string;
-    };
-    createdBy?: {
-        id: string;
-        name: string | null;
-        email: string;
-    };
-    taskCount?: number;
-}
-
 type DashboardSection = 'board' | 'task-tracker' | 'team-tracker' | 'okr' | 'tracker' | 'team' | 'tags' | 'appraisals';
 type TaskFilter = 'all' | 'my' | 'pending' | 'ongoing' | 'completed' | 'overdue' | 'created' | 'in_progress' | 'recently_deleted';
 type TrackerView = 'users' | 'teams';
@@ -235,12 +215,12 @@ const DashboardPage = () => {
     const [memberStats, setMemberStats] = useState<MemberStatRecord[]>([]);
     const [teamDistribution, setTeamDistribution] = useState<TeamDistributionRecord[]>([]);
     const [clients, setClients] = useState<ClientRecord[]>([]);
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const [_projects, setProjects] = useState<ProjectRecord[]>([]);
 
     const [loading, setLoading] = useState(true);
     const [filter, setFilter] = useState<TaskFilter>(requestedFilter);
     const [assigneeFilterId, setAssigneeFilterId] = useState<string | null>(null);
+    const [ownerFilter, setOwnerFilter] = useState<string>('all');
+    const [supporterFilter, setSupporterFilter] = useState<string>('all');
     const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
     const [expandedCommentThreads, setExpandedCommentThreads] = useState<Record<string, boolean>>({});
     const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});
@@ -362,6 +342,7 @@ const DashboardPage = () => {
         status: 'OPEN'
     });
     const [newAppraisal, setNewAppraisal] = useState({ subjectUserId: '', cycle: '', summary: '' });
+    const [selectedOkrIds, setSelectedOkrIds] = useState<string[]>([]);
     const [newLink, setNewLink] = useState({ taskId: '', url: '', fileName: '' });
     const [teamForm, setTeamForm] = useState({
         name: '',
@@ -569,9 +550,8 @@ const DashboardPage = () => {
                 api.get(`/orgs/${orgId}/appraisals`)
             ]);
 
-            const [clientsRes, projectsRes] = await Promise.all([
-                api.get(`/orgs/${orgId}/clients`),
-                api.get(`/orgs/${orgId}/projects`)
+            const [clientsRes] = await Promise.all([
+                api.get(`/orgs/${orgId}/clients`)
             ]);
 
             const role = orgRes.data.userRole;
@@ -653,7 +633,6 @@ const DashboardPage = () => {
             setOkrs(okrRes.data || []);
             setAppraisals(appraisalRes.data || []);
             setClients(clientsRes.data || []);
-            setProjects(projectsRes.data || []);
 
             if (tagsRes.data?.[0]?.id) {
                 setNewTask((prev) => ({ ...prev, tagId: prev.tagId || tagsRes.data[0].id }));
@@ -908,8 +887,12 @@ const DashboardPage = () => {
     const handleCreateAppraisal = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
-            await api.post(`/orgs/${orgId}/appraisals/generate`, newAppraisal);
+            await api.post(`/orgs/${orgId}/appraisals/generate`, {
+                ...newAppraisal,
+                okrIds: selectedOkrIds.length > 0 ? selectedOkrIds : undefined
+            });
             setNewAppraisal({ subjectUserId: '', cycle: '', summary: '' });
+            setSelectedOkrIds([]);
             setShowCreateAppraisalModal(false);
             await fetchData();
         } catch (error: any) {
@@ -1188,7 +1171,7 @@ const DashboardPage = () => {
 
                 {currentSection === 'task-tracker' && (
                     <TaskTrackerView
-                        tasks={tasks}
+                        tasks={isTeamLead ? tasks.filter(t => t.assignee?.id === user?.id) : tasks}
                         filter={filter === 'recently_deleted' || filter === 'my' ? 'all' : filter === 'in_progress' ? 'ongoing' : filter === 'created' ? 'pending' : filter}
                         onFilterChange={(f) => setFilter(f === 'all' ? 'all' : f === 'pending' ? 'created' : f === 'ongoing' ? 'in_progress' : f === 'completed' ? 'completed' : f === 'overdue' ? 'overdue' : 'all')}
                         onTaskClick={(task) => handleOpenEditTask(task)}
@@ -1196,6 +1179,7 @@ const DashboardPage = () => {
                         onSendAlert={() => setShowSendAlertModal(true)}
                         assignableUsers={assignableUsers.map(m => ({ userId: m.userId, name: m.user.name, email: m.user.email }))}
                         tags={tags}
+                        hideOwnerFilter={isTeamLead}
                     />
                 )}
 
@@ -1374,8 +1358,59 @@ const DashboardPage = () => {
 
                         <div className="team-members-section">
                             <h3>{isAdmin ? 'All Members' : 'Team Members'}</h3>
+                            
+                            <div style={{ display: 'flex', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' }}>
+                                <select
+                                    value={ownerFilter}
+                                    onChange={(e) => setOwnerFilter(e.target.value)}
+                                    style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border-color)', background: '#fff', fontSize: '0.9em', minWidth: '160px' }}
+                                >
+                                    <option value="all">All Owners</option>
+                                    {(organization?.members || []).filter((member) => member.role !== 'ADMIN' && member.userId !== user?.id).map((member) => (
+                                        <option key={member.userId} value={member.userId}>{member.user.name || member.user.email}</option>
+                                    ))}
+                                </select>
+
+                                <select
+                                    value={supporterFilter}
+                                    onChange={(e) => setSupporterFilter(e.target.value)}
+                                    style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border-color)', background: '#fff', fontSize: '0.9em', minWidth: '160px' }}
+                                >
+                                    <option value="all">All Supporters</option>
+                                    {(organization?.members || []).filter((member) => member.role !== 'ADMIN' && member.userId !== user?.id).map((member) => (
+                                        <option key={member.userId} value={member.userId}>{member.user.name || member.user.email}</option>
+                                    ))}
+                                </select>
+
+                                {(ownerFilter !== 'all' || supporterFilter !== 'all') && (
+                                    <button
+                                        onClick={() => {
+                                            setOwnerFilter('all');
+                                            setSupporterFilter('all');
+                                        }}
+                                        className="btn-secondary"
+                                        style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid var(--border-color)', background: '#fff', fontSize: '0.9em', cursor: 'pointer' }}
+                                    >
+                                        Clear Filters
+                                    </button>
+                                )}
+                            </div>
+
                             <div className="team-members-list">
-                                {(organization?.members || []).filter((member) => member.role !== 'ADMIN').map((member) => (
+                                {(organization?.members || [])
+                                    .filter((member) => {
+                                        // Exclude ADMIN and current user
+                                        if (member.role === 'ADMIN' || member.userId === user?.id) return false;
+                                        
+                                        // Apply owner filter - show members who are assignees on tasks
+                                        if (ownerFilter !== 'all' && member.userId !== ownerFilter) return false;
+                                        
+                                        // Apply supporter filter - show members who are supporters on tasks
+                                        if (supporterFilter !== 'all' && member.userId !== supporterFilter) return false;
+                                        
+                                        return true;
+                                    })
+                                    .map((member) => (
                                     <div
                                         key={member.id}
                                         className="team-member-row"
@@ -1465,7 +1500,16 @@ const DashboardPage = () => {
 
                 {currentSection === 'appraisals' && isAdmin && (
                     <div className="tasks-section">
-                        <div className="tasks-header"><h2>Appraisals</h2></div>
+                        <div className="tasks-header">
+                            <h2>Appraisals</h2>
+                            <button className="btn-primary" onClick={() => setShowCreateAppraisalModal(true)}>
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                    <line x1="12" y1="5" x2="12" y2="19"></line>
+                                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                                </svg>
+                                Generate Appraisal
+                            </button>
+                        </div>
                         <div className="tasks-list">
                             {appraisals.map((appraisal: any) => (
                                 <div key={appraisal.id} className="task-card" style={{ padding: '24px' }}>
@@ -2781,6 +2825,41 @@ const DashboardPage = () => {
                             <div className="form-group">
                                 <label>Summary</label>
                                 <textarea rows={3} value={newAppraisal.summary} onChange={(e) => setNewAppraisal({ ...newAppraisal, summary: e.target.value })} placeholder="Optional summary" />
+                            </div>
+                            <div className="form-group">
+                                <label>OKRs (Optional)</label>
+                                <div style={{ maxHeight: 150, overflowY: 'auto', border: '1px solid var(--border-color)', borderRadius: 8, padding: 8 }}>
+                                    {okrs.length > 0 ? (
+                                        okrs.map((okr) => (
+                                            <label key={okr.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', cursor: 'pointer' }}>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={selectedOkrIds.includes(okr.id)}
+                                                    onChange={(e) => {
+                                                        const checked = e.target.checked;
+                                                        setSelectedOkrIds((prev) =>
+                                                            checked
+                                                                ? [...prev, okr.id]
+                                                                : prev.filter((id) => id !== okr.id)
+                                                        );
+                                                    }}
+                                                />
+                                                <span>{okr.title} ({new Date(okr.periodStart).toLocaleDateString()} - {new Date(okr.periodEnd).toLocaleDateString()})</span>
+                                            </label>
+                                        ))
+                                    ) : (
+                                        <p style={{ fontSize: '0.85em', color: 'var(--text-muted)', margin: '8px 0' }}>No OKRs available</p>
+                                    )}
+                                </div>
+                                {selectedOkrIds.length > 0 && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setSelectedOkrIds([])}
+                                        style={{ marginTop: '8px', fontSize: '0.8em', color: 'var(--text-muted)', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}
+                                    >
+                                        Clear OKR Selection
+                                    </button>
+                                )}
                             </div>
                             <div className="modal-actions">
                                 <button type="button" onClick={() => setShowCreateAppraisalModal(false)} className="btn-secondary">Cancel</button>
