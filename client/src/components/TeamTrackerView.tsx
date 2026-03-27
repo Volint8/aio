@@ -1,4 +1,5 @@
 import React from 'react';
+import { useAuth } from '../context/AuthContext';
 import '../styles/TrackerView.css';
 
 interface Task {
@@ -36,8 +37,8 @@ interface TeamTrackerViewProps {
     members: TeamMember[];
     selectedMemberId: string | null;
     onMemberSelect: (memberId: string) => void;
-    filter: 'all' | 'pending' | 'ongoing' | 'completed' | 'overdue';
-    onFilterChange: (filter: 'all' | 'pending' | 'ongoing' | 'completed' | 'overdue') => void;
+    filter: 'all' | 'my' | 'supporting' | 'pending' | 'ongoing' | 'completed' | 'overdue';
+    onFilterChange: (filter: 'all' | 'my' | 'supporting' | 'pending' | 'ongoing' | 'completed' | 'overdue') => void;
     onTaskClick: (task: Task) => void;
     onCreateTask: () => void;
     onSendAlert: () => void;
@@ -56,11 +57,15 @@ const TeamTrackerView: React.FC<TeamTrackerViewProps> = ({
     onSendAlert,
     tags = []
 }) => {
+    const { user } = useAuth();
+    const userId = user?.id || '';
     const [priorityFilter, setPriorityFilter] = React.useState<string>('all');
     const [tagFilter, setTagFilter] = React.useState<string>('all');
 
-    const filters: Array<{ key: 'all' | 'pending' | 'ongoing' | 'completed' | 'overdue'; label: string }> = [
+    const filters: Array<{ key: 'all' | 'my' | 'supporting' | 'pending' | 'ongoing' | 'completed' | 'overdue'; label: string }> = [
         { key: 'all', label: 'All Tasks' },
+        { key: 'my', label: 'My Tasks' },
+        { key: 'supporting', label: 'Supporting' },
         { key: 'pending', label: 'Pending' },
         { key: 'ongoing', label: 'In Progress' },
         { key: 'completed', label: 'Completed' },
@@ -78,6 +83,12 @@ const TeamTrackerView: React.FC<TeamTrackerViewProps> = ({
         if (filter === 'overdue') {
             return task.status !== 'COMPLETED' && task.dueDate && new Date(task.dueDate) < new Date();
         }
+        if (filter === 'my') {
+            return task.assignee?.id === userId;
+        }
+        if (filter === 'supporting') {
+            return task.supporter?.id === userId;
+        }
 
         // Priority filter
         if (priorityFilter !== 'all' && task.priority !== priorityFilter) return false;
@@ -92,7 +103,15 @@ const TeamTrackerView: React.FC<TeamTrackerViewProps> = ({
         return name.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2);
     };
 
-    const getStatusLabel = (status: string) => {
+    const getStatusLabel = (status: string, dueDate: string | null) => {
+        // Check if overdue first (automatic status)
+        if (status !== 'COMPLETED' && dueDate && new Date(dueDate) < new Date()) {
+            return 'Overdue';
+        }
+        // Map status to user-friendly labels
+        if (status === 'CREATED') return 'Not Started';
+        if (status === 'IN_PROGRESS') return 'In Progress';
+        if (status === 'COMPLETED') return 'Completed';
         return status.replace('_', ' ').toLowerCase();
     };
 
@@ -220,8 +239,8 @@ const TeamTrackerView: React.FC<TeamTrackerViewProps> = ({
                                         </div>
                                     </td>
                                     <td>
-                                        <span className={`status-pill ${task.status.toLowerCase()}`}>
-                                            {getStatusLabel(task.status)}
+                                        <span className={`status-pill ${task.status === 'CREATED' ? 'not-started' : task.status === 'IN_PROGRESS' ? 'in_progress' : task.status === 'COMPLETED' ? 'completed' : task.status.toLowerCase()}`}>
+                                            {getStatusLabel(task.status, task.dueDate)}
                                         </span>
                                     </td>
                                     <td>

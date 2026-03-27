@@ -159,7 +159,7 @@ interface ClientRecord {
 }
 
 type DashboardSection = 'board' | 'task-tracker' | 'team-tracker' | 'okr' | 'tracker' | 'team' | 'tags' | 'appraisals';
-type TaskFilter = 'all' | 'my' | 'pending' | 'ongoing' | 'completed' | 'overdue' | 'created' | 'in_progress' | 'recently_deleted';
+type TaskFilter = 'all' | 'my' | 'supporting' | 'pending' | 'ongoing' | 'completed' | 'overdue' | 'created' | 'in_progress' | 'recently_deleted';
 type TrackerView = 'users' | 'teams';
 
 interface MemberStatRecord {
@@ -222,6 +222,7 @@ const DashboardPage = () => {
     const [ownerFilter, setOwnerFilter] = useState<string>('all');
     const [supporterFilter, setSupporterFilter] = useState<string>('all');
     const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+    const [menuOpenTaskId, setMenuOpenTaskId] = useState<string | null>(null);
     const [expandedCommentThreads, setExpandedCommentThreads] = useState<Record<string, boolean>>({});
     const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});
     const [submittingCommentTaskId, setSubmittingCommentTaskId] = useState<string | null>(null);
@@ -482,6 +483,20 @@ const DashboardPage = () => {
         }
     }, [selectedTaskId]);
 
+    // Close menu when clicking outside
+    useEffect(() => {
+        const handleClickOutside = () => {
+            if (menuOpenTaskId) {
+                setMenuOpenTaskId(null);
+            }
+        };
+
+        document.addEventListener('click', handleClickOutside);
+        return () => {
+            document.removeEventListener('click', handleClickOutside);
+        };
+    }, [menuOpenTaskId]);
+
     useEffect(() => {
         if (!orgId) {
             // Auto-select the first organization
@@ -610,6 +625,8 @@ const DashboardPage = () => {
 
             if (filter === 'my') {
                 filteredTasks = filteredTasks.filter((t: Task) => t.assignee?.id === user?.id);
+            } else if (filter === 'supporting') {
+                filteredTasks = filteredTasks.filter((t: Task) => t.supporter?.id === user?.id);
             } else if (filter === 'overdue') {
                 const now = new Date();
                 filteredTasks = filteredTasks.filter((t: Task) =>
@@ -1172,9 +1189,9 @@ const DashboardPage = () => {
                 {currentSection === 'task-tracker' && (
                     <TaskTrackerView
                         tasks={isTeamLead ? tasks.filter(t => t.assignee?.id === user?.id) : tasks}
-                        filter={filter === 'recently_deleted' || filter === 'my' ? 'all' : filter === 'in_progress' ? 'ongoing' : filter === 'created' ? 'pending' : filter}
-                        onFilterChange={(f) => setFilter(f === 'all' ? 'all' : f === 'pending' ? 'created' : f === 'ongoing' ? 'in_progress' : f === 'completed' ? 'completed' : f === 'overdue' ? 'overdue' : 'all')}
-                        onTaskClick={(task) => handleOpenEditTask(task)}
+                        filter={filter === 'recently_deleted' || filter === 'my' || filter === 'supporting' ? 'all' : filter === 'in_progress' ? 'ongoing' : filter === 'created' ? 'pending' : filter}
+                        onFilterChange={(f) => setFilter(f === 'all' ? 'all' : f === 'pending' ? 'created' : f === 'ongoing' ? 'in_progress' : f === 'completed' ? 'completed' : f === 'overdue' ? 'overdue' : f === 'supporting' ? 'supporting' : 'all')}
+                        onTaskClick={(task) => setSelectedTaskId(task.id)}
                         onCreateTask={() => setShowCreateTaskModal(true)}
                         onSendAlert={() => setShowSendAlertModal(true)}
                         assignableUsers={assignableUsers.map(m => ({ userId: m.userId, name: m.user.name, email: m.user.email }))}
@@ -1185,7 +1202,7 @@ const DashboardPage = () => {
 
                 {currentSection === 'team-tracker' && canTrackTeam && (
                     <TeamTrackerView
-                        tasks={tasks}
+                        tasks={isTeamLead ? tasks.filter(t => t.assignee?.id !== user?.id) : tasks}
                         members={(organization?.members || [])
                             .filter(m => m.userId !== user?.id)
                             .map(m => ({
@@ -1194,9 +1211,9 @@ const DashboardPage = () => {
                             }))}
                         selectedMemberId={assigneeFilterId}
                         onMemberSelect={(id) => setAssigneeFilterId(id)}
-                        filter={filter === 'recently_deleted' || filter === 'my' ? 'all' : filter === 'in_progress' ? 'ongoing' : filter === 'created' ? 'pending' : filter}
-                        onFilterChange={(f) => setFilter(f === 'all' ? 'all' : f === 'pending' ? 'created' : f === 'ongoing' ? 'in_progress' : f === 'completed' ? 'completed' : f === 'overdue' ? 'overdue' : 'all')}
-                        onTaskClick={(task) => handleOpenEditTask(task)}
+                        filter={filter === 'recently_deleted' || filter === 'my' || filter === 'supporting' ? 'all' : filter === 'in_progress' ? 'ongoing' : filter === 'created' ? 'pending' : filter}
+                        onFilterChange={(f) => setFilter(f === 'all' ? 'all' : f === 'pending' ? 'created' : f === 'ongoing' ? 'in_progress' : f === 'completed' ? 'completed' : f === 'overdue' ? 'overdue' : f === 'supporting' ? 'supporting' : 'all')}
+                        onTaskClick={(task) => setSelectedTaskId(task.id)}
                         onCreateTask={() => setShowCreateTaskModal(true)}
                         onSendAlert={() => setShowSendAlertModal(true)}
                         tags={tags}
@@ -1672,7 +1689,10 @@ const DashboardPage = () => {
                                 <div className="filter-group">
                                     <button type="button" className={`btn-filter ${filter === 'all' ? 'active' : ''}`} onClick={() => handleFilterClick('all')}>All</button>
                                     {!isAdmin && (
-                                        <button type="button" className={`btn-filter ${filter === 'my' ? 'active' : ''}`} onClick={() => handleFilterClick('my')}>My Tasks</button>
+                                        <>
+                                            <button type="button" className={`btn-filter ${filter === 'my' ? 'active' : ''}`} onClick={() => handleFilterClick('my')}>My Tasks</button>
+                                            <button type="button" className={`btn-filter ${filter === 'supporting' ? 'active' : ''}`} onClick={() => handleFilterClick('supporting')}>Supporting</button>
+                                        </>
                                     )}
                                     <button type="button" className={`btn-filter ${filter === 'created' ? 'active' : ''}`} onClick={() => handleFilterClick('created')}>Pending</button>
                                     <button type="button" className={`btn-filter ${filter === 'in_progress' ? 'active' : ''}`} onClick={() => handleFilterClick('in_progress')}>Ongoing</button>
@@ -1697,34 +1717,35 @@ const DashboardPage = () => {
                             <div className="tasks-workspace">
                                 <div className="tasks-list">
                                     {tasks.map((task) => (
-                                        <button key={task.id} type="button" className={`task-card task-card-compact ${selectedTaskId === task.id ? 'active' : ''} ${isOverdue(task) ? 'overdue' : ''}`} onClick={() => setSelectedTaskId(task.id)}>
-                                            <div className="task-header">
-                                                <h3>{task.title}</h3>
-                                                <div className="task-badges">
-                                                    <span className={`priority-badge ${task.priority?.toLowerCase() || ''}`}>{task.priority}</span>
-                                                    <span className={`status-badge ${task.status?.toLowerCase() || ''}`}>{task.status.replace('_', ' ')}</span>
-                                                    {isOverdue(task) && (
-                                                        <span className="status-badge overdue" title={`Due: ${new Date(task.dueDate!).toLocaleDateString()} (${getDaysOverdue(task)} days overdue)`}>
-                                                            Overdue
-                                                        </span>
-                                                    )}
-                                                    {task.tag && (
-                                                        <span
-                                                            className="priority-badge low"
-                                                            style={{ borderColor: task.tag.color, color: task.tag.color, cursor: tagSourceMap[task.tag.id] ? 'pointer' : 'default' }}
-                                                            title={tagSourceMap[task.tag.id] ? `Objective: ${tagSourceMap[task.tag.id].okrTitle} | KR: ${tagSourceMap[task.tag.id].krTitle}` : ''}
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                if (task.tag && tagSourceMap[task.tag.id]) {
-                                                                    navigate('/dashboard?section=okr');
-                                                                }
-                                                            }}
-                                                        >
-                                                            {task.tag.name}{task.tag && tagSourceMap[task.tag.id] && ' →'}
-                                                        </span>
-                                                    )}
+                                        <div key={task.id} className="task-card-wrapper" style={{ position: 'relative' }}>
+                                            <button key={task.id} type="button" className={`task-card task-card-compact ${selectedTaskId === task.id ? 'active' : ''} ${isOverdue(task) ? 'overdue' : ''}`} onClick={() => setSelectedTaskId(task.id)}>
+                                                <div className="task-header">
+                                                    <h3>{task.title}</h3>
+                                                    <div className="task-badges">
+                                                        <span className={`priority-badge ${task.priority?.toLowerCase() || ''}`}>{task.priority}</span>
+                                                        <span className={`status-badge ${task.status?.toLowerCase() || ''}`}>{task.status.replace('_', ' ')}</span>
+                                                        {isOverdue(task) && (
+                                                            <span className="status-badge overdue" title={`Due: ${new Date(task.dueDate!).toLocaleDateString()} (${getDaysOverdue(task)} days overdue)`}>
+                                                                Overdue
+                                                            </span>
+                                                        )}
+                                                        {task.tag && (
+                                                            <span
+                                                                className="priority-badge low"
+                                                                style={{ borderColor: task.tag.color, color: task.tag.color, cursor: tagSourceMap[task.tag.id] ? 'pointer' : 'default' }}
+                                                                title={tagSourceMap[task.tag.id] ? `Objective: ${tagSourceMap[task.tag.id].okrTitle} | KR: ${tagSourceMap[task.tag.id].krTitle}` : ''}
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    if (task.tag && tagSourceMap[task.tag.id]) {
+                                                                        navigate('/dashboard?section=okr');
+                                                                    }
+                                                                }}
+                                                            >
+                                                                {task.tag.name}{task.tag && tagSourceMap[task.tag.id] && ' →'}
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                 </div>
-                                            </div>
                                             <div className="task-meta">
                                                 {isDeletedView ? (
                                                     <>
@@ -1740,8 +1761,117 @@ const DashboardPage = () => {
                                                     </>
                                                 )}
                                             </div>
+                                            <button
+                                                type="button"
+                                                className="task-menu-btn"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setMenuOpenTaskId(menuOpenTaskId === task.id ? null : task.id);
+                                                }}
+                                                style={{
+                                                    position: 'absolute',
+                                                    top: '12px',
+                                                    right: '12px',
+                                                    background: 'transparent',
+                                                    border: 'none',
+                                                    cursor: 'pointer',
+                                                    padding: '4px',
+                                                    borderRadius: '4px',
+                                                    color: 'var(--text-muted)',
+                                                    fontSize: '20px',
+                                                    lineHeight: '1'
+                                                }}
+                                            >
+                                                ⋮
+                                            </button>
                                         </button>
-                                    ))}
+                                        
+                                        {menuOpenTaskId === task.id && (
+                                            <div
+                                                className="task-menu-dropdown"
+                                                onClick={(e) => e.stopPropagation()}
+                                                style={{
+                                                    position: 'absolute',
+                                                    top: '40px',
+                                                    right: '12px',
+                                                    background: 'white',
+                                                    border: '1px solid var(--border-color)',
+                                                    borderRadius: '8px',
+                                                    boxShadow: 'var(--shadow-lg)',
+                                                    zIndex: 100,
+                                                    minWidth: '160px'
+                                                }}
+                                            >
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        handleOpenEditTask(task);
+                                                        setMenuOpenTaskId(null);
+                                                    }}
+                                                    style={{
+                                                        display: 'block',
+                                                        width: '100%',
+                                                        padding: '10px 16px',
+                                                        background: 'none',
+                                                        border: 'none',
+                                                        textAlign: 'left',
+                                                        cursor: 'pointer',
+                                                        fontSize: '0.9em',
+                                                        color: 'var(--text-main)',
+                                                        borderRadius: '8px 8px 0 0'
+                                                    }}
+                                                >
+                                                    Edit
+                                                </button>
+                                                {task.status !== 'COMPLETED' && (
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            handleUpdateTaskStatus(task.id, 'COMPLETED');
+                                                            setMenuOpenTaskId(null);
+                                                        }}
+                                                        style={{
+                                                            display: 'block',
+                                                            width: '100%',
+                                                            padding: '10px 16px',
+                                                            background: 'none',
+                                                            border: 'none',
+                                                            textAlign: 'left',
+                                                            cursor: 'pointer',
+                                                            fontSize: '0.9em',
+                                                            color: 'var(--text-main)',
+                                                            borderTop: '1px solid var(--border-color)'
+                                                        }}
+                                                    >
+                                                        Mark as Complete
+                                                    </button>
+                                                )}
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        handleDeleteTask(task.id);
+                                                        setMenuOpenTaskId(null);
+                                                    }}
+                                                    style={{
+                                                        display: 'block',
+                                                        width: '100%',
+                                                        padding: '10px 16px',
+                                                        background: 'none',
+                                                        border: 'none',
+                                                        textAlign: 'left',
+                                                        cursor: 'pointer',
+                                                        fontSize: '0.9em',
+                                                        color: '#DC2626',
+                                                        borderTop: '1px solid var(--border-color)',
+                                                        borderRadius: '0 0 8px 8px'
+                                                    }}
+                                                >
+                                                    Delete
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
+                                ))}
                                 </div>
 
                                 <div 
