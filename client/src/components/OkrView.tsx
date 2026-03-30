@@ -93,11 +93,9 @@ const OkrView: React.FC<OkrViewProps> = ({
                         )}
 
                         <div className="okr-card-meta">
-                            <span className="okr-meta-item">
-                                <strong>Start:</strong> {new Date(okr.periodStart).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
-                            </span>
-                            <span className="okr-meta-item">
-                                <strong>End:</strong> {new Date(okr.periodEnd).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                            <span className="okr-meta-item" style={{ whiteSpace: 'nowrap' }}>
+                                <strong>{okr.status}</strong>
+                                <span>({new Date(okr.periodStart).toLocaleDateString(undefined, { day: 'numeric', month: 'numeric', year: 'numeric' })} - {new Date(okr.periodEnd).toLocaleDateString(undefined, { day: 'numeric', month: 'numeric', year: 'numeric' })})</span>
                             </span>
                         </div>
 

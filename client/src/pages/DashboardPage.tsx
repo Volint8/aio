@@ -522,6 +522,13 @@ const DashboardPage = () => {
         return name.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2);
     };
 
+    const formatRole = (role: string) => {
+        if (role === 'ADMIN') return 'Admin';
+        if (role === 'TEAM_LEAD') return 'Team Lead';
+        if (role === 'MEMBER') return 'Team Member';
+        return role;
+    };
+
     const handleStatClick = (filterValue: TaskFilter) => {
         const params = new URLSearchParams(location.search);
         params.set('section', 'task-tracker');
@@ -1189,8 +1196,8 @@ const DashboardPage = () => {
                 {currentSection === 'task-tracker' && (
                     <TaskTrackerView
                         tasks={isTeamLead ? tasks.filter(t => t.assignee?.id === user?.id) : tasks}
-                        filter={filter === 'recently_deleted' || filter === 'my' || filter === 'supporting' ? 'all' : filter === 'in_progress' ? 'ongoing' : filter === 'created' ? 'pending' : filter}
-                        onFilterChange={(f) => setFilter(f === 'all' ? 'all' : f === 'pending' ? 'created' : f === 'ongoing' ? 'in_progress' : f === 'completed' ? 'completed' : f === 'overdue' ? 'overdue' : f === 'supporting' ? 'supporting' : 'all')}
+                        filter={filter}
+                        onFilterChange={(f) => setFilter(f === 'all' ? 'all' : f === 'pending' ? 'created' : f === 'ongoing' ? 'in_progress' : f === 'completed' ? 'completed' : f === 'overdue' ? 'overdue' : f === 'supporting' ? 'supporting' : 'my')}
                         onTaskClick={(task) => setSelectedTaskId(task.id)}
                         onCreateTask={() => setShowCreateTaskModal(true)}
                         onSendAlert={() => setShowSendAlertModal(true)}
@@ -1211,8 +1218,8 @@ const DashboardPage = () => {
                             }))}
                         selectedMemberId={assigneeFilterId}
                         onMemberSelect={(id) => setAssigneeFilterId(id)}
-                        filter={filter === 'recently_deleted' || filter === 'my' || filter === 'supporting' ? 'all' : filter === 'in_progress' ? 'ongoing' : filter === 'created' ? 'pending' : filter}
-                        onFilterChange={(f) => setFilter(f === 'all' ? 'all' : f === 'pending' ? 'created' : f === 'ongoing' ? 'in_progress' : f === 'completed' ? 'completed' : f === 'overdue' ? 'overdue' : f === 'supporting' ? 'supporting' : 'all')}
+                        filter={filter}
+                        onFilterChange={(f) => setFilter(f === 'all' ? 'all' : f === 'pending' ? 'created' : f === 'ongoing' ? 'in_progress' : f === 'completed' ? 'completed' : f === 'overdue' ? 'overdue' : f === 'supporting' ? 'supporting' : 'my')}
                         onTaskClick={(task) => setSelectedTaskId(task.id)}
                         onCreateTask={() => setShowCreateTaskModal(true)}
                         onSendAlert={() => setShowSendAlertModal(true)}
@@ -1315,7 +1322,7 @@ const DashboardPage = () => {
                                                                 Resend
                                                             </button>
                                                         )}
-                                                        <span className="role-badge low">{invite.role}</span>
+                                                        <span className="role-badge low">{formatRole(invite.role)}</span>
                                                         <span className={`role-badge ${invite.status?.toLowerCase() || ''}`}>{invite.status}</span>
                                                     </div>
                                                 </div>
@@ -1445,7 +1452,7 @@ const DashboardPage = () => {
                                             </div>
                                             <div>
                                                 <strong>{member.user.name || member.user.email}</strong>
-                                                <span>{member.role}</span>
+                                                <span>{formatRole(member.role)}</span>
                                             </div>
                                         </div>
                                         <div className="team-member-role">
@@ -2563,14 +2570,24 @@ const DashboardPage = () => {
                                         }));
                                     }}
                                     required
+                                    style={{ maxHeight: '200px', overflowY: 'auto' }}
                                 >
                                     <option value="">Select lead</option>
-                                    {teamLeadUsers.map((member) => (
-                                        <option key={member.user.id} value={member.user.id}>
-                                            {member.user.name || member.user.email}
-                                        </option>
-                                    ))}
+                                    {teamLeadUsers.length > 0 ? (
+                                        teamLeadUsers.map((member) => (
+                                            <option key={member.user.id} value={member.user.id}>
+                                                {member.user.name || member.user.email}
+                                            </option>
+                                        ))
+                                    ) : (
+                                        <option disabled value="">No team leads available</option>
+                                    )}
                                 </select>
+                                {teamLeadUsers.length === 0 && (
+                                    <small style={{ color: '#DC2626', display: 'block', marginTop: '4px' }}>
+                                        No users with Team Lead role. Please invite someone as a Team Lead first.
+                                    </small>
+                                )}
                             </div>
                             <div className="form-group">
                                 <label>Members</label>
@@ -2579,7 +2596,7 @@ const DashboardPage = () => {
                                         <label key={member.user.id} className="team-member-row" style={{ cursor: 'pointer' }}>
                                             <div className="team-member-info">
                                                 <strong>{member.user.name || member.user.email}</strong>
-                                                <span>{member.role}</span>
+                                                <span>{formatRole(member.role)}</span>
                                             </div>
                                             <input
                                                 type="checkbox"
@@ -2623,12 +2640,21 @@ const DashboardPage = () => {
                                     required
                                 >
                                     <option value="">Select lead</option>
-                                    {teamLeadUsers.map((member) => (
-                                        <option key={member.user.id} value={member.user.id}>
-                                            {member.user.name || member.user.email}
-                                        </option>
-                                    ))}
+                                    {teamLeadUsers.length > 0 ? (
+                                        teamLeadUsers.map((member) => (
+                                            <option key={member.user.id} value={member.user.id}>
+                                                {member.user.name || member.user.email}
+                                            </option>
+                                        ))
+                                    ) : (
+                                        <option disabled value="">No team leads available</option>
+                                    )}
                                 </select>
+                                {teamLeadUsers.length === 0 && (
+                                    <small style={{ color: '#DC2626', display: 'block', marginTop: '4px' }}>
+                                        No users with Team Lead role. Please invite someone as a Team Lead first.
+                                    </small>
+                                )}
                             </div>
                             <div className="form-group">
                                 <label>Members</label>
@@ -2637,7 +2663,7 @@ const DashboardPage = () => {
                                         <label key={member.user.id} className="team-member-row" style={{ cursor: 'pointer' }}>
                                             <div className="team-member-info">
                                                 <strong>{member.user.name || member.user.email}</strong>
-                                                <span>{member.role}</span>
+                                                <span>{formatRole(member.role)}</span>
                                             </div>
                                             <input
                                                 type="checkbox"

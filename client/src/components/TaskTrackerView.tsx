@@ -29,7 +29,7 @@ interface Task {
 
 interface TaskTrackerViewProps {
     tasks: Task[];
-    filter: 'all' | 'my' | 'supporting' | 'pending' | 'ongoing' | 'completed' | 'overdue';
+    filter: 'all' | 'my' | 'supporting' | 'pending' | 'ongoing' | 'completed' | 'overdue' | 'created' | 'in_progress' | 'recently_deleted';
     onFilterChange: (filter: 'all' | 'my' | 'supporting' | 'pending' | 'ongoing' | 'completed' | 'overdue') => void;
     onTaskClick: (task: Task) => void;
     onCreateTask: () => void;
