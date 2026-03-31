@@ -72,7 +72,7 @@ const BoardView: React.FC<BoardViewProps> = ({
 
     // Count team members and team leads (for Admin)
     const teamMembersCount = organizationMembers.filter(m => m.role !== 'ADMIN').length;
-    const teamLeadsCount = organizationMembers.filter(m => m.role === 'TEAM_LEAD').length;
+    // const teamLeadsCount = organizationMembers.filter(m => m.role === 'TEAM_LEAD').length;
     const teamsCount = teamDistribution.length;
 
     // Calculate individual stats (current user)
