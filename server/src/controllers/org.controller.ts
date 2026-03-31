@@ -477,6 +477,35 @@ export const resendInvite = async (req: Request, res: Response) => {
   }
 };
 
+export const deleteInvite = async (req: Request, res: Response) => {
+  try {
+    const requesterUserId = (req as any).user.userId as string;
+    const organizationId = req.params.id as string;
+    const inviteId = req.params.inviteId as string;
+
+    const isAdmin = await requireAdmin(requesterUserId, organizationId);
+    if (!isAdmin) {
+      return res.status(403).json({ error: 'Only admins can delete invites' });
+    }
+
+    const invite = await prisma.invite.findUnique({ where: { id: inviteId } });
+    if (!invite || invite.organizationId !== organizationId) {
+      return res.status(404).json({ error: 'Invite not found' });
+    }
+
+    if (invite.status === 'ACCEPTED') {
+      return res.status(400).json({ error: 'Cannot delete accepted invites' });
+    }
+
+    await prisma.invite.delete({ where: { id: inviteId } });
+
+    return res.json({ message: 'Invite deleted' });
+  } catch (error) {
+    console.error('Delete invite error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
 export const updateMemberRole = async (req: Request, res: Response) => {
   try {
     const requesterUserId = (req as any).user.userId as string;

@@ -884,6 +884,13 @@
     background: #fff;
 }
 
+.team-invite-row .team-member-role {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
 .team-invite-row .invite-email {
     display: block;
     font-size: 0.85em;

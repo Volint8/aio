@@ -1032,6 +1032,21 @@ const DashboardPage = () => {
         }
     };
 
+    const handleDeleteInvite = async (inviteId: string) => {
+        if (!orgId) return;
+        if (!window.confirm('Delete this invite? This action cannot be undone.')) return;
+
+        try {
+            await api.delete(`/orgs/${orgId}/invites/${inviteId}`);
+            const invitesRes = await api.get(`/orgs/${orgId}/invites`);
+            setInvites(invitesRes.data || []);
+        } catch (error: any) {
+            const errorData = error.response?.data?.error;
+            const message = typeof errorData === 'object' ? errorData.message : errorData;
+            alert(message || 'Failed to delete invite');
+        }
+    };
+
     const handleCreateClient = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!orgId || !clientFormName.trim()) return;
@@ -1232,7 +1247,6 @@ const DashboardPage = () => {
                         okrs={okrs}
                         userRole={organization.userRole as 'ADMIN' | 'TEAM_LEAD' | 'MEMBER'}
                         onCreateTask={() => setShowCreateTaskModal(true)}
-                        onSendAlert={() => setShowSendAlertModal(true)}
                         onCreateOkr={() => setShowCreateOkrModal(true)}
                         onEditOkr={handleOpenEditOkr}
                         onDeleteOkr={handleDeleteOkr}
@@ -1304,7 +1318,7 @@ const DashboardPage = () => {
                                             {invites.length > 0 && (
                                         <div className="team-invites-list">
                                             <h4>Pending Invites</h4>
-                                            {invites.map((invite) => (
+                                            {invites.filter(invite => invite.status !== 'ACCEPTED').map((invite) => (
                                                 <div key={invite.id} className="team-invite-row">
                                                     <div className="team-member-info">
                                                         <div>
@@ -1312,20 +1326,29 @@ const DashboardPage = () => {
                                                         </div>
                                                     </div>
                                                     <div className="team-member-role">
-                                                        {invite.status === 'PENDING' && (
-                                                            <button
-                                                                type="button"
-                                                                className="btn-secondary"
-                                                                style={{ padding: '4px 10px', fontSize: '0.8em', marginRight: '8px' }}
-                                                                onClick={() => handleResendInvite(invite.id)}
-                                                            >
-                                                                Resend
-                                                            </button>
-                                                        )}
-                                                        <span className="role-badge low">{formatRole(invite.role)}</span>
-                                                        <span className={`role-badge ${invite.status?.toLowerCase() || ''}`}>{invite.status}</span>
-                                                    </div>
+                                                    {invite.status === 'PENDING' && (
+                                                        <button
+                                                            type="button"
+                                                            className="btn-secondary"
+                                                            style={{ padding: '4px 10px', fontSize: '0.8em', marginRight: '8px' }}
+                                                            onClick={() => handleResendInvite(invite.id)}
+                                                        >
+                                                            Resend
+                                                        </button>
+                                                    )}
+                                                    {invite.status !== 'ACCEPTED' && (
+                                                        <button
+                                                            type="button"
+                                                            className="btn-delete-small"
+                                                            onClick={() => handleDeleteInvite(invite.id)}
+                                                        >
+                                                            Delete
+                                                        </button>
+                                                    )}
+                                                    <span className="role-badge low">{formatRole(invite.role)}</span>
+                                                    <span className={`role-badge ${invite.status?.toLowerCase() || ''}`}>{invite.status}</span>
                                                 </div>
+                                            </div>
                                             ))}
                                         </div>
                                     )}
@@ -1694,10 +1717,8 @@ const DashboardPage = () => {
                                     <p className="org-subtitle" style={{ margin: 0 }}>Your tasks + your team-linked tasks</p>
                                 )}
                                 <div className="filter-group">
-                                    <button type="button" className={`btn-filter ${filter === 'all' ? 'active' : ''}`} onClick={() => handleFilterClick('all')}>All</button>
                                     {!isAdmin && (
                                         <>
-                                            <button type="button" className={`btn-filter ${filter === 'my' ? 'active' : ''}`} onClick={() => handleFilterClick('my')}>My Tasks</button>
                                             <button type="button" className={`btn-filter ${filter === 'supporting' ? 'active' : ''}`} onClick={() => handleFilterClick('supporting')}>Supporting</button>
                                         </>
                                     )}

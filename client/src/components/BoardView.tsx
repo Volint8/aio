@@ -71,8 +71,7 @@ const BoardView: React.FC<BoardViewProps> = ({
     );
 
     // Count team members and team leads (for Admin)
-    // @ts-ignore - teamMembersCount kept for potential future use
-    const teamMembersCount = organizationMembers.filter(m => m.role === 'MEMBER').length;
+    const teamMembersCount = organizationMembers.filter(m => m.role !== 'ADMIN').length;
     const teamLeadsCount = organizationMembers.filter(m => m.role === 'TEAM_LEAD').length;
     const teamsCount = teamDistribution.length;
 
@@ -82,6 +81,13 @@ const BoardView: React.FC<BoardViewProps> = ({
         || { userId: '', name: 'User', stats: { pending: 0, ongoing: 0, completed: 0, overdue: 0, total: 0 } };
 
     const canViewTeam = userRole === 'ADMIN' || userRole === 'TEAM_LEAD';
+    const handleCardKeyDown = (action?: () => void) => (event: React.KeyboardEvent<HTMLDivElement>) => {
+        if (!action) return;
+        if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            action();
+        }
+    };
 
     return (
         <div className="board-view">
@@ -97,50 +103,103 @@ const BoardView: React.FC<BoardViewProps> = ({
                     <div className="board-panel-header">
                         <h2>{userRole === 'ADMIN' ? 'Overview' : 'Team Overview'}</h2>
                         {userRole === 'ADMIN' && (
-                            <button className="board-create-btn" onClick={() => onNavigate?.('/dashboard?section=team')}>
-                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                                    <line x1="12" y1="5" x2="12" y2="19"></line>
-                                    <line x1="5" y1="12" x2="19" y2="12"></line>
-                                </svg>
-                                Create Team
-                            </button>
+                            <div className="board-panel-actions">
+                                <button className="board-create-btn secondary" onClick={() => onNavigate?.('/dashboard?section=team')}>
+                                    Invite
+                                </button>
+                                <button className="board-create-btn" onClick={() => onNavigate?.('/dashboard?section=team')}>
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                        <line x1="12" y1="5" x2="12" y2="19"></line>
+                                        <line x1="5" y1="12" x2="19" y2="12"></line>
+                                    </svg>
+                                    Create Team
+                                </button>
+                            </div>
                         )}
                     </div>
                     <div className="board-stats-grid">
                         {userRole === 'ADMIN' ? (
                             <>
-                                <div className="board-stat-card">
+                                <div
+                                    className="board-stat-card clickable"
+                                    role="button"
+                                    tabIndex={0}
+                                    onClick={() => onNavigate?.('/dashboard?section=team')}
+                                    onKeyDown={handleCardKeyDown(() => onNavigate?.('/dashboard?section=team'))}
+                                >
                                     <span className="board-stat-label">Teams</span>
                                     <span className="board-stat-value">{teamsCount.toString().padStart(2, '0')}</span>
                                 </div>
-                                <div className="board-stat-card">
-                                    <span className="board-stat-label">Team Leads</span>
-                                    <span className="board-stat-value">{teamLeadsCount.toString().padStart(2, '0')}</span>
+                                <div
+                                    className="board-stat-card clickable"
+                                    role="button"
+                                    tabIndex={0}
+                                    onClick={() => onNavigate?.('/dashboard?section=team')}
+                                    onKeyDown={handleCardKeyDown(() => onNavigate?.('/dashboard?section=team'))}
+                                >
+                                    <span className="board-stat-label">Members</span>
+                                    <span className="board-stat-value">{teamMembersCount.toString().padStart(2, '0')}</span>
                                 </div>
-                                <div className="board-stat-card">
+                                <div
+                                    className="board-stat-card clickable"
+                                    role="button"
+                                    tabIndex={0}
+                                    onClick={() => onNavigate?.('/dashboard?section=task-tracker&filter=ongoing')}
+                                    onKeyDown={handleCardKeyDown(() => onNavigate?.('/dashboard?section=task-tracker&filter=ongoing'))}
+                                >
                                     <span className="board-stat-label">Ongoing Tasks</span>
                                     <span className="board-stat-value">{teamTotals.ongoing.toString().padStart(2, '0')}</span>
                                 </div>
-                                <div className="board-stat-card">
+                                <div
+                                    className="board-stat-card clickable"
+                                    role="button"
+                                    tabIndex={0}
+                                    onClick={() => onNavigate?.('/dashboard?section=task-tracker&filter=completed')}
+                                    onKeyDown={handleCardKeyDown(() => onNavigate?.('/dashboard?section=task-tracker&filter=completed'))}
+                                >
                                     <span className="board-stat-label">Completed Tasks</span>
                                     <span className="board-stat-value">{teamTotals.completed.toString().padStart(2, '0')}</span>
                                 </div>
                             </>
                         ) : (
                             <>
-                                <div className="board-stat-card">
+                                <div
+                                    className="board-stat-card clickable"
+                                    role="button"
+                                    tabIndex={0}
+                                    onClick={() => onNavigate?.('/dashboard?section=team-tracker')}
+                                    onKeyDown={handleCardKeyDown(() => onNavigate?.('/dashboard?section=team-tracker'))}
+                                >
                                     <span className="board-stat-label">Team Members</span>
                                     <span className="board-stat-value">{teamTotals.members.toString().padStart(2, '0')}</span>
                                 </div>
-                                <div className="board-stat-card">
+                                <div
+                                    className="board-stat-card clickable"
+                                    role="button"
+                                    tabIndex={0}
+                                    onClick={() => onNavigate?.('/dashboard?section=task-tracker&filter=ongoing')}
+                                    onKeyDown={handleCardKeyDown(() => onNavigate?.('/dashboard?section=task-tracker&filter=ongoing'))}
+                                >
                                     <span className="board-stat-label">Ongoing Tasks</span>
                                     <span className="board-stat-value">{teamTotals.ongoing.toString().padStart(2, '0')}</span>
                                 </div>
-                                <div className="board-stat-card">
+                                <div
+                                    className="board-stat-card clickable"
+                                    role="button"
+                                    tabIndex={0}
+                                    onClick={() => onNavigate?.('/dashboard?section=task-tracker&filter=pending')}
+                                    onKeyDown={handleCardKeyDown(() => onNavigate?.('/dashboard?section=task-tracker&filter=pending'))}
+                                >
                                     <span className="board-stat-label">Pending</span>
                                     <span className="board-stat-value">{teamTotals.pending.toString().padStart(2, '0')}</span>
                                 </div>
-                                <div className="board-stat-card">
+                                <div
+                                    className="board-stat-card clickable"
+                                    role="button"
+                                    tabIndex={0}
+                                    onClick={() => onNavigate?.('/dashboard?section=task-tracker&filter=overdue')}
+                                    onKeyDown={handleCardKeyDown(() => onNavigate?.('/dashboard?section=task-tracker&filter=overdue'))}
+                                >
                                     <span className="board-stat-label" style={{ color: '#EF4444' }}>Overdue</span>
                                     <span className="board-stat-value" style={{ color: '#EF4444' }}>{teamTotals.overdue.toString().padStart(2, '0')}</span>
                                 </div>
@@ -164,19 +223,43 @@ const BoardView: React.FC<BoardViewProps> = ({
                         </button>
                     </div>
                     <div className="board-stats-grid">
-                        <div className="board-stat-card">
+                        <div
+                            className="board-stat-card clickable"
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => onNavigate?.('/dashboard?section=task-tracker&filter=ongoing')}
+                            onKeyDown={handleCardKeyDown(() => onNavigate?.('/dashboard?section=task-tracker&filter=ongoing'))}
+                        >
                             <span className="board-stat-label">Ongoing</span>
                             <span className="board-stat-value">{currentUserStats.stats.ongoing.toString().padStart(2, '0')}</span>
                         </div>
-                        <div className="board-stat-card">
+                        <div
+                            className="board-stat-card clickable"
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => onNavigate?.('/dashboard?section=task-tracker&filter=pending')}
+                            onKeyDown={handleCardKeyDown(() => onNavigate?.('/dashboard?section=task-tracker&filter=pending'))}
+                        >
                             <span className="board-stat-label">Pending</span>
                             <span className="board-stat-value">{currentUserStats.stats.pending.toString().padStart(2, '0')}</span>
                         </div>
-                        <div className="board-stat-card">
+                        <div
+                            className="board-stat-card clickable"
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => onNavigate?.('/dashboard?section=task-tracker&filter=completed')}
+                            onKeyDown={handleCardKeyDown(() => onNavigate?.('/dashboard?section=task-tracker&filter=completed'))}
+                        >
                             <span className="board-stat-label">Completed</span>
                             <span className="board-stat-value">{currentUserStats.stats.completed.toString().padStart(2, '0')}</span>
                         </div>
-                        <div className="board-stat-card">
+                        <div
+                            className="board-stat-card clickable"
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => onNavigate?.('/dashboard?section=task-tracker&filter=overdue')}
+                            onKeyDown={handleCardKeyDown(() => onNavigate?.('/dashboard?section=task-tracker&filter=overdue'))}
+                        >
                             <span className="board-stat-label" style={{ color: '#EF4444' }}>Overdue</span>
                             <span className="board-stat-value" style={{ color: '#EF4444' }}>{currentUserStats.stats.overdue.toString().padStart(2, '0')}</span>
                         </div>

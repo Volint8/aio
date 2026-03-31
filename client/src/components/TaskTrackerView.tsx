@@ -57,8 +57,6 @@ const TaskTrackerView: React.FC<TaskTrackerViewProps> = ({
     const [tagFilter, setTagFilter] = React.useState<string>('all');
 
     const filters: Array<{ key: 'all' | 'my' | 'supporting' | 'pending' | 'ongoing' | 'completed' | 'overdue'; label: string }> = [
-        { key: 'all', label: 'All Tasks' },
-        { key: 'my', label: 'My Tasks' },
         { key: 'supporting', label: 'Supporting' },
         { key: 'pending', label: 'Pending' },
         { key: 'ongoing', label: 'In Progress' },

@@ -64,6 +64,15 @@
     box-shadow: 0 12px 20px -8px rgba(0,0,0,0.1);
 }
 
+.board-stat-card.clickable {
+    cursor: pointer;
+}
+
+.board-stat-card.clickable:focus-visible {
+    outline: 2px solid rgba(29, 112, 226, 0.4);
+    outline-offset: 3px;
+}
+
 .board-stat-label {
     font-size: 0.85em;
     font-weight: 600;
@@ -113,6 +122,24 @@
     background: #0D6E3C;
     transform: translateY(-1px);
     box-shadow: 0 6px 16px rgba(16, 133, 72, 0.3);
+}
+
+.board-panel-actions {
+    display: inline-flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.board-create-btn.secondary {
+    background: #E2E8F0;
+    color: #0F172A;
+    box-shadow: none;
+}
+
+.board-create-btn.secondary:hover {
+    background: #CBD5E1;
+    color: #0F172A;
+    box-shadow: none;
 }
 
 /* Responsive */

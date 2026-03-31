@@ -10,6 +10,7 @@ import {
     listInvites,
     resendInvite,
     resendInviteById,
+    deleteInvite,
     createTeam,
     getTeams,
     updateTeam,
@@ -44,6 +45,7 @@ router.post('/:id/invites', authenticateToken, createInvite);
 router.get('/:id/invites', authenticateToken, listInvites);
 router.post('/invites/:token/resend', authenticateToken, resendInvite);
 router.post('/:id/invites/:inviteId/resend', authenticateToken, resendInviteById);
+router.delete('/:id/invites/:inviteId', authenticateToken, deleteInvite);
 router.post('/:id/teams', authenticateToken, createTeam);
 router.get('/:id/teams', authenticateToken, getTeams);
 router.patch('/:id/teams/:teamId', authenticateToken, updateTeam);
