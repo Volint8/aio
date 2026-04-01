@@ -236,6 +236,9 @@ const LoginPage = () => {
                             </button>
                         </p>
                     )}
+                    <p style={{ marginTop: '12px', fontSize: '0.85em' }}>
+                        Need help? <a href="mailto:Hello@apraizal.com" className="link-button">Contact Support</a>
+                    </p>
                 </div>
                 <div className="domain-notice">
                     <small>Use a work email address. Personal domains are blocked.</small>

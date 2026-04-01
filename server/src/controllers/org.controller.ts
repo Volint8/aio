@@ -2,7 +2,8 @@ import { Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { buildOrgNameSuggestions, makeUniqueOrgName, makeUniqueSlug, normalizeOrgName } from '../utils/org.utils';
 import { generateInviteToken, getEmailDomain, hashToken, isWorkEmail, normalizeEmail } from '../utils/auth.utils';
-import { sendInviteEmail } from '../services/email.service';
+import { sendInviteEmail, sendOkrNotificationEmail, sendKeyResultNotificationEmail } from '../services/email.service';
+import * as XLSX from 'xlsx';
 
 const prisma = new PrismaClient();
 
@@ -200,11 +201,14 @@ export const getOrgById = async (req: Request, res: Response) => {
               select: {
                 id: true,
                 email: true,
-                name: true
+                name: true,
+                signupSource: true,
+                initialRole: true,
+                createdAt: true
               }
             }
           },
-          orderBy: { user: { email: 'asc' } }
+          orderBy: { joinedAt: 'asc' }
         }
       }
     });
@@ -334,6 +338,200 @@ export const createInvite = async (req: Request, res: Response) => {
   }
 };
 
+export const bulkInviteMembers = async (req: Request, res: Response) => {
+  try {
+    const requesterUserId = (req as any).user.userId as string;
+    const organizationId = req.params.id as string;
+
+    const isAdmin = await requireAdmin(requesterUserId, organizationId);
+    if (!isAdmin) {
+      return res.status(403).json({ error: 'Only admins can bulk invite members' });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    // Parse the uploaded file
+    const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
+    const sheetName = workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[sheetName];
+    const data: any[] = XLSX.utils.sheet_to_json(worksheet);
+
+    if (data.length === 0) {
+      return res.status(400).json({ error: 'Spreadsheet is empty' });
+    }
+
+    // Validate required columns
+    const requiredColumns = ['Email', 'Role'];
+    const firstRow = data[0];
+    const missingColumns = requiredColumns.filter(col => !(col in firstRow));
+    
+    if (missingColumns.length > 0) {
+      return res.status(400).json({ 
+        error: `Missing required columns: ${missingColumns.join(', ')}. Required columns are: ${requiredColumns.join(', ')}` 
+      });
+    }
+
+    // Get existing teams for validation
+    const existingTeams = await prisma.team.findMany({
+      where: { organizationId }
+    });
+    const teamNameMap = new Map<string, any>();
+    existingTeams.forEach(team => {
+      teamNameMap.set(normalizeOrgName(team.name), team);
+    });
+
+    // Process invites
+    const results = {
+      successful: [] as any[],
+      failed: [] as Array<{ row: number; email: string; error: string }>
+    };
+
+    const baseUrl = process.env.CLIENT_URL?.split(',')[0]?.trim() || 'http://localhost:5173';
+
+    for (let i = 0; i < data.length; i++) {
+      const row = data[i];
+      const rowNum = i + 2; // Excel row numbers start at 1, +1 for header
+
+      try {
+        const email = row['Email']?.toString()?.trim();
+        const role = row['Role']?.toString()?.trim()?.toUpperCase();
+        const teamName = row['Team']?.toString()?.trim();
+        const category = row['Category']?.toString()?.trim();
+        const name = row['Name']?.toString()?.trim();
+
+        // Validate email
+        if (!email) {
+          results.failed.push({ row: rowNum, email: email || '', error: 'Email is required' });
+          continue;
+        }
+
+        const normalizedEmail = normalizeEmail(email);
+        if (!isWorkEmail(normalizedEmail)) {
+          results.failed.push({ row: rowNum, email, error: 'Please use a work email address' });
+          continue;
+        }
+
+        // Validate role
+        if (!role || !['TEAM_LEAD', 'MEMBER'].includes(role)) {
+          results.failed.push({ row: rowNum, email, error: 'Role must be TEAM_LEAD or MEMBER' });
+          continue;
+        }
+
+        // Check if user already exists in organization
+        const existingUser = await prisma.user.findUnique({ where: { email: normalizedEmail } });
+        if (existingUser) {
+          const existingMembership = await prisma.organizationMember.findUnique({
+            where: {
+              userId_organizationId: {
+                userId: existingUser.id,
+                organizationId
+              }
+            }
+          });
+
+          if (existingMembership) {
+            results.failed.push({ row: rowNum, email, error: 'User is already a member of this organization' });
+            continue;
+          }
+        }
+
+        // Validate team if provided
+        let teamId: string | null = null;
+        if (teamName) {
+          const normalizedTeamName = normalizeOrgName(teamName);
+          const team = teamNameMap.get(normalizedTeamName);
+          if (!team) {
+            results.failed.push({ row: rowNum, email, error: `Team "${teamName}" does not exist` });
+            continue;
+          }
+          teamId = team.id;
+        }
+
+        // Revoke any existing pending invites for this email
+        await prisma.invite.updateMany({
+          where: {
+            organizationId,
+            email: normalizedEmail,
+            status: 'PENDING'
+          },
+          data: { status: 'REVOKED' }
+        });
+
+        // Create invite
+        const rawToken = generateInviteToken();
+        const tokenHash = hashToken(rawToken);
+        const expiresAt = new Date(Date.now() + 72 * 60 * 60 * 1000);
+
+        const invite = await prisma.invite.create({
+          data: {
+            organizationId,
+            email: normalizedEmail,
+            role,
+            teamId,
+            category: category || null,
+            tokenHash,
+            expiresAt,
+            invitedByUserId: requesterUserId,
+            status: 'PENDING'
+          },
+          include: {
+            organization: { select: { name: true } },
+            invitedBy: { select: { name: true, email: true } },
+            team: { select: { name: true } }
+          }
+        });
+
+        const inviteUrl = `${baseUrl}/accept-invite?token=${rawToken}`;
+
+        try {
+          await sendInviteEmail({
+            to: normalizedEmail,
+            organizationName: invite.organization.name,
+            role,
+            inviteUrl,
+            inviterName: invite.invitedBy.name || invite.invitedBy.email,
+            inviteeName: name
+          });
+        } catch (emailError) {
+          console.error(`Failed to send invite email to ${email}:`, emailError);
+        }
+
+        results.successful.push({
+          id: invite.id,
+          email: invite.email,
+          role: invite.role,
+          team: invite.team?.name || null,
+          category: invite.category,
+          status: invite.status
+        });
+
+      } catch (error: any) {
+        results.failed.push({ 
+          row: rowNum, 
+          email: row['Email']?.toString() || 'Unknown', 
+          error: error.message || 'Unknown error' 
+        });
+      }
+    }
+
+    return res.status(201).json({
+      summary: {
+        total: data.length,
+        successful: results.successful.length,
+        failed: results.failed.length
+      },
+      invites: results.successful,
+      errors: results.failed
+    });
+
+  } catch (error: any) {
+    console.error('Bulk invite error:', error);
+    return res.status(500).json({ error: error.message || 'Internal server error' });
+  }
+};
+
 export const listInvites = async (req: Request, res: Response) => {
   try {
     const requesterUserId = (req as any).user.userId as string;
@@ -360,6 +558,8 @@ export const listInvites = async (req: Request, res: Response) => {
         id: true,
         email: true,
         role: true,
+        team: { select: { name: true } },
+        category: true,
         status: true,
         expiresAt: true,
         createdAt: true
@@ -506,6 +706,51 @@ export const deleteInvite = async (req: Request, res: Response) => {
   }
 };
 
+export const removeMember = async (req: Request, res: Response) => {
+  try {
+    const requesterUserId = (req as any).user.userId as string;
+    const organizationId = req.params.id as string;
+    const memberId = req.params.memberId as string;
+
+    const isAdmin = await requireAdmin(requesterUserId, organizationId);
+    if (!isAdmin) {
+      return res.status(403).json({ error: 'Only admins can remove members' });
+    }
+
+    const member = await prisma.organizationMember.findUnique({
+      where: { id: memberId }
+    });
+
+    if (!member || member.organizationId !== organizationId) {
+      return res.status(404).json({ error: 'Member not found' });
+    }
+
+    if (member.userId === requesterUserId) {
+      return res.status(400).json({ error: 'You cannot remove yourself from the organization. Use the "Leave Organization" feature or transfer ownership if available.' });
+    }
+
+    // Check if they are the only admin
+    if (member.role === 'ADMIN') {
+      const adminCount = await prisma.organizationMember.count({
+        where: { organizationId, role: 'ADMIN' }
+      });
+      if (adminCount <= 1) {
+        return res.status(400).json({ error: 'Cannot remove the last administrator.' });
+      }
+    }
+
+    await prisma.organizationMember.delete({
+      where: { id: memberId }
+    });
+
+    return res.json({ message: 'Member removed successfully' });
+  } catch (error) {
+    console.error('Remove member error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+
 export const updateMemberRole = async (req: Request, res: Response) => {
   try {
     const requesterUserId = (req as any).user.userId as string;
@@ -540,6 +785,19 @@ export const updateMemberRole = async (req: Request, res: Response) => {
 
       if (adminCount <= 1) {
         return res.status(400).json({ error: 'Cannot remove the last admin from this organization' });
+      }
+    }
+
+    if (role === 'ADMIN' && targetMembership.role !== 'ADMIN') {
+      const adminCount = await prisma.organizationMember.count({
+        where: {
+          organizationId,
+          role: 'ADMIN'
+        }
+      });
+
+      if (adminCount >= 1) {
+        return res.status(400).json({ error: 'An organization can only have one admin' });
       }
     }
 
@@ -590,8 +848,8 @@ export const createTeam = async (req: Request, res: Response) => {
       memberUserIds?: string[];
     };
 
-    if (!name?.trim() || !leadUserId) {
-      return res.status(400).json({ error: 'Team name and leadUserId are required' });
+    if (!name?.trim()) {
+      return res.status(400).json({ error: 'Team name is required' });
     }
 
     const isAdmin = await requireAdmin(requesterUserId, organizationId);
@@ -602,24 +860,49 @@ export const createTeam = async (req: Request, res: Response) => {
     const normalizedName = buildTeamName(name);
 
     const created = await prisma.$transaction(async (tx) => {
-      const participantIds = await validateTeamParticipants(tx, organizationId, leadUserId, memberUserIds);
+      let participantIds: string[] = [];
+      
+      if (leadUserId) {
+        participantIds = await validateTeamParticipants(tx, organizationId, leadUserId, memberUserIds);
+      } else if (memberUserIds.length > 0) {
+        // If no lead but members provided, just validate members
+        const memberships = await tx.organizationMember.findMany({
+          where: {
+            organizationId,
+            userId: { in: memberUserIds }
+          }
+        });
+        
+        if (memberships.length !== memberUserIds.length) {
+          throw new Error('All team members must be members of this organization');
+        }
+        
+        const hasAdmin = memberships.some((m: any) => m.role === 'ADMIN');
+        if (hasAdmin) {
+          throw new Error('Admins cannot be assigned to teams');
+        }
+        
+        participantIds = memberUserIds;
+      }
 
       const team = await tx.team.create({
         data: {
           organizationId,
           name: name.trim(),
           normalizedName,
-          leadUserId
+          ...(leadUserId ? { leadUserId } : {})
         }
       });
 
-      await tx.organizationMember.updateMany({
-        where: {
-          organizationId,
-          userId: { in: participantIds }
-        },
-        data: { teamId: team.id }
-      });
+      if (participantIds.length > 0) {
+        await tx.organizationMember.updateMany({
+          where: {
+            organizationId,
+            userId: { in: participantIds }
+          },
+          data: { teamId: team.id }
+        });
+      }
 
       return team;
     });
@@ -1324,10 +1607,133 @@ export const createOkr = async (req: Request, res: Response) => {
             include: {
               tag: true
             }
+          },
+          creator: {
+            select: {
+              name: true,
+              email: true
+            }
           }
         }
       });
     });
+
+    // Send notifications to teams assigned to this OKR
+    const teamAssignments = assignments.filter((a) => a.targetType === 'TEAM' && a.targetId);
+    if (teamAssignments.length > 0 && okr) {
+      const creator = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { name: true }
+      });
+
+      const organization = await prisma.organization.findUnique({
+        where: { id: organizationId },
+        select: { name: true }
+      });
+
+      for (const assignment of teamAssignments) {
+        try {
+          const team = await prisma.team.findUnique({
+            where: { id: assignment.targetId },
+            include: {
+              members: {
+                include: {
+                  user: {
+                    select: {
+                      id: true,
+                      email: true,
+                      name: true
+                    }
+                  }
+                }
+              }
+            }
+          });
+
+          if (team) {
+            for (const member of team.members) {
+              try {
+                await sendOkrNotificationEmail({
+                  to: member.user.email,
+                  recipientName: member.user.name,
+                  okrTitle: okr.title,
+                  okrDescription: okr.description || null,
+                  teamName: team.name,
+                  organizationName: organization?.name || '',
+                  creatorName: creator?.name || null,
+                  periodStart,
+                  periodEnd
+                });
+              } catch (memberNotifyErr) {
+                console.error(`Failed to notify member ${member.user.email} about OKR:`, memberNotifyErr);
+              }
+            }
+          }
+        } catch (teamNotifyErr) {
+          console.error(`Failed to notify team ${assignment.targetId} about OKR:`, teamNotifyErr);
+        }
+      }
+    }
+
+    // Send notifications to members tagged in key results (by tag name matching member name)
+    if (keyResults.length > 0 && okr) {
+      const allMembers = await prisma.organizationMember.findMany({
+        where: { organizationId },
+        include: {
+          user: {
+            select: {
+              id: true,
+              email: true,
+              name: true
+            }
+          }
+        }
+      });
+
+      const organization = await prisma.organization.findUnique({
+        where: { id: organizationId },
+        select: { name: true }
+      });
+
+      const creator = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { name: true }
+      });
+
+      // Create a map of member names (normalized) to members
+      const memberNameMap = new Map<string, typeof allMembers[0]>();
+      allMembers.forEach((member) => {
+        if (member.user.name) {
+          memberNameMap.set(normalizeOrgName(member.user.name), member);
+        }
+        memberNameMap.set(normalizeOrgName(member.user.email), member);
+      });
+
+      // Check each key result's tag name for member matches
+      for (const kr of keyResults) {
+        if (!kr?.tagName?.trim()) continue;
+
+        const normalizedTagName = normalizeOrgName(kr.tagName);
+        const matchedMember = memberNameMap.get(normalizedTagName);
+
+        if (matchedMember) {
+          try {
+            await sendKeyResultNotificationEmail({
+              to: matchedMember.user.email,
+              recipientName: matchedMember.user.name,
+              okrTitle: okr.title,
+              keyResultTitle: kr.title,
+              organizationName: organization?.name || '',
+              creatorName: creator?.name || null,
+              periodStart,
+              periodEnd
+            });
+          } catch (memberNotifyErr) {
+            console.error(`Failed to notify ${matchedMember.user.email} about key result tag:`, memberNotifyErr);
+          }
+        }
+      }
+    }
 
     return res.status(201).json(okr);
   } catch (error) {
@@ -1346,8 +1752,19 @@ export const listOkrs = async (req: Request, res: Response) => {
       return res.status(403).json({ error: 'Access denied' });
     }
 
+    const now = new Date();
     const where: any = { organizationId };
-    if (['TEAM_LEAD', 'MEMBER'].includes(membership.role)) {
+
+    // For non-admin users, only show OPEN okrs that are within their period
+    if (membership.role === 'MEMBER' || membership.role === 'TEAM_LEAD') {
+      // Filter by status: only OPEN okrs
+      where.status = 'OPEN';
+      
+      // Filter by date: only okrs where periodStart <= today AND periodEnd >= today
+      where.periodStart = { lte: now };
+      where.periodEnd = { gte: now };
+      
+      // Also filter by assignment scope
       const assignmentScope = [
         { assignments: { some: { targetType: 'MEMBER', targetId: userId } } },
         { assignments: { none: {} } }
@@ -1756,6 +2173,88 @@ export const getAudit = async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error('Get audit error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+export const listQuotes = async (req: Request, res: Response) => {
+  try {
+    const requesterUserId = (req as any).user.userId as string;
+    const organizationId = req.params.id as string;
+
+    const membership = await getMembership(requesterUserId, organizationId);
+    if (!membership) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const quotes = await prisma.quote.findMany({
+      where: { organizationId },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    return res.json(quotes);
+  } catch (error) {
+    console.error('List quotes error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+export const createQuote = async (req: Request, res: Response) => {
+  try {
+    const requesterUserId = (req as any).user.userId as string;
+    const organizationId = req.params.id as string;
+    const { text, author } = req.body;
+
+    if (!text || !text.trim()) {
+      return res.status(400).json({ error: 'Quote text is required' });
+    }
+
+    const isAdmin = await requireAdmin(requesterUserId, organizationId);
+    if (!isAdmin) {
+      return res.status(403).json({ error: 'Only admins can add quotes' });
+    }
+
+    const quote = await prisma.quote.create({
+      data: {
+        text: text.trim(),
+        author: author?.trim(),
+        organizationId
+      }
+    });
+
+    return res.status(201).json(quote);
+  } catch (error) {
+    console.error('Create quote error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+export const deleteQuote = async (req: Request, res: Response) => {
+  try {
+    const requesterUserId = (req as any).user.userId as string;
+    const organizationId = req.params.id as string;
+    const quoteId = req.params.quoteId as string;
+
+    const isAdmin = await requireAdmin(requesterUserId, organizationId);
+    if (!isAdmin) {
+      return res.status(403).json({ error: 'Only admins can delete quotes' });
+    }
+
+    const quote = await prisma.quote.findUnique({
+      where: { id: quoteId }
+    });
+
+    if (!quote || quote.organizationId !== organizationId) {
+      return res.status(404).json({ error: 'Quote not found' });
+    }
+
+    await prisma.quote.delete({
+      where: { id: quoteId }
+    });
+
+    return res.status(204).send();
+  } catch (error) {
+    console.error('Delete quote error:', error);
     return res.status(500).json({ error: 'Internal server error' });
   }
 };

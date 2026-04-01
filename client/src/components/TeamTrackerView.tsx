@@ -43,6 +43,7 @@ interface TeamTrackerViewProps {
     onCreateTask: () => void;
     onSendAlert: () => void;
     tags?: Array<{ id: string; name: string; color: string }>;
+    userRole?: 'ADMIN' | 'TEAM_LEAD' | 'MEMBER';
 }
 
 const TeamTrackerView: React.FC<TeamTrackerViewProps> = ({
@@ -55,22 +56,32 @@ const TeamTrackerView: React.FC<TeamTrackerViewProps> = ({
     onTaskClick,
     onCreateTask,
     onSendAlert,
-    tags = []
+    tags = [],
+    userRole = 'MEMBER'
 }) => {
     const { user } = useAuth();
     const userId = user?.id || '';
     const [priorityFilter, setPriorityFilter] = React.useState<string>('all');
     const [tagFilter, setTagFilter] = React.useState<string>('all');
 
-    const filters: Array<{ key: 'all' | 'my' | 'supporting' | 'pending' | 'ongoing' | 'completed' | 'overdue'; label: string }> = [
-        { key: 'all', label: 'All Tasks' },
-        { key: 'my', label: 'My Tasks' },
-        { key: 'supporting', label: 'Supporting' },
-        { key: 'pending', label: 'Pending' },
-        { key: 'ongoing', label: 'In Progress' },
-        { key: 'completed', label: 'Completed' },
-        { key: 'overdue', label: 'Overdue' }
-    ];
+    const filters: Array<{ key: 'all' | 'my' | 'supporting' | 'pending' | 'ongoing' | 'completed' | 'overdue'; label: string }> = userRole === 'ADMIN'
+        ? [
+            { key: 'all', label: 'All Tasks' },
+            { key: 'my', label: 'My Tasks' },
+            { key: 'pending', label: 'Pending' },
+            { key: 'ongoing', label: 'In Progress' },
+            { key: 'completed', label: 'Completed' },
+            { key: 'overdue', label: 'Overdue' }
+        ]
+        : [
+            { key: 'all', label: 'All Tasks' },
+            { key: 'my', label: 'My Tasks' },
+            { key: 'supporting', label: 'Supporting' },
+            { key: 'pending', label: 'Pending' },
+            { key: 'ongoing', label: 'In Progress' },
+            { key: 'completed', label: 'Completed' },
+            { key: 'overdue', label: 'Overdue' }
+        ];
 
     const filteredTasks = tasks.filter(task => {
         // Member filter

@@ -46,20 +46,26 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         { label: 'OKRs', section: 'okr', icon: 'okr' },
         { label: 'Trackers', section: 'task-tracker', icon: 'trackers' },
         { label: 'Team', section: 'team', icon: 'team' },
-        { label: 'Appraisals', section: 'appraisals', icon: 'appraisals' }
+        { label: 'Appraisals', section: 'appraisals', icon: 'appraisals' },
+        { label: 'Settings', section: 'settings', icon: 'settings' },
+        { label: 'Contact Support', section: 'support', icon: 'support' }
     ]), []);
 
     const teamLeadNavItems = useMemo(() => ([
         { label: 'Dashboard', section: 'board', icon: 'dashboard' },
         { label: 'OKRs', section: 'okr', icon: 'okr' },
         { label: 'Trackers', section: 'task-tracker', icon: 'trackers' },
-        { label: 'Team', section: 'team-tracker', icon: 'team' }
+        { label: 'Team', section: 'team-tracker', icon: 'team' },
+        { label: 'Settings', section: 'settings', icon: 'settings' },
+        { label: 'Contact Support', section: 'support', icon: 'support' }
     ]), []);
 
     const memberNavItems = useMemo(() => ([
         { label: 'Dashboard', section: 'board', icon: 'dashboard' },
         { label: 'OKRs', section: 'okr', icon: 'okr' },
-        { label: 'Trackers', section: 'task-tracker', icon: 'trackers' }
+        { label: 'Trackers', section: 'task-tracker', icon: 'trackers' },
+        { label: 'Settings', section: 'settings', icon: 'settings' },
+        { label: 'Contact Support', section: 'support', icon: 'support' }
     ]), []);
 
     const getInitials = (name: string) => {
@@ -112,6 +118,12 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                     <svg {...common}>
                         <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
                         <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                    </svg>
+                );
+            case 'support':
+                return (
+                    <svg {...common}>
+                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
                     </svg>
                 );
             case 'settings':
@@ -174,8 +186,9 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                     </ul>
                 </nav>
 
-                <div className="sidebar-footer" style={{ borderTop: 'none', padding: '24px' }}>
-                    <button className="btn-logout" onClick={logout} style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'center' }}>
+                <div className="sidebar-footer" style={{ borderTop: 'none', padding: '24px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    
+                    <button className="btn-logout" onClick={logout} style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'center', marginTop: '8px' }}>
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                             <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
                             <polyline points="16 17 21 12 16 7"></polyline>
@@ -209,13 +222,9 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                         </div>
 
                         <div className="user-pill" style={{ background: 'none', padding: '0' }}>
-                            <span style={{ color: '#0F172A', fontWeight: 500, marginRight: '10px' }}>{user?.name || user?.email}</span>
                             <div className="avatar" style={{ width: '36px', height: '36px', background: 'var(--primary-blue)', borderRadius: '50%', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 600 }}>
                                 {getInitials(user?.name || user?.email || 'U')}
                             </div>
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#64748B" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginLeft: '4px' }}>
-                                <polyline points="6 9 12 15 18 9"></polyline>
-                            </svg>
                         </div>
                     </div>
                 </header>

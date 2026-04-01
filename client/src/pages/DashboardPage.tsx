@@ -6,6 +6,7 @@ import BoardView from '../components/BoardView';
 import TaskTrackerView from '../components/TaskTrackerView';
 import TeamTrackerView from '../components/TeamTrackerView';
 import OkrView from '../components/OkrView';
+import * as XLSX from 'xlsx';
 import '../styles/Dashboard.css';
 
 interface Tag {
@@ -143,6 +144,13 @@ interface InviteRecord {
     expiresAt: string;
 }
 
+interface QuoteRecord {
+    id: string;
+    text: string;
+    author: string | null;
+    createdAt: string;
+}
+
 interface ClientRecord {
     id: string;
     name: string;
@@ -158,7 +166,7 @@ interface ClientRecord {
     };
 }
 
-type DashboardSection = 'board' | 'task-tracker' | 'team-tracker' | 'okr' | 'tracker' | 'team' | 'tags' | 'appraisals';
+type DashboardSection = 'board' | 'task-tracker' | 'team-tracker' | 'okr' | 'tracker' | 'team' | 'tags' | 'appraisals' | 'settings' | 'support';
 type TaskFilter = 'all' | 'my' | 'supporting' | 'pending' | 'ongoing' | 'completed' | 'overdue' | 'created' | 'in_progress' | 'recently_deleted';
 type TrackerView = 'users' | 'teams';
 
@@ -327,6 +335,7 @@ const DashboardPage = () => {
         description: '',
         periodStart: '',
         periodEnd: '',
+        status: 'NOT_YET_OPEN',
         assignedToTeamId: '',
         supportedByTeamIds: [] as string[],
         keyResults: [{ title: '', tagName: '', tagColor: '#2563eb' }]
@@ -359,6 +368,29 @@ const DashboardPage = () => {
     const [clientFormVisibility, setClientFormVisibility] = useState('ORG_WIDE');
     const [taskClientFilter, setTaskClientFilter] = useState('all');
 
+    // Bulk invite state
+    const [showBulkInviteModal, setShowBulkInviteModal] = useState(false);
+    const [bulkInviteFile, setBulkInviteFile] = useState<File | null>(null);
+    const [bulkInvitePreview, setBulkInvitePreview] = useState<any[]>([]);
+    const [bulkInviteErrors, setBulkInviteErrors] = useState<Array<{ row: number; email: string; error: string }>>([]);
+    const [bulkInviteSubmitting, setBulkInviteSubmitting] = useState(false);
+    const [bulkInviteResult, setBulkInviteResult] = useState<any>(null);
+
+    // Settings state
+    const [passwordForm, setPasswordForm] = useState({
+        currentPassword: '',
+        newPassword: '',
+        confirmPassword: ''
+    });
+    const [passwordChanging, setPasswordChanging] = useState(false);
+    const [passwordError, setPasswordError] = useState('');
+    const [passwordSuccess, setPasswordSuccess] = useState('');
+
+    // Quote state
+    const [quotes, setQuotes] = useState<QuoteRecord[]>([]);
+    const [quoteForm, setQuoteForm] = useState({ text: '', author: '' });
+    const [quoteSubmitting, setQuoteSubmitting] = useState(false);
+
     const { user } = useAuth();
     const navigate = useNavigate();
     const requestedSection = (new URLSearchParams(location.search).get('section') || 'board') as DashboardSection;
@@ -379,6 +411,8 @@ const DashboardPage = () => {
         if (requestedSection === 'team' && canTrackTeam) return 'team';
         if (requestedSection === 'tags' && isAdmin) return 'tags';
         if (requestedSection === 'appraisals' && isAdmin) return 'appraisals';
+        if (requestedSection === 'settings') return 'settings';
+        if (requestedSection === 'support') return 'support';
         return 'board';
     }, [requestedSection, canTrackTeam, isAdmin, isTeamLead, isMember]);
 
@@ -549,10 +583,45 @@ const DashboardPage = () => {
         navigate(`/dashboard?${params.toString()}`);
     };
 
+    const fetchQuotes = async () => {
+        if (!orgId) return;
+        try {
+            const res = await api.get(`/orgs/${orgId}/quotes`);
+            setQuotes(res.data);
+        } catch (error) {
+            console.error('Failed to fetch quotes:', error);
+        }
+    };
+
+    const handleAddQuote = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!orgId || !quoteForm.text.trim()) return;
+        try {
+            setQuoteSubmitting(true);
+            await api.post(`/orgs/${orgId}/quotes`, quoteForm);
+            setQuoteForm({ text: '', author: '' });
+            await fetchQuotes();
+        } catch (error: any) {
+            alert(error.response?.data?.error || 'Failed to add quote');
+        } finally {
+            setQuoteSubmitting(false);
+        }
+    };
+
+    const handleDeleteQuote = async (quoteId: string) => {
+        if (!orgId || !window.confirm('Delete this quote?')) return;
+        try {
+            await api.delete(`/orgs/${orgId}/quotes/${quoteId}`);
+            await fetchQuotes();
+        } catch (error: any) {
+            alert(error.response?.data?.error || 'Failed to delete quote');
+        }
+    };
+
     const fetchData = async () => {
         try {
             const isDeletedView = filter === 'recently_deleted';
-            const [tasksRes, statsRes, orgRes, tagsRes, okrRes, appraisalRes] = await Promise.all([
+            const [tasksRes, statsRes, orgRes, tagsRes, okrRes, appraisalRes, quotesRes] = await Promise.all([
                 api.get('/tasks', {
                     params: {
                         organizationId: orgId,
@@ -569,8 +638,11 @@ const DashboardPage = () => {
                 api.get(`/orgs/${orgId}`),
                 api.get(`/orgs/${orgId}/tags`),
                 api.get(`/orgs/${orgId}/okrs`),
-                api.get(`/orgs/${orgId}/appraisals`)
+                api.get(`/orgs/${orgId}/appraisals`),
+                api.get(`/orgs/${orgId}/quotes`)
             ]);
+
+            setQuotes(quotesRes.data || []);
 
             const [clientsRes] = await Promise.all([
                 api.get(`/orgs/${orgId}/clients`)
@@ -798,6 +870,7 @@ const DashboardPage = () => {
                 description: '',
                 periodStart: '',
                 periodEnd: '',
+                status: 'NOT_YET_OPEN',
                 assignedToTeamId: '',
                 supportedByTeamIds: [],
                 keyResults: [{ title: '', tagName: '', tagColor: '#2563eb' }]
@@ -939,8 +1012,8 @@ const DashboardPage = () => {
 
     const handleCreateTeam = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!teamForm.name.trim() || !teamForm.leadUserId) {
-            alert('Team name and lead are required');
+        if (!teamForm.name.trim()) {
+            alert('Team name is required');
             return;
         }
         try {
@@ -1045,6 +1118,417 @@ const DashboardPage = () => {
             const message = typeof errorData === 'object' ? errorData.message : errorData;
             alert(message || 'Failed to delete invite');
         }
+    };
+
+    // Bulk invite handlers
+    const handleDownloadSampleSheet = () => {
+        const data = [
+            { Email: 'john.doe@company.com', Name: 'John Doe', Team: 'Growth', Category: 'Sales', Role: 'TEAM_LEAD' },
+            { Email: 'jane.smith@company.com', Name: 'Jane Smith', Team: 'Operations', Category: 'Support', Role: 'MEMBER' },
+            { Email: 'bob.wilson@company.com', Name: 'Bob Wilson', Team: 'Growth', Category: 'Marketing', Role: 'MEMBER' }
+        ];
+
+        const ws = XLSX.utils.json_to_sheet(data);
+        const wb = XLSX.utils.book_new();
+        
+        // Set column widths
+        ws['!cols'] = [
+            { wch: 30 }, // Email
+            { wch: 20 }, // Name
+            { wch: 15 }, // Team
+            { wch: 15 }, // Category
+            { wch: 12 }  // Role
+        ];
+
+        XLSX.utils.book_append_sheet(wb, ws, 'Invite Template');
+        
+        // Add instructions sheet
+        const instructions = [
+            ['BULK INVITE INSTRUCTIONS'],
+            [''],
+            ['Required Columns:'],
+            ['- Email: Work email address (required)'],
+            ['- Role: TEAM_LEAD or MEMBER (required)'],
+            [''],
+            ['Optional Columns:'],
+            ['- Name: Full name of the invitee'],
+            ['- Team: Must match an existing team name'],
+            ['- Category: Department or function (e.g., Sales, Marketing)'],
+            [''],
+            ['Notes:'],
+            ['- Maximum file size: 5MB'],
+            ['- Supported formats: .xlsx, .xls, .csv'],
+            ['- Invites expire after 72 hours']
+        ];
+        const wsInstructions = XLSX.utils.aoa_to_sheet(instructions);
+        wsInstructions['!cols'] = [{ wch: 50 }];
+        XLSX.utils.book_append_sheet(wb, wsInstructions, 'Instructions');
+        
+        XLSX.writeFile(wb, 'bulk-invite-template.xlsx');
+    };
+
+    const handleBulkInviteFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        // Validate file type
+        const validTypes = [
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'application/vnd.ms-excel',
+            'text/csv'
+        ];
+        if (!validTypes.includes(file.type) && !file.name.endsWith('.csv')) {
+            alert('Invalid file type. Please upload an Excel or CSV file.');
+            return;
+        }
+
+        // Validate file size (5MB)
+        if (file.size > 5 * 1024 * 1024) {
+            alert('File size must be less than 5MB');
+            return;
+        }
+
+        setBulkInviteFile(file);
+        setBulkInviteErrors([]);
+        setBulkInviteResult(null);
+
+        try {
+            // Read and parse file
+            const data = await file.arrayBuffer();
+            const workbook = XLSX.read(data, { type: 'array' });
+            const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+            const jsonData: any[] = XLSX.utils.sheet_to_json(worksheet);
+
+            if (jsonData.length === 0) {
+                setBulkInviteErrors([{ row: 1, email: '', error: 'Spreadsheet is empty' }]);
+                return;
+            }
+
+            // Validate columns
+            const requiredColumns = ['Email', 'Role'];
+            const firstRow = jsonData[0];
+            const missingColumns = requiredColumns.filter(col => !(col in firstRow));
+            
+            if (missingColumns.length > 0) {
+                setBulkInviteErrors([{ 
+                    row: 1, 
+                    email: '', 
+                    error: `Missing columns: ${missingColumns.join(', ')}` 
+                }]);
+                return;
+            }
+
+            // Show preview (first 10 rows)
+            setBulkInvitePreview(jsonData.slice(0, 10));
+
+        } catch (error: any) {
+            setBulkInviteErrors([{ row: 1, email: '', error: error.message || 'Failed to parse file' }]);
+        }
+    };
+
+    const handleBulkInviteSubmit = async () => {
+        if (!bulkInviteFile || !orgId) return;
+
+        try {
+            setBulkInviteSubmitting(true);
+            setBulkInviteErrors([]);
+
+            const formData = new FormData();
+            formData.append('file', bulkInviteFile);
+
+            const response = await api.post(`/orgs/${orgId}/invites/bulk`, formData, {
+                headers: {
+                    'Content-Type': 'multipart/form-data'
+                }
+            });
+
+            setBulkInviteResult(response.data);
+            
+            // Refresh invites list
+            const invitesRes = await api.get(`/orgs/${orgId}/invites`);
+            setInvites(invitesRes.data || []);
+
+        } catch (error: any) {
+            const errorData = error.response?.data?.error;
+            const message = typeof errorData === 'object' ? errorData.message : errorData;
+            setBulkInviteErrors([{ row: 0, email: '', error: message || 'Failed to process bulk invite' }]);
+        } finally {
+            setBulkInviteSubmitting(false);
+        }
+    };
+
+    const handleOpenBulkInviteModal = () => {
+        setShowBulkInviteModal(true);
+        setBulkInviteFile(null);
+        setBulkInvitePreview([]);
+        setBulkInviteErrors([]);
+        setBulkInviteResult(null);
+    };
+
+    const handleCloseBulkInviteModal = () => {
+        setShowBulkInviteModal(false);
+        setBulkInviteFile(null);
+        setBulkInvitePreview([]);
+        setBulkInviteErrors([]);
+        setBulkInviteResult(null);
+    };
+
+    const getSidebarIcon = (iconName: string) => {
+        const common = { width: 20, height: 20, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
+        switch (iconName) {
+            case 'settings':
+                return (
+                    <svg {...common}>
+                        <circle cx="12" cy="12" r="3"></circle>
+                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                    </svg>
+                );
+            case 'support':
+                return (
+                    <svg {...common}>
+                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                    </svg>
+                );
+            default:
+                return (
+                    <svg {...common}>
+                        <circle cx="12" cy="12" r="8"></circle>
+                    </svg>
+                );
+        }
+    };
+
+    const handleRemoveMember = async (memberId: string) => {
+        if (!orgId) return;
+        if (!window.confirm('Remove this member from the organization?')) return;
+
+        try {
+            await api.delete(`/orgs/${orgId}/members/${memberId}`);
+            await fetchData();
+        } catch (error: any) {
+            const errorData = error.response?.data?.error;
+            const message = typeof errorData === 'object' ? errorData.message : errorData;
+            alert(message || 'Failed to remove member');
+        }
+    };
+
+    const handlePasswordChange = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setPasswordError('');
+        setPasswordSuccess('');
+
+        if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+            setPasswordError('New passwords do not match');
+            return;
+        }
+
+        if (passwordForm.newPassword.length < 6) {
+            setPasswordError('Password must be at least 6 characters');
+            return;
+        }
+
+        try {
+            setPasswordChanging(true);
+            await api.post('/auth/change-password', {
+                currentPassword: passwordForm.currentPassword,
+                newPassword: passwordForm.newPassword
+            });
+            setPasswordSuccess('Password changed successfully');
+            setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+        } catch (error: any) {
+            setPasswordError(error.response?.data?.error || 'Failed to change password');
+        } finally {
+            setPasswordChanging(false);
+        }
+    };
+
+    const renderSettingsSection = () => {
+        return (
+            <div className="settings-view">
+                <div className="settings-header">
+                    <h2>Account Settings</h2>
+                    <p className="section-subtitle">Manage your account security and organization preferences</p>
+                </div>
+
+                <div className="settings-grid">
+                    <div className="settings-card">
+                        <div className="card-header">
+                            <div className="card-icon">{getSidebarIcon('settings')}</div>
+                            <h3>Security</h3>
+                        </div>
+                        <p className="card-description">Change your password to keep your account secure</p>
+                        
+                        <form onSubmit={handlePasswordChange} className="settings-form">
+                            {passwordError && <div className="alert alert-error">{passwordError}</div>}
+                            {passwordSuccess && <div className="alert alert-success">{passwordSuccess}</div>}
+                            
+                            <div className="form-group">
+                                <label>Current Password</label>
+                                <input 
+                                    type="password" 
+                                    value={passwordForm.currentPassword}
+                                    onChange={(e) => setPasswordForm({ ...passwordForm, currentPassword: e.target.value })}
+                                    placeholder="••••••••"
+                                    required
+                                />
+                            </div>
+                            <div className="form-group">
+                                <label>New Password</label>
+                                <input 
+                                    type="password" 
+                                    value={passwordForm.newPassword}
+                                    onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })}
+                                    placeholder="••••••••"
+                                    required
+                                />
+                            </div>
+                            <div className="form-group">
+                                <label>Confirm New Password</label>
+                                <input 
+                                    type="password" 
+                                    value={passwordForm.confirmPassword}
+                                    onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })}
+                                    placeholder="••••••••"
+                                    required
+                                />
+                            </div>
+                            <button type="submit" className="btn-primary" disabled={passwordChanging}>
+                                {passwordChanging ? 'Updating...' : 'Update Password'}
+                            </button>
+                        </form>
+                    </div>
+
+                    {isAdmin && (
+                        <>
+                        <div className="settings-card">
+                            <div className="card-header">
+                                <div className="card-icon">
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <rect x="2" y="5" width="20" height="14" rx="2" />
+                                        <line x1="2" y1="10" x2="22" y2="10" />
+                                    </svg>
+                                </div>
+                                <h3>Subscription</h3>
+                            </div>
+                            <p className="card-description">Manage your organization's plan and billing status</p>
+                            
+                            <div className="subscription-status">
+                                <div className="plan-badge">Standard Plan</div>
+                                <div className="plan-detail">
+                                    <span>Status:</span>
+                                    <span className="status-active">Active</span>
+                                </div>
+                                <div className="plan-detail">
+                                    <span>Organization:</span>
+                                    <span>{organization?.name}</span>
+                                </div>
+                                <div className="plan-usage">
+                                    <div className="usage-header">
+                                        <span>Team Members</span>
+                                        <span>{(organization?.members?.length || 0)} / 50</span>
+                                    </div>
+                                    <div className="usage-bar">
+                                        <div className="usage-fill" style={{ width: `${Math.min(((organization?.members?.length || 0) / 50) * 100, 100)}%` }}></div>
+                                    </div>
+                                </div>
+                            </div>
+                            <button className="btn-secondary" style={{ width: '100%', marginTop: 'auto' }}>
+                                Manage Billing
+                            </button>
+                        </div>
+
+                        <div className="settings-card quotes-management">
+                            <div className="card-header">
+                                <div className="card-icon">
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <path d="M17 6.1L12.7 10.4M12.7 10.4L8.4 6.1" />
+                                        <circle cx="12" cy="12" r="10" />
+                                        <path d="M11 16h2" />
+                                    </svg>
+                                </div>
+                                <h3>Quotes Management</h3>
+                            </div>
+                            <p className="card-description">Add motivational quotes or announcements for your organization</p>
+                            
+                            <form onSubmit={handleAddQuote} className="settings-form">
+                                <div className="form-group">
+                                    <label>Quote Text</label>
+                                    <textarea 
+                                        value={quoteForm.text}
+                                        onChange={(e) => setQuoteForm({ ...quoteForm, text: e.target.value })}
+                                        placeholder="Enter quote or announcement..."
+                                        rows={2}
+                                        required
+                                    />
+                                </div>
+                                <div className="form-group">
+                                    <label>Author (Optional)</label>
+                                    <input 
+                                        type="text" 
+                                        value={quoteForm.author}
+                                        onChange={(e) => setQuoteForm({ ...quoteForm, author: e.target.value })}
+                                        placeholder="e.g. CEO or Anonymous"
+                                    />
+                                </div>
+                                <button type="submit" className="btn-primary" disabled={quoteSubmitting}>
+                                    {quoteSubmitting ? 'Adding...' : 'Add Quote'}
+                                </button>
+                            </form>
+
+                            {quotes.length > 0 && (
+                                <div className="quotes-list">
+                                    <h4>Active Quotes ({quotes.length})</h4>
+                                    <div className="quotes-container">
+                                        {quotes.map((q) => (
+                                            <div key={q.id} className="quote-item">
+                                                <div className="quote-item-content">
+                                                    <p>"{q.text}"</p>
+                                                    {q.author && <small>— {q.author}</small>}
+                                                </div>
+                                                <button 
+                                                    className="delete-quote-btn"
+                                                    onClick={() => handleDeleteQuote(q.id)}
+                                                    title="Delete Quote"
+                                                >
+                                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                        <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                                                    </svg>
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                        </>
+                    )}
+                </div>
+            </div>
+        );
+    };
+
+    const renderSupportSection = () => {
+        return (
+            <div className="support-view">
+                <div className="support-card">
+                    <div className="support-icon">{getSidebarIcon('support')}</div>
+                    <h2>How can we help?</h2>
+                    <p>Have questions or need assistance? Our support team is here to help you get the most out of Apraizal.</p>
+                    
+                    <div className="contact-methods">
+                        <div className="contact-method">
+                            <strong>Email Support</strong>
+                            <p>Contact us anytime at:</p>
+                            <a href="mailto:Hello@apraizal.com" className="support-email">Hello@apraizal.com</a>
+                        </div>
+                    </div>
+
+                    <a href="mailto:Hello@apraizal.com" className="btn-primary" style={{ textDecoration: 'none', display: 'inline-block' }}>
+                        Email Support Now
+                    </a>
+                </div>
+            </div>
+        );
     };
 
     const handleCreateClient = async (e: React.FormEvent) => {
@@ -1205,6 +1689,7 @@ const DashboardPage = () => {
                         onNavigate={(path) => navigate(path)}
                         organizationName={organization?.name}
                         organizationMembers={(organization?.members || []).map(m => ({ userId: m.userId, role: m.role }))}
+                        quotes={quotes}
                     />
                 )}
 
@@ -1219,6 +1704,7 @@ const DashboardPage = () => {
                         assignableUsers={assignableUsers.map(m => ({ userId: m.userId, name: m.user.name, email: m.user.email }))}
                         tags={tags}
                         hideOwnerFilter={isTeamLead}
+                        userRole={organization?.userRole as 'ADMIN' | 'TEAM_LEAD' | 'MEMBER'}
                     />
                 )}
 
@@ -1239,6 +1725,7 @@ const DashboardPage = () => {
                         onCreateTask={() => setShowCreateTaskModal(true)}
                         onSendAlert={() => setShowSendAlertModal(true)}
                         tags={tags}
+                        userRole={organization?.userRole as 'ADMIN' | 'TEAM_LEAD' | 'MEMBER'}
                     />
                 )}
 
@@ -1254,11 +1741,8 @@ const DashboardPage = () => {
                     />
                 )}
 
-                {currentSection === 'okr' && !organization && (
-                    <div className="empty-state">
-                        <p>Loading organization...</p>
-                    </div>
-                )}
+                {currentSection === 'settings' && renderSettingsSection()}
+                {currentSection === 'support' && renderSupportSection()}
 
                 <div className="dashboard-header">
                     {currentSection === 'tracker' && (
@@ -1290,7 +1774,17 @@ const DashboardPage = () => {
                         {isAdmin && (
                             <>
                                 <div className="team-invite-panel">
-                                    <h3>Invite Team Members</h3>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                                        <h3 style={{ margin: 0 }}>Invite Team Members</h3>
+                                        <button 
+                                            type="button" 
+                                            className="btn-secondary" 
+                                            onClick={handleOpenBulkInviteModal}
+                                            style={{ padding: '8px 16px', fontSize: '0.9em' }}
+                                        >
+                                            📊 Bulk Invite
+                                        </button>
+                                    </div>
                                     {teamError && <p className="team-error">{teamError}</p>}
                                     <form className="team-invite-form" onSubmit={handleInviteMember}>
                                         <input
@@ -1405,7 +1899,7 @@ const DashboardPage = () => {
 
                         <div className="team-members-section">
                             <h3>{isAdmin ? 'All Members' : 'Team Members'}</h3>
-                            
+
                             <div style={{ display: 'flex', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' }}>
                                 <select
                                     value={ownerFilter}
@@ -1443,46 +1937,101 @@ const DashboardPage = () => {
                                 )}
                             </div>
 
-                            <div className="team-members-list">
-                                {(organization?.members || [])
-                                    .filter((member) => {
-                                        // Exclude ADMIN and current user
-                                        if (member.role === 'ADMIN' || member.userId === user?.id) return false;
-                                        
-                                        // Apply owner filter - show members who are assignees on tasks
-                                        if (ownerFilter !== 'all' && member.userId !== ownerFilter) return false;
-                                        
-                                        // Apply supporter filter - show members who are supporters on tasks
-                                        if (supporterFilter !== 'all' && member.userId !== supporterFilter) return false;
-                                        
-                                        return true;
-                                    })
-                                    .map((member) => (
-                                    <div
-                                        key={member.id}
-                                        className="team-member-row"
-                                        onClick={() => {
-                                            setAssigneeFilterId(member.userId);
-                                            const params = new URLSearchParams(location.search);
-                                            params.set('section', 'team-tracker');
-                                            navigate(`/dashboard?${params.toString()}`);
-                                        }}
-                                        style={{ cursor: 'pointer' }}
-                                    >
-                                        <div className="team-member-info">
-                                            <div className="member-avatar">
-                                                {getInitials(member.user.name || member.user.email)}
-                                            </div>
-                                            <div>
-                                                <strong>{member.user.name || member.user.email}</strong>
-                                                <span>{formatRole(member.role)}</span>
-                                            </div>
-                                        </div>
-                                        <div className="team-member-role">
-                                            <span className="view-tasks-link">View Tasks →</span>
-                                        </div>
-                                    </div>
-                                ))}
+                            <div className="members-table-container" style={{ overflowX: 'auto' }}>
+                                <table className="members-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9em' }}>
+                                    <thead>
+                                        <tr style={{ textAlign: 'left', borderBottom: '2px solid var(--border-color)' }}>
+                                            <th style={{ padding: '12px 16px', fontWeight: 600 }}>Name</th>
+                                            <th style={{ padding: '12px 16px', fontWeight: 600 }}>Email</th>
+                                            <th style={{ padding: '12px 16px', fontWeight: 600 }}>Team</th>
+                                            <th style={{ padding: '12px 16px', fontWeight: 600 }}>Role</th>
+                                            <th style={{ padding: '12px 16px', fontWeight: 600 }}>Category</th>
+                                            <th style={{ padding: '12px 16px', fontWeight: 600, textAlign: 'center' }}>Remove</th>
+                                            <th style={{ padding: '12px 16px', fontWeight: 600, textAlign: 'center' }}>View</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {(organization?.members || [])
+                                            .filter((member) => {
+                                                // Exclude ADMIN and current user
+                                                if (member.role === 'ADMIN' || member.userId === user?.id) return false;
+
+                                                // Apply owner filter - show members who are assignees on tasks
+                                                if (ownerFilter !== 'all' && member.userId !== ownerFilter) return false;
+
+                                                // Apply supporter filter - show members who are supporters on tasks
+                                                if (supporterFilter !== 'all' && member.userId !== supporterFilter) return false;
+
+                                                return true;
+                                            })
+                                            .map((member) => {
+                                                // Find member stats
+                                                const stats = memberStats.find(m => m.userId === member.userId);
+                                                
+                                                // Find member's team
+                                                const memberTeam = teams.find(t => t.members?.some(m => m.userId === member.userId));
+                                                
+                                                // Determine category based on task stats
+                                                let category = 'Regular';
+                                                if (stats) {
+                                                    if (stats.stats.total > 20) category = 'High Performer';
+                                                    else if (stats.stats.total > 10) category = 'Active';
+                                                    else if (stats.stats.total > 5) category = 'Moderate';
+                                                    else category = 'New';
+                                                }
+
+                                                return (
+                                                    <tr key={member.id} className="member-table-row" style={{ borderBottom: '1px solid var(--border-color)', transition: 'background 0.2s' }} onMouseEnter={(e) => e.currentTarget.style.background = 'var(--hover-bg)'} onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
+                                                        <td style={{ padding: '12px 16px' }}>
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                                                <div className="member-avatar" style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'var(--primary-color)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.85em', fontWeight: 600 }}>
+                                                                    {getInitials(member.user.name || member.user.email)}
+                                                                </div>
+                                                                <strong>{member.user.name || member.user.email}</strong>
+                                                            </div>
+                                                        </td>
+                                                        <td style={{ padding: '12px 16px', color: 'var(--text-muted)' }}>{member.user.email}</td>
+                                                        <td style={{ padding: '12px 16px' }}>{memberTeam ? memberTeam.name : 'No team'}</td>
+                                                        <td style={{ padding: '12px 16px' }}>
+                                                            <span className={`role-badge ${member.role.toLowerCase()}`}>{formatRole(member.role)}</span>
+                                                        </td>
+                                                        <td style={{ padding: '12px 16px' }}>
+                                                            <span className="category-badge" style={{ padding: '4px 10px', borderRadius: '12px', fontSize: '0.8em', background: category === 'High Performer' ? '#DCFCE7' : category === 'Active' ? '#E0F2FE' : category === 'Moderate' ? '#FEF3C7' : '#F1F5F9', color: category === 'High Performer' ? '#166534' : category === 'Active' ? '#0369A1' : category === 'Moderate' ? '#92400E' : '#475569' }}>
+                                                                {category}
+                                                            </span>
+                                                        </td>
+                                                        <td style={{ padding: '12px 16px', textAlign: 'center' }}>
+                                                            <button
+                                                                className="btn-delete-small"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    handleRemoveMember(member.id);
+                                                                }}
+                                                                style={{ padding: '6px 12px', fontSize: '0.8em' }}
+                                                            >
+                                                                Remove
+                                                            </button>
+                                                        </td>
+                                                        <td style={{ padding: '12px 16px', textAlign: 'center' }}>
+                                                            <button
+                                                                className="btn-action"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    setAssigneeFilterId(member.userId);
+                                                                    const params = new URLSearchParams(location.search);
+                                                                    params.set('section', 'team-tracker');
+                                                                    navigate(`/dashboard?${params.toString()}`);
+                                                                }}
+                                                                style={{ padding: '6px 12px', fontSize: '0.8em' }}
+                                                            >
+                                                                View Details
+                                                            </button>
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })}
+                                    </tbody>
+                                </table>
                             </div>
                         </div>
                     </div>
@@ -2339,7 +2888,11 @@ const DashboardPage = () => {
                                     <label>Primary Assignee *</label>
                                     <select value={newTask.assigneeId} onChange={(e) => setNewTask({ ...newTask, assigneeId: e.target.value, supporterId: newTask.supporterId === e.target.value ? '' : newTask.supporterId })} required>
                                         <option value="">Select assignee</option>
-                                        {assignableUsers.map((member) => <option key={member.user.id} value={member.user.id}>{member.user.name || member.user.email}</option>)}
+                                        {assignableUsers.map((member) => (
+                                            <option key={member.user.id} value={member.user.id}>
+                                                {member.user.id === user?.id ? `Me (${member.user.name || member.user.email})` : member.user.name || member.user.email}
+                                            </option>
+                                        ))}
                                     </select>
                                 </div>
                             )}
@@ -2352,7 +2905,7 @@ const DashboardPage = () => {
                                             .filter((member) => member.user.id !== newTask.assigneeId)
                                             .map((member) => (
                                                 <option key={member.user.id} value={member.user.id}>
-                                                    {member.user.name || member.user.email}
+                                                    {member.user.id === user?.id ? `Me (${member.user.name || member.user.email})` : member.user.name || member.user.email}
                                                 </option>
                                             ))}
                                     </select>
@@ -2478,7 +3031,11 @@ const DashboardPage = () => {
                                     required
                                 >
                                     <option value="">Select assignee</option>
-                                    {assignableUsers.map((member) => <option key={member.user.id} value={member.user.id}>{member.user.name || member.user.email}</option>)}
+                                    {assignableUsers.map((member) => (
+                                        <option key={member.user.id} value={member.user.id}>
+                                            {member.user.id === user?.id ? `Me (${member.user.name || member.user.email})` : member.user.name || member.user.email}
+                                        </option>
+                                    ))}
                                 </select>
                             </div>
                             <div className="form-group">
@@ -2489,7 +3046,7 @@ const DashboardPage = () => {
                                         .filter((member) => member.user.id !== editTask.assigneeId)
                                         .map((member) => (
                                             <option key={member.user.id} value={member.user.id}>
-                                                {member.user.name || member.user.email}
+                                                {member.user.id === user?.id ? `Me (${member.user.name || member.user.email})` : member.user.name || member.user.email}
                                             </option>
                                         ))}
                                 </select>
@@ -2579,7 +3136,7 @@ const DashboardPage = () => {
                                 <input type="text" value={teamForm.name} onChange={(e) => setTeamForm({ ...teamForm, name: e.target.value })} required autoFocus />
                             </div>
                             <div className="form-group">
-                                <label>Team Lead (TEAM_LEAD role only)</label>
+                                <label>Team Lead (Team Lead role only) - Optional</label>
                                 <select
                                     value={teamForm.leadUserId}
                                     onChange={(e) => {
@@ -2590,10 +3147,9 @@ const DashboardPage = () => {
                                             memberUserIds: prev.memberUserIds.includes(leadId) ? prev.memberUserIds : [...prev.memberUserIds, leadId]
                                         }));
                                     }}
-                                    required
                                     style={{ maxHeight: '200px', overflowY: 'auto' }}
                                 >
-                                    <option value="">Select lead</option>
+                                    <option value="">Select lead (optional)</option>
                                     {teamLeadUsers.length > 0 ? (
                                         teamLeadUsers.map((member) => (
                                             <option key={member.user.id} value={member.user.id}>
@@ -2605,8 +3161,8 @@ const DashboardPage = () => {
                                     )}
                                 </select>
                                 {teamLeadUsers.length === 0 && (
-                                    <small style={{ color: '#DC2626', display: 'block', marginTop: '4px' }}>
-                                        No users with Team Lead role. Please invite someone as a Team Lead first.
+                                    <small style={{ color: 'var(--text-muted)', display: 'block', marginTop: '4px' }}>
+                                        No users with Team Lead role. You can create a team without a lead for now.
                                     </small>
                                 )}
                             </div>
@@ -2721,12 +3277,60 @@ const DashboardPage = () => {
                             <div className="form-row">
                                 <div className="form-group">
                                     <label>Period Start</label>
-                                    <input type="date" value={newOkr.periodStart} onChange={(e) => setNewOkr({ ...newOkr, periodStart: e.target.value })} required />
+                                    <input type="date" value={newOkr.periodStart} onChange={(e) => {
+                                        const startDate = e.target.value;
+                                        const endDate = newOkr.periodEnd;
+                                        const today = new Date().toISOString().split('T')[0];
+                                        
+                                        // Auto-calculate status based on dates
+                                        let newStatus = newOkr.status;
+                                        if (startDate && endDate) {
+                                            if (startDate > today) {
+                                                newStatus = 'NOT_YET_OPEN';
+                                            } else if (endDate < today) {
+                                                newStatus = 'COMPLETED';
+                                            } else {
+                                                newStatus = 'OPEN';
+                                            }
+                                        }
+                                        
+                                        setNewOkr({ ...newOkr, periodStart: startDate, status: newStatus });
+                                    }} required />
                                 </div>
                                 <div className="form-group">
                                     <label>Period End</label>
-                                    <input type="date" value={newOkr.periodEnd} onChange={(e) => setNewOkr({ ...newOkr, periodEnd: e.target.value })} required />
+                                    <input type="date" value={newOkr.periodEnd} onChange={(e) => {
+                                        const endDate = e.target.value;
+                                        const startDate = newOkr.periodStart;
+                                        const today = new Date().toISOString().split('T')[0];
+                                        
+                                        // Auto-calculate status based on dates
+                                        let newStatus = newOkr.status;
+                                        if (startDate && endDate) {
+                                            if (startDate > today) {
+                                                newStatus = 'NOT_YET_OPEN';
+                                            } else if (endDate < today) {
+                                                newStatus = 'COMPLETED';
+                                            } else {
+                                                newStatus = 'OPEN';
+                                            }
+                                        }
+                                        
+                                        setNewOkr({ ...newOkr, periodEnd: endDate, status: newStatus });
+                                    }} required />
                                 </div>
+                            </div>
+
+                            <div className="form-group">
+                                <label>Status</label>
+                                <select
+                                    value={newOkr.status}
+                                    onChange={(e) => setNewOkr({ ...newOkr, status: e.target.value })}
+                                >
+                                    <option value="NOT_YET_OPEN">Not yet Open</option>
+                                    <option value="OPEN">Open</option>
+                                    <option value="COMPLETED">Completed</option>
+                                </select>
                             </div>
 
                             <div className="form-group">
@@ -2862,6 +3466,7 @@ const DashboardPage = () => {
                                     value={editOkrForm.status}
                                     onChange={(e) => setEditOkrForm({ ...editOkrForm, status: e.target.value })}
                                 >
+                                    <option value="NOT_YET_OPEN">Not yet Open</option>
                                     <option value="OPEN">Open</option>
                                     <option value="COMPLETED">Completed</option>
                                 </select>
@@ -3090,6 +3695,138 @@ const DashboardPage = () => {
                                 <button type="submit" className="btn-primary">Submit Work</button>
                             </div>
                         </form>
+                    </div>
+                </div>
+            )}
+
+            {showBulkInviteModal && (
+                <div className="modal-overlay" onClick={handleCloseBulkInviteModal}>
+                    <div className="modal bulk-invite-modal" onClick={(e) => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <h2>Bulk Invite Members</h2>
+                            <button className="btn-icon-close" onClick={handleCloseBulkInviteModal}>&times;</button>
+                        </div>
+                        
+                        <div className="modal-body">
+                            {!bulkInviteResult ? (
+                                <>
+                                    <div className="invite-instructions">
+                                        <p>Upload a spreadsheet (.xlsx or .csv) to invite multiple members at once. The file must contain <strong>Email</strong> and <strong>Role</strong> (MEMBER or TEAM_LEAD) columns.</p>
+                                        <button onClick={handleDownloadSampleSheet} className="btn-text">Download Sample Template</button>
+                                    </div>
+
+                                    <div className="upload-section">
+                                        <input
+                                            type="file"
+                                            accept=".xlsx, .xls, .csv"
+                                            onChange={handleBulkInviteFileChange}
+                                            id="bulk-invite-upload"
+                                            className="hidden-input"
+                                        />
+                                        <label htmlFor="bulk-invite-upload" className="upload-dropzone">
+                                            <div className="upload-icon">
+                                                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
+                                                </svg>
+                                            </div>
+                                            <span>{bulkInviteFile ? bulkInviteFile.name : 'Select file or drag & drop'}</span>
+                                        </label>
+                                    </div>
+
+                                    {bulkInvitePreview.length > 0 && (
+                                        <div className="preview-section">
+                                            <h4>Preview (First 10 rows)</h4>
+                                            <div className="table-container">
+                                                <table>
+                                                    <thead>
+                                                        <tr>
+                                                            <th>Email</th>
+                                                            <th>Role</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {bulkInvitePreview.map((row, i) => (
+                                                            <tr key={i}>
+                                                                <td>{row.Email}</td>
+                                                                <td>{row.Role}</td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {bulkInviteErrors.length > 0 && (
+                                        <div className="error-section">
+                                            <h4>Errors Found ({bulkInviteErrors.length})</h4>
+                                            <ul className="error-list">
+                                                {bulkInviteErrors.map((err, i) => (
+                                                    <li key={i}>
+                                                        {err.row > 0 && <span>Row {err.row}: </span>}
+                                                        {err.email && <span>{err.email} - </span>}
+                                                        {err.error}
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        </div>
+                                    )}
+                                </>
+                            ) : (
+                                <div className="result-section">
+                                    <div className="result-header success">
+                                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                                            <polyline points="22 4 12 14.01 9 11.01" />
+                                        </svg>
+                                        <h3>Processing Complete</h3>
+                                    </div>
+                                    <div className="result-stats">
+                                        <div className="stat">
+                                            <div className="stat-label">Successful</div>
+                                            <div className="stat-num success">{bulkInviteResult.successCount}</div>
+                                        </div>
+                                        <div className="stat">
+                                            <div className="stat-label">Skipped (Already in Org)</div>
+                                            <div className="stat-num">{bulkInviteResult.skippedCount}</div>
+                                        </div>
+                                        {bulkInviteResult.errors && bulkInviteResult.errors.length > 0 && (
+                                            <div className="stat">
+                                                <div className="stat-label">Failed</div>
+                                                <div className="stat-num error">{bulkInviteResult.errors.length}</div>
+                                            </div>
+                                        )}
+                                    </div>
+                                    {bulkInviteResult.errors && bulkInviteResult.errors.length > 0 && (
+                                        <div className="result-errors">
+                                            <h4>Failed Invites</h4>
+                                            <ul>
+                                                {bulkInviteResult.errors.map((err: any, i: number) => (
+                                                    <li key={i}>{err.email}: {err.error}</li>
+                                                ))}
+                                            </ul>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="modal-footer">
+                            {!bulkInviteResult ? (
+                                <>
+                                    <button onClick={handleCloseBulkInviteModal} className="btn-secondary">Cancel</button>
+                                    <button 
+                                        onClick={handleBulkInviteSubmit} 
+                                        className="btn-primary" 
+                                        disabled={!bulkInviteFile || bulkInviteSubmitting || bulkInviteErrors.length > 0}
+                                    >
+                                        {bulkInviteSubmitting ? 'Inviting...' : 'Send Bulk Invites'}
+                                    </button>
+                                </>
+                            ) : (
+                                <button onClick={handleCloseBulkInviteModal} className="btn-primary">Close</button>
+                            )}
+                        </div>
                     </div>
                 </div>
             )}

@@ -37,6 +37,7 @@ interface TaskTrackerViewProps {
     assignableUsers?: Array<{ userId: string; name: string | null; email: string }>;
     tags?: Array<{ id: string; name: string; color: string }>;
     hideOwnerFilter?: boolean;
+    userRole?: 'ADMIN' | 'TEAM_LEAD' | 'MEMBER';
 }
 
 const TaskTrackerView: React.FC<TaskTrackerViewProps> = ({
@@ -48,7 +49,8 @@ const TaskTrackerView: React.FC<TaskTrackerViewProps> = ({
     onSendAlert,
     assignableUsers = [],
     tags = [],
-    hideOwnerFilter = false
+    hideOwnerFilter = false,
+    userRole = 'MEMBER'
 }) => {
     const { user } = useAuth();
     const userId = user?.id || '';
@@ -56,13 +58,20 @@ const TaskTrackerView: React.FC<TaskTrackerViewProps> = ({
     const [assigneeFilter, setAssigneeFilter] = React.useState<string>('all');
     const [tagFilter, setTagFilter] = React.useState<string>('all');
 
-    const filters: Array<{ key: 'all' | 'my' | 'supporting' | 'pending' | 'ongoing' | 'completed' | 'overdue'; label: string }> = [
-        { key: 'supporting', label: 'Supporting' },
-        { key: 'pending', label: 'Pending' },
-        { key: 'ongoing', label: 'In Progress' },
-        { key: 'completed', label: 'Completed' },
-        { key: 'overdue', label: 'Overdue' }
-    ];
+    const filters: Array<{ key: 'all' | 'my' | 'supporting' | 'pending' | 'ongoing' | 'completed' | 'overdue'; label: string }> = userRole === 'ADMIN'
+        ? [
+            { key: 'pending', label: 'Pending' },
+            { key: 'ongoing', label: 'In Progress' },
+            { key: 'completed', label: 'Completed' },
+            { key: 'overdue', label: 'Overdue' }
+        ]
+        : [
+            { key: 'supporting', label: 'Supporting' },
+            { key: 'pending', label: 'Pending' },
+            { key: 'ongoing', label: 'In Progress' },
+            { key: 'completed', label: 'Completed' },
+            { key: 'overdue', label: 'Overdue' }
+        ];
 
     const filteredTasks = tasks.filter(task => {
         // Status filter

@@ -2,6 +2,12 @@ import React from 'react';
 import { useAuth } from '../context/AuthContext';
 import '../styles/BoardView.css';
 
+interface QuoteRecord {
+    id: string;
+    text: string;
+    author: string | null;
+}
+
 interface BoardViewProps {
     memberStats: Array<{
         userId: string;
@@ -44,6 +50,7 @@ interface BoardViewProps {
         userId: string;
         role: string;
     }>;
+    quotes?: QuoteRecord[];
 }
 
 const BoardView: React.FC<BoardViewProps> = ({
@@ -53,9 +60,13 @@ const BoardView: React.FC<BoardViewProps> = ({
     onCreateTask,
     onNavigate,
     organizationName,
-    organizationMembers = []
+    organizationMembers = [],
+    quotes = []
 }) => {
     const { user } = useAuth();
+    
+    // Use the latest quote or fall back to default text
+    const displayQuote = quotes.length > 0 ? quotes[0] : null;
 
     // Calculate team totals (for Team Lead/Admin)
     const teamTotals = memberStats.reduce(
@@ -70,9 +81,8 @@ const BoardView: React.FC<BoardViewProps> = ({
         { members: 0, pending: 0, ongoing: 0, completed: 0, overdue: 0, total: 0 }
     );
 
-    // Count team members and team leads (for Admin)
+    // Count team members (for Admin)
     const teamMembersCount = organizationMembers.filter(m => m.role !== 'ADMIN').length;
-    // const teamLeadsCount = organizationMembers.filter(m => m.role === 'TEAM_LEAD').length;
     const teamsCount = teamDistribution.length;
 
     // Calculate individual stats (current user)
@@ -94,7 +104,14 @@ const BoardView: React.FC<BoardViewProps> = ({
             {/* Welcome Banner */}
             <div className="welcome-banner">
                 <h1>Welcome, {userRole === 'ADMIN' ? (organizationName || 'Team') : (user?.name || 'User')}!</h1>
-                <p>{userRole === 'ADMIN' ? "Track your organisation's progress" : "Track your team's progress and stay on top of your tasks."}</p>
+                {displayQuote ? (
+                    <p className="welcome-quote">
+                        "{displayQuote.text}"
+                        {displayQuote.author && <span className="quote-author"> — {displayQuote.author}</span>}
+                    </p>
+                ) : (
+                    <p>{userRole === 'ADMIN' ? "Track your organisation's progress" : "Track your team's progress and stay on top of your tasks."}</p>
+                )}
             </div>
 
             {/* Team Stats Section */}
@@ -144,8 +161,8 @@ const BoardView: React.FC<BoardViewProps> = ({
                                     className="board-stat-card clickable"
                                     role="button"
                                     tabIndex={0}
-                                    onClick={() => onNavigate?.('/dashboard?section=task-tracker&filter=ongoing')}
-                                    onKeyDown={handleCardKeyDown(() => onNavigate?.('/dashboard?section=task-tracker&filter=ongoing'))}
+                                    onClick={() => onNavigate?.('/dashboard?section=task-tracker&filter=in_progress')}
+                                    onKeyDown={handleCardKeyDown(() => onNavigate?.('/dashboard?section=task-tracker&filter=in_progress'))}
                                 >
                                     <span className="board-stat-label">Ongoing Tasks</span>
                                     <span className="board-stat-value">{teamTotals.ongoing.toString().padStart(2, '0')}</span>
@@ -177,8 +194,8 @@ const BoardView: React.FC<BoardViewProps> = ({
                                     className="board-stat-card clickable"
                                     role="button"
                                     tabIndex={0}
-                                    onClick={() => onNavigate?.('/dashboard?section=task-tracker&filter=ongoing')}
-                                    onKeyDown={handleCardKeyDown(() => onNavigate?.('/dashboard?section=task-tracker&filter=ongoing'))}
+                                    onClick={() => onNavigate?.('/dashboard?section=task-tracker&filter=in_progress')}
+                                    onKeyDown={handleCardKeyDown(() => onNavigate?.('/dashboard?section=task-tracker&filter=in_progress'))}
                                 >
                                     <span className="board-stat-label">Ongoing Tasks</span>
                                     <span className="board-stat-value">{teamTotals.ongoing.toString().padStart(2, '0')}</span>
@@ -227,8 +244,8 @@ const BoardView: React.FC<BoardViewProps> = ({
                             className="board-stat-card clickable"
                             role="button"
                             tabIndex={0}
-                            onClick={() => onNavigate?.('/dashboard?section=task-tracker&filter=ongoing')}
-                            onKeyDown={handleCardKeyDown(() => onNavigate?.('/dashboard?section=task-tracker&filter=ongoing'))}
+                            onClick={() => onNavigate?.('/dashboard?section=task-tracker&filter=in_progress')}
+                            onKeyDown={handleCardKeyDown(() => onNavigate?.('/dashboard?section=task-tracker&filter=in_progress'))}
                         >
                             <span className="board-stat-label">Ongoing</span>
                             <span className="board-stat-value">{currentUserStats.stats.ongoing.toString().padStart(2, '0')}</span>
@@ -237,8 +254,8 @@ const BoardView: React.FC<BoardViewProps> = ({
                             className="board-stat-card clickable"
                             role="button"
                             tabIndex={0}
-                            onClick={() => onNavigate?.('/dashboard?section=task-tracker&filter=pending')}
-                            onKeyDown={handleCardKeyDown(() => onNavigate?.('/dashboard?section=task-tracker&filter=pending'))}
+                            onClick={() => onNavigate?.('/dashboard?section=task-tracker&filter=created')}
+                            onKeyDown={handleCardKeyDown(() => onNavigate?.('/dashboard?section=task-tracker&filter=created'))}
                         >
                             <span className="board-stat-label">Pending</span>
                             <span className="board-stat-value">{currentUserStats.stats.pending.toString().padStart(2, '0')}</span>

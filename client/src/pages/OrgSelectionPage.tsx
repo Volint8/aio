@@ -15,10 +15,14 @@ interface OrganizationMember {
     id: string;
     userId: string;
     role: string;
+    joinedAt: string;
     user: {
         id: string;
         email: string;
         name: string | null;
+        signupSource?: string | null;
+        initialRole?: string | null;
+        createdAt: string;
     };
 }
 
@@ -287,10 +291,21 @@ const OrgSelectionPage = () => {
                                         <div className="team-member-info">
                                             <strong>{member.user.name || member.user.email}</strong>
                                             <span>{member.user.email}</span>
+                                            <span style={{ fontSize: '0.8em', color: 'var(--text-muted)', marginTop: '4px' }}>
+                                                {member.user.signupSource === 'ADMIN' ? '🏢 Founder' : 
+                                                 member.user.signupSource === 'INVITE' ? '📧 Invited' : '👤 Member'}
+                                                {' • '}
+                                                Joined {new Date(member.joinedAt).toLocaleDateString()}
+                                            </span>
                                         </div>
 
                                         <div className="team-member-role">
                                             <span className={`role-badge ${member.role?.toLowerCase() || ''}`}>{member.role}</span>
+                                            {member.user.initialRole && member.role !== member.user.initialRole && (
+                                                <span className="role-badge" style={{ background: '#f0f0f0', color: '#666' }}>
+                                                    Started: {member.user.initialRole}
+                                                </span>
+                                            )}
                                             <select
                                                 value={member.role}
                                                 disabled={updatingMemberId === member.id}
@@ -298,7 +313,7 @@ const OrgSelectionPage = () => {
                                             >
                                                 <option value="MEMBER">MEMBER</option>
                                                 <option value="TEAM_LEAD">TEAM LEAD</option>
-                                                <option value="ADMIN">ADMIN</option>
+                                                {member.role === 'ADMIN' && <option value="ADMIN">ADMIN</option>}
                                             </select>
                                         </div>
                                     </div>

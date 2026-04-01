@@ -89,6 +89,9 @@ const OTPPage = () => {
                 <div className="auth-divider"></div>
                 <div className="auth-footer">
                     <p>Need to change account? <button type="button" className="link-button" onClick={() => navigate('/login')}>Back to Sign In</button></p>
+                    <p style={{ marginTop: '12px', fontSize: '0.9em' }}>
+                        Need help? <a href="mailto:Hello@apraizal.com" className="link-button">Contact Support</a>
+                    </p>
                 </div>
             </div>
         </div>

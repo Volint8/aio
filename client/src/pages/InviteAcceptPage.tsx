@@ -90,6 +90,9 @@ const InviteAcceptPage = () => {
                 <div className="auth-divider"></div>
                 <div className="auth-footer">
                     <p>Have a different account? <button type="button" className="link-button" onClick={() => navigate('/login')}>Sign In</button></p>
+                    <p style={{ marginTop: '12px', fontSize: '0.9em' }}>
+                        Need help? <a href="mailto:Hello@apraizal.com" className="link-button">Contact Support</a>
+                    </p>
                 </div>
             </div>
         </div>

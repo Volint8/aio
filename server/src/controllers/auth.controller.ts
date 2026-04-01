@@ -164,6 +164,8 @@ export const adminSignupComplete = async (req: Request, res: Response) => {
           passwordHash,
           name: name?.trim() || normalizedEmail.split('@')[0],
           role: 'USER',
+          signupSource: 'ADMIN',
+          initialRole: 'ADMIN',
           otp,
           otpExpiresAt,
           isVerified: false
@@ -254,7 +256,9 @@ export const inviteAcceptInit = async (req: Request, res: Response) => {
           isVerified: false,
           otp,
           otpExpiresAt,
-          pendingInviteId: invite.id
+          pendingInviteId: invite.id,
+          signupSource: 'INVITE',
+          initialRole: invite.role
         }
       });
     } else {
@@ -596,6 +600,42 @@ export const forgotPasswordComplete = async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error('Forgot password complete error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+export const changePassword = async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user.userId as string;
+    const { currentPassword, newPassword } = req.body as { currentPassword?: string; newPassword?: string };
+
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ error: 'Current password and new password are required' });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({ error: 'New password must be at least 6 characters' });
+    }
+
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const isValid = await bcrypt.compare(currentPassword, user.passwordHash);
+    if (!isValid) {
+      return res.status(401).json({ error: 'Invalid current password' });
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+    await prisma.user.update({
+      where: { id: userId },
+      data: { passwordHash }
+    });
+
+    return res.json({ message: 'Password changed successfully' });
+  } catch (error) {
+    console.error('Change password error:', error);
     return res.status(500).json({ error: 'Internal server error' });
   }
 };

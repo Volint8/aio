@@ -72,6 +72,7 @@
     letter-spacing: 0.05em;
 }
 
+.okr-status-pill.not_yet_open { background: #F1F5F9; color: #475569; }
 .okr-status-pill.open { background: #E0F2FE; color: #0369A1; }
 .okr-status-pill.completed { background: #DCFCE7; color: #166534; }
 

@@ -30,11 +30,28 @@
     z-index: 2;
 }
 
-.welcome-banner p {
+.welcome-banner p,
+.welcome-quote {
     margin: 12px 0 0 0;
     font-size: 1.1em;
-    opacity: 0.9;
+    line-height: 1.6;
+    opacity: 0.95;
     z-index: 2;
+    max-width: 800px;
+}
+
+.welcome-quote {
+    font-style: italic;
+    font-weight: 500;
+}
+
+.quote-author {
+    font-style: normal;
+    font-size: 0.9em;
+    font-weight: 700;
+    opacity: 0.8;
+    margin-left: 8px;
+    letter-spacing: 0.5px;
 }
 
 .board-stats-grid {

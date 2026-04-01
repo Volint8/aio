@@ -10,6 +10,7 @@ const LandingPage = () => {
                 </div>
                 <nav className="landing-nav">
                     <a href="#features">Features</a>
+                    <a href="mailto:Hello@apraizal.com">Contact</a>
                     <Link to="/login" className="btn-secondary" style={{ padding: '8px 20px', fontSize: '0.9em' }}>Sign In</Link>
                 </nav>
             </header>

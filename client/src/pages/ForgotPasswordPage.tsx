@@ -198,6 +198,9 @@ const ForgotPasswordPage = () => {
                             Back to Sign In
                         </button>
                     </p>
+                    <p style={{ marginTop: '12px', fontSize: '0.9em' }}>
+                        Need help? <a href="mailto:Hello@apraizal.com" className="link-button">Contact Support</a>
+                    </p>
                 </div>
             </div>
         </div>

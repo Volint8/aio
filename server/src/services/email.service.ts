@@ -192,3 +192,124 @@ export const sendTaskAlertEmail = async (params: {
 
     return sendEmail(to, subject, html);
 };
+
+export const sendOkrNotificationEmail = async (params: {
+    to: string;
+    recipientName?: string | null;
+    okrTitle: string;
+    okrDescription?: string | null;
+    teamName: string;
+    organizationName: string;
+    creatorName: string | null;
+    periodStart: string;
+    periodEnd: string;
+}) => {
+    const {
+        to,
+        recipientName,
+        okrTitle,
+        okrDescription,
+        teamName,
+        organizationName,
+        creatorName,
+        periodStart,
+        periodEnd
+    } = params;
+
+    const subject = `New OKR Assigned to ${teamName}: ${okrTitle}`;
+    const displayName = recipientName || to;
+    const createdBy = creatorName || 'An administrator';
+
+    const startDate = new Date(periodStart).toLocaleDateString('en-US', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric'
+    });
+    const endDate = new Date(periodEnd).toLocaleDateString('en-US', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric'
+    });
+
+    const html = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 10px;">
+            <div style="text-align: center; margin-bottom: 20px;">
+                <img src="${(process.env.CLIENT_URL || 'http://localhost:5173').split(',')[0]}/images/image.png" alt="Apraizal Logo" style="height: 40px;" />
+            </div>
+            <h2 style="color: #333; text-align: center;">New OKR Assigned</h2>
+            <p style="color: #666; font-size: 16px;">Hi ${displayName},</p>
+            <p style="color: #666; font-size: 16px;">
+                ${createdBy} has assigned a new OKR to <strong>${teamName}</strong> in <strong>${organizationName}</strong>.
+            </p>
+            <div style="background-color: #f4f4f4; padding: 15px; border-radius: 5px; margin: 20px 0;">
+                <p style="margin: 0 0 8px 0;"><strong>OKR:</strong> ${okrTitle}</p>
+                ${okrDescription ? `<p style="margin: 0 0 8px 0;"><strong>Description:</strong> ${okrDescription}</p>` : ''}
+                <p style="margin: 0 0 8px 0;"><strong>Period:</strong> ${startDate} - ${endDate}</p>
+            </div>
+            <p style="color: #666; font-size: 14px;">Please log in to the Apraizal platform to review this OKR and track its progress.</p>
+            <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
+            <p style="text-align: center; color: #999; font-size: 12px;">&copy; ${new Date().getFullYear()} Apraizal Platform. All rights reserved.</p>
+        </div>
+    `;
+
+    return sendEmail(to, subject, html);
+};
+
+export const sendKeyResultNotificationEmail = async (params: {
+    to: string;
+    recipientName: string | null;
+    okrTitle: string;
+    keyResultTitle: string;
+    organizationName: string;
+    creatorName: string | null;
+    periodStart: string;
+    periodEnd: string;
+}) => {
+    const {
+        to,
+        recipientName,
+        okrTitle,
+        keyResultTitle,
+        organizationName,
+        creatorName,
+        periodStart,
+        periodEnd
+    } = params;
+
+    const subject = `You've been tagged in an OKR: ${okrTitle}`;
+    const displayName = recipientName || to;
+    const createdBy = creatorName || 'An administrator';
+
+    const startDate = new Date(periodStart).toLocaleDateString('en-US', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric'
+    });
+    const endDate = new Date(periodEnd).toLocaleDateString('en-US', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric'
+    });
+
+    const html = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 10px;">
+            <div style="text-align: center; margin-bottom: 20px;">
+                <img src="${(process.env.CLIENT_URL || 'http://localhost:5173').split(',')[0]}/images/image.png" alt="Apraizal Logo" style="height: 40px;" />
+            </div>
+            <h2 style="color: #333; text-align: center;">You've Been Tagged in an OKR</h2>
+            <p style="color: #666; font-size: 16px;">Hi ${displayName},</p>
+            <p style="color: #666; font-size: 16px;">
+                ${createdBy} has tagged you in a Key Result for the OKR <strong>${okrTitle}</strong> in <strong>${organizationName}</strong>.
+            </p>
+            <div style="background-color: #f4f4f4; padding: 15px; border-radius: 5px; margin: 20px 0;">
+                <p style="margin: 0 0 8px 0;"><strong>Key Result:</strong> ${keyResultTitle}</p>
+                <p style="margin: 0 0 8px 0;"><strong>OKR Period:</strong> ${startDate} - ${endDate}</p>
+            </div>
+            <p style="color: #666; font-size: 14px;">Please log in to the Apraizal platform to review this Key Result and track its progress.</p>
+            <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
+            <p style="text-align: center; color: #999; font-size: 12px;">&copy; ${new Date().getFullYear()} Apraizal Platform. All rights reserved.</p>
+        </div>
+    `;
+
+    return sendEmail(to, subject, html);
+};

@@ -19,6 +19,8 @@ model User {
   passwordResetOtp          String?
   passwordResetOtpExpiresAt DateTime?
   pendingInviteId           String?
+  signupSource              String?              // ADMIN, INVITE, SYSTEM
+  initialRole               String?              // Initial role when joining (ADMIN, TEAM_LEAD, MEMBER)
   createdAt                 DateTime             @default(now())
   updatedAt                 DateTime             @updatedAt
   organizations             OrganizationMember[]
@@ -55,6 +57,17 @@ model Organization {
   appraisals     Appraisal[]
   clients        Client[]
   notifications  Notification[]
+  quotes         Quote[]
+}
+
+model Quote {
+  id             String       @id @default(uuid())
+  text           String
+  author         String?
+  organizationId String
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 }
 
 model OrganizationMember {
@@ -63,6 +76,7 @@ model OrganizationMember {
   organizationId String
   teamId         String?
   role           String       @default("MEMBER") // MEMBER, TEAM_LEAD, ADMIN
+  joinedAt       DateTime     @default(now())
   user           User         @relation(fields: [userId], references: [id])
   organization   Organization @relation(fields: [organizationId], references: [id])
   team           Team?        @relation(fields: [teamId], references: [id])
@@ -158,6 +172,8 @@ model Invite {
   organizationId   String
   email            String
   role             String // TEAM_LEAD, MEMBER
+  teamId           String?
+  category         String?
   tokenHash        String
   status           String       @default("PENDING") // PENDING, ACCEPTED, EXPIRED, REVOKED
   expiresAt        DateTime
@@ -168,6 +184,7 @@ model Invite {
   organization     Organization @relation(fields: [organizationId], references: [id])
   invitedBy        User         @relation("Inviter", fields: [invitedByUserId], references: [id])
   acceptedBy       User?        @relation("InviteAccepter", fields: [acceptedByUserId], references: [id])
+  team             Team?        @relation(fields: [teamId], references: [id])
 
   @@index([organizationId, email, status])
 }
@@ -194,7 +211,7 @@ model Okr {
   description    String?
   periodStart    DateTime
   periodEnd      DateTime
-  status         String          @default("OPEN") // OPEN, COMPLETED
+  status         String          @default("OPEN") // NOT_YET_OPEN, OPEN, COMPLETED
   createdBy      String
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
@@ -250,13 +267,14 @@ model Team {
   organizationId String
   name           String
   normalizedName String
-  leadUserId     String
+  leadUserId     String?
   createdAt      DateTime             @default(now())
   updatedAt      DateTime             @updatedAt
   organization   Organization         @relation(fields: [organizationId], references: [id])
-  leadUser       User                 @relation("TeamLead", fields: [leadUserId], references: [id])
+  leadUser       User?                @relation("TeamLead", fields: [leadUserId], references: [id], onDelete: SetNull)
   members        OrganizationMember[]
   taskLinks      TaskTeam[]
+  invites        Invite[]
 
   @@unique([organizationId, normalizedName])
 }
