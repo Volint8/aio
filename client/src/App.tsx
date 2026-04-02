@@ -7,6 +7,7 @@ import InviteAcceptPage from './pages/InviteAcceptPage';
 import DashboardPage from './pages/DashboardPage';
 import LandingPage from './pages/LandingPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
+import PaymentCallback from './pages/PaymentCallback';
 import Layout from './components/common/Layout';
 
 const ProtectedRoute = ({ children }: { children: ReactElement }) => {
@@ -42,6 +43,7 @@ function AppRoutes() {
       <Route path="/confirm-otp" element={<OTPPage />} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/accept-invite" element={<InviteAcceptPage />} />
+      <Route path="/payment/callback" element={<PaymentCallback />} />
       <Route path="/dashboard" element={
         <ProtectedRoute>
           <Layout>

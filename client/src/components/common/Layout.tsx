@@ -47,6 +47,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         { label: 'Trackers', section: 'task-tracker', icon: 'trackers' },
         { label: 'Team', section: 'team', icon: 'team' },
         { label: 'Appraisals', section: 'appraisals', icon: 'appraisals' },
+        { label: 'Subscription', section: 'subscription', icon: 'subscription' },
         { label: 'Settings', section: 'settings', icon: 'settings' },
         { label: 'Contact Support', section: 'support', icon: 'support' }
     ]), []);
@@ -118,6 +119,15 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                     <svg {...common}>
                         <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
                         <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                    </svg>
+                );
+            case 'subscription':
+                return (
+                    <svg {...common}>
+                        <rect x="1" y="4" width="22" height="16" rx="2" ry="2"></rect>
+                        <line x1="1" y1="10" x2="23" y2="10"></line>
+                        <line x1="9" y1="16" x2="9.01" y2="16"></line>
+                        <line x1="15" y1="16" x2="15.01" y2="16"></line>
                     </svg>
                 );
             case 'support':

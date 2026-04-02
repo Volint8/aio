@@ -321,3 +321,66 @@ model Notification {
 
   @@index([organizationId, targetId, targetType])
 }
+
+model Subscription {
+  id                     String    @id @default(uuid())
+  userId                 String
+  organizationId         String
+  plan                   String    @default("free") // free, standard, enterprise
+  status                 String    @default("trial") // trial, active, cancelled, expired
+  period                 String    @default("monthly") // monthly, yearly
+  userCount              Int       @default(10) // 10, 100, 250, 500, 1000
+  startDate              DateTime?
+  endDate                DateTime?
+  amount                 Int? // Amount in kobo (NGN)
+  currency               String    @default("NGN")
+  paystackCustomerId     String?
+  paystackSubscriptionId String?
+  paystackReference      String?
+  paystackEmailToken     String?
+  trialStartDate         DateTime?
+  trialEndDate           DateTime?
+  cancelledAt            DateTime?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+  payments               Payment[]
+
+  @@index([userId])
+  @@index([organizationId])
+  @@index([status])
+}
+
+model Payment {
+  id                     String    @id @default(uuid())
+  userId                 String
+  organizationId         String
+  subscriptionId         String?
+  amount                 Int // Amount in kobo
+  currency               String    @default("NGN")
+  status                 String    @default("pending") // pending, success, failed
+  paystackReference      String    @unique
+  paystackAccessCode     String?
+  paystackAuthorizationUrl String?
+  metadata               Json?
+  paidAt                 DateTime?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+  subscription           Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([organizationId])
+  @@index([paystackReference])
+  @@index([status])
+}
+
+model WebhookEvent {
+  id           String   @id @default(uuid())
+  eventId      String   @unique // Paystack event ID
+  eventType    String // charge.success, subscription.create, etc.
+  processed    Boolean  @default(false)
+  payload      Json
+  createdAt    DateTime @default(now())
+
+  @@index([eventId])
+  @@index([eventType])
+}

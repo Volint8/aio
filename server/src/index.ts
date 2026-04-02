@@ -31,7 +31,14 @@ import orgRoutes from './routes/org.routes';
 import taskRoutes from './routes/task.routes';
 import notificationRoutes from './routes/notification.routes';
 import appraisalRoutes from './routes/appraisal.routes';
+import paymentRoutes from './routes/payment.routes';
+import subscriptionRoutes from './routes/subscription.routes';
 import { startTaskPurgeJob } from './jobs/taskPurge.job';
+
+// Make prisma available globally for controllers
+import { PrismaClient } from '@prisma/client';
+const prisma = new PrismaClient();
+(global as any).prisma = prisma;
 
 // Routes
 app.use('/auth', authRoutes);
@@ -39,6 +46,8 @@ app.use('/orgs', orgRoutes);
 app.use('/tasks', taskRoutes);
 app.use('/notifications', notificationRoutes);
 app.use('/appraisals', appraisalRoutes);
+app.use('/payments', paymentRoutes);
+app.use('/subscriptions', subscriptionRoutes);
 
 app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);

@@ -6,6 +6,7 @@ import BoardView from '../components/BoardView';
 import TaskTrackerView from '../components/TaskTrackerView';
 import TeamTrackerView from '../components/TeamTrackerView';
 import OkrView from '../components/OkrView';
+import SubscriptionPage from './SubscriptionPage';
 import * as XLSX from 'xlsx';
 import '../styles/Dashboard.css';
 
@@ -166,7 +167,7 @@ interface ClientRecord {
     };
 }
 
-type DashboardSection = 'board' | 'task-tracker' | 'team-tracker' | 'okr' | 'tracker' | 'team' | 'tags' | 'appraisals' | 'settings' | 'support';
+type DashboardSection = 'board' | 'task-tracker' | 'team-tracker' | 'okr' | 'tracker' | 'team' | 'tags' | 'appraisals' | 'subscription' | 'settings' | 'support';
 type TaskFilter = 'all' | 'my' | 'supporting' | 'pending' | 'ongoing' | 'completed' | 'overdue' | 'created' | 'in_progress' | 'recently_deleted';
 type TrackerView = 'users' | 'teams';
 
@@ -411,6 +412,7 @@ const DashboardPage = () => {
         if (requestedSection === 'team' && canTrackTeam) return 'team';
         if (requestedSection === 'tags' && isAdmin) return 'tags';
         if (requestedSection === 'appraisals' && isAdmin) return 'appraisals';
+        if (requestedSection === 'subscription' && isAdmin) return 'subscription';
         if (requestedSection === 'settings') return 'settings';
         if (requestedSection === 'support') return 'support';
         return 'board';
@@ -1742,6 +1744,9 @@ const DashboardPage = () => {
                 )}
 
                 {currentSection === 'settings' && renderSettingsSection()}
+                {currentSection === 'subscription' && isAdmin && organization && (
+                    <SubscriptionPage organizationId={organization.id} />
+                )}
                 {currentSection === 'support' && renderSupportSection()}
 
                 <div className="dashboard-header">
