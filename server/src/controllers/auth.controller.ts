@@ -15,6 +15,9 @@ import { makeUniqueOrgName, makeUniqueSlug, normalizeOrgName } from '../utils/or
 
 const prisma = new PrismaClient();
 
+const DOMAIN_ALREADY_EXISTS_ERROR =
+  'An organization already exists for this email domain. Please sign in or contact your administrator.';
+
 const signAuthToken = (user: { id: string; email: string; role: string }) => {
   return jwt.sign(
     { userId: user.id, email: user.email, role: user.role },
@@ -101,6 +104,11 @@ export const adminSignupInit = async (req: Request, res: Response) => {
     }
 
     const domain = getEmailDomain(normalizedEmail);
+    const existingOrg = await prisma.organization.findUnique({ where: { domain } });
+    if (existingOrg) {
+      return res.status(409).json({ error: DOMAIN_ALREADY_EXISTS_ERROR });
+    }
+
     const suggestions = [
       await makeUniqueOrgName(domain.split('.')[0] || 'Organization'),
       await makeUniqueOrgName(`${domain.split('.')[0] || 'Organization'} Team`)
@@ -149,6 +157,14 @@ export const adminSignupComplete = async (req: Request, res: Response) => {
       await prisma.user.delete({ where: { id: existingVerified.id } });
     }
 
+    const domain = getEmailDomain(normalizedEmail);
+    if (domain) {
+      const existingDomainOrg = await prisma.organization.findUnique({ where: { domain } });
+      if (existingDomainOrg) {
+        return res.status(409).json({ error: DOMAIN_ALREADY_EXISTS_ERROR });
+      }
+    }
+
     const uniqueOrgName = await makeUniqueOrgName(organizationName.trim());
     const normalizedOrgName = normalizeOrgName(uniqueOrgName);
     const slug = await makeUniqueSlug(uniqueOrgName);
@@ -157,39 +173,48 @@ export const adminSignupComplete = async (req: Request, res: Response) => {
     const otp = randomOtp();
     const otpExpiresAt = otpExpiryDate();
 
-    const user = await prisma.$transaction(async (tx) => {
-      const createdUser = await tx.user.create({
-        data: {
-          email: normalizedEmail,
-          passwordHash,
-          name: name?.trim() || normalizedEmail.split('@')[0],
-          role: 'USER',
-          signupSource: 'ADMIN',
-          initialRole: 'ADMIN',
-          otp,
-          otpExpiresAt,
-          isVerified: false
-        }
-      });
+    let user: any;
+    try {
+      user = await prisma.$transaction(async (tx) => {
+        const createdUser = await tx.user.create({
+          data: {
+            email: normalizedEmail,
+            passwordHash,
+            name: name?.trim() || normalizedEmail.split('@')[0],
+            role: 'USER',
+            signupSource: 'ADMIN',
+            initialRole: 'ADMIN',
+            otp,
+            otpExpiresAt,
+            isVerified: false
+          }
+        });
 
-      const organization = await tx.organization.create({
-        data: {
-          name: uniqueOrgName,
-          normalizedName: normalizedOrgName,
-          slug
-        }
-      });
+        const organization = await tx.organization.create({
+          data: {
+            name: uniqueOrgName,
+            normalizedName: normalizedOrgName,
+            slug,
+            ...(domain ? { domain } : {})
+          }
+        });
 
-      await tx.organizationMember.create({
-        data: {
-          userId: createdUser.id,
-          organizationId: organization.id,
-          role: 'ADMIN'
-        }
-      });
+        await tx.organizationMember.create({
+          data: {
+            userId: createdUser.id,
+            organizationId: organization.id,
+            role: 'ADMIN'
+          }
+        });
 
-      return createdUser;
-    });
+        return createdUser;
+      });
+    } catch (error: any) {
+      if (error?.code === 'P2002' && error?.meta?.target?.includes('Organization_domain_key')) {
+        return res.status(409).json({ error: DOMAIN_ALREADY_EXISTS_ERROR });
+      }
+      throw error;
+    }
 
     try {
       await sendOtpEmail(normalizedEmail, otp);

@@ -70,17 +70,20 @@ interface OrganizationMember {
     userId: string;
     role: string;
     teamId?: string | null;
+    joinedAt?: string | null;
     user: {
         id: string;
         email: string;
         name: string | null;
+        initialRole?: string | null;
+        createdAt?: string;
     };
 }
 
 interface Team {
     id: string;
     name: string;
-    leadUser: { id: string; name: string | null; email: string };
+    leadUser?: { id: string; name: string | null; email: string } | null;
     stats: { created: number; inProgress: number; completed: number; total: number };
     members: Array<{
         id?: string;
@@ -133,7 +136,12 @@ interface Appraisal {
     cycle: string;
     summary: string;
     status: string;
-    subjectUser?: { id: string; name?: string | null; email: string };
+    subjectUser?: { 
+        id: string; 
+        name?: string | null; 
+        email: string;
+        team?: { id: string; name: string } | null;
+    };
 }
 
 interface InviteRecord {
@@ -183,6 +191,14 @@ interface MemberStatRecord {
         performanceScore?: number;
         temperature?: string;
     };
+}
+
+interface MemberRow {
+    member: OrganizationMember;
+    stats?: MemberStatRecord;
+    teamName: string;
+    category: string;
+    roleLabel: string;
 }
 
 interface TeamDistributionRecord {
@@ -308,6 +324,7 @@ const DashboardPage = () => {
     const [showTagModal, setShowTagModal] = useState(false);
     const [editingTag, setEditingTag] = useState<Tag | null>(null);
     const [tagForm, setTagForm] = useState({ name: '', color: '#2563eb' });
+    const [selectedMemberDetail, setSelectedMemberDetail] = useState<MemberRow | null>(null);
 
     const [newTask, setNewTask] = useState({
         title: '',
@@ -361,13 +378,18 @@ const DashboardPage = () => {
         memberUserIds: [] as string[]
     });
     const [inviteEmail, setInviteEmail] = useState('');
-    const [inviteName, setInviteName] = useState('');
     const [inviteRole, setInviteRole] = useState('MEMBER');
     const [inviting, setInviting] = useState(false);
     const [teamError, setTeamError] = useState('');
     const [clientFormName, setClientFormName] = useState('');
     const [clientFormVisibility, setClientFormVisibility] = useState('ORG_WIDE');
     const [taskClientFilter, setTaskClientFilter] = useState('all');
+
+    useEffect(() => {
+        const params = new URLSearchParams(location.search);
+        const requested = (params.get('filter') || 'all') as TaskFilter;
+        setFilter((prev) => (prev === requested ? prev : requested));
+    }, [location.search]);
 
     // Bulk invite state
     const [showBulkInviteModal, setShowBulkInviteModal] = useState(false);
@@ -402,6 +424,22 @@ const DashboardPage = () => {
     const canTrackTeam = organization?.userRole === 'ADMIN' || organization?.userRole === 'TEAM_LEAD';
     const canUseTrackerCharts = isAdmin || isTeamLead;
     const trackerView: TrackerView = requestedTrackerView === 'teams' ? 'teams' : 'users';
+
+    // Extract team name for team tracker display
+    const urlTeamId = new URLSearchParams(location.search).get('teamId');
+    const teamTrackerName = useMemo(() => {
+        // If a specific team is selected via URL, use that team's name
+        if (urlTeamId) {
+            const team = teamDistribution.find(t => t.teamId === urlTeamId);
+            if (team) return team.teamName;
+        }
+        // For team leads, use their assigned team name (first team in distribution)
+        if (isTeamLead && teamDistribution.length > 0) {
+            return teamDistribution[0].teamName;
+        }
+        // For admins viewing without specific team, return null to show generic title
+        return null;
+    }, [urlTeamId, teamDistribution, isTeamLead]);
 
     const currentSection: DashboardSection = useMemo(() => {
         if (requestedSection === 'board') return 'board';
@@ -565,6 +603,28 @@ const DashboardPage = () => {
         return role;
     };
 
+    const formatMemberCategory = (stats?: MemberStatRecord) => {
+        if (!stats) return 'Regular';
+        const total = stats.stats.total;
+        if (total > 20) return 'High Performer';
+        if (total > 10) return 'Active';
+        if (total > 5) return 'Moderate';
+        return 'New';
+    };
+
+    const formatJoinedDate = (date?: string | null) => {
+        if (!date) return 'Unknown';
+        return new Date(date).toLocaleDateString();
+    };
+
+    const getCategoryStyles = (category: string) => {
+        if (category === 'High Performer') return { background: '#DCFCE7', color: '#166534' };
+        if (category === 'Active') return { background: '#E0F2FE', color: '#0369A1' };
+        if (category === 'Moderate') return { background: '#FEF3C7', color: '#92400E' };
+        if (category === 'New') return { background: '#F1F5F9', color: '#475569' };
+        return { background: '#F1F5F9', color: '#475569' };
+    };
+
     const handleStatClick = (filterValue: TaskFilter) => {
         const params = new URLSearchParams(location.search);
         params.set('section', 'task-tracker');
@@ -584,6 +644,33 @@ const DashboardPage = () => {
         params.set('teamId', teamId);
         navigate(`/dashboard?${params.toString()}`);
     };
+
+    const handleOpenMemberDetail = (row: MemberRow) => {
+        setSelectedMemberDetail(row);
+    };
+
+    const handleCloseMemberDetail = () => {
+        setSelectedMemberDetail(null);
+    };
+
+    const memberRows = useMemo<MemberRow[]>(() => {
+        if (!organization) return [];
+        return (organization.members || [])
+            .filter((member) => {
+                if (member.role === 'ADMIN' || member.userId === user?.id) return false;
+                if (ownerFilter !== 'all' && member.userId !== ownerFilter) return false;
+                if (supporterFilter !== 'all' && member.userId !== supporterFilter) return false;
+                return true;
+            })
+            .map((member) => {
+                const stats = memberStats.find((m) => m.userId === member.userId);
+                const team = teams.find((t) => t.members?.some((m) => m.userId === member.userId));
+                const roleLabel = member.user.initialRole?.trim() || formatRole(member.role);
+                const category = formatMemberCategory(stats);
+                const teamName = team?.name || 'No team';
+                return { member, stats, teamName, category, roleLabel };
+            });
+    }, [organization, ownerFilter, supporterFilter, memberStats, teams, user?.id]);
 
     const fetchQuotes = async () => {
         if (!orgId) return;
@@ -1033,7 +1120,7 @@ const DashboardPage = () => {
         setEditingTeam(team);
         setTeamForm({
             name: team.name,
-            leadUserId: team.leadUser.id,
+            leadUserId: team.leadUser?.id || '',
             memberUserIds: (team.members || []).map((m) => m.userId || m.id || '').filter(Boolean)
         });
     };
@@ -1076,11 +1163,9 @@ const DashboardPage = () => {
             setInviting(true);
             await api.post(`/orgs/${orgId}/invites`, {
                 email: inviteEmail,
-                role: inviteRole,
-                name: inviteName || undefined
+                role: inviteRole
             });
             setInviteEmail('');
-            setInviteName('');
             setInviteRole('MEMBER');
             const invitesRes = await api.get(`/orgs/${orgId}/invites`);
             setInvites(invitesRes.data || []);
@@ -1125,25 +1210,23 @@ const DashboardPage = () => {
     // Bulk invite handlers
     const handleDownloadSampleSheet = () => {
         const data = [
-            { Email: 'john.doe@company.com', Name: 'John Doe', Team: 'Growth', Category: 'Sales', Role: 'TEAM_LEAD' },
-            { Email: 'jane.smith@company.com', Name: 'Jane Smith', Team: 'Operations', Category: 'Support', Role: 'MEMBER' },
-            { Email: 'bob.wilson@company.com', Name: 'Bob Wilson', Team: 'Growth', Category: 'Marketing', Role: 'MEMBER' }
+            { Email: 'john.doe@company.com', Team: 'Growth', Role: 'TEAM_LEAD' },
+            { Email: 'jane.smith@company.com', Team: 'Operations', Role: 'MEMBER' },
+            { Email: 'bob.wilson@company.com', Team: 'Growth', Role: 'MEMBER' }
         ];
 
         const ws = XLSX.utils.json_to_sheet(data);
         const wb = XLSX.utils.book_new();
-        
+
         // Set column widths
         ws['!cols'] = [
             { wch: 30 }, // Email
-            { wch: 20 }, // Name
-            { wch: 15 }, // Team
-            { wch: 15 }, // Category
+            { wch: 20 }, // Team
             { wch: 12 }  // Role
         ];
 
         XLSX.utils.book_append_sheet(wb, ws, 'Invite Template');
-        
+
         // Add instructions sheet
         const instructions = [
             ['BULK INVITE INSTRUCTIONS'],
@@ -1153,19 +1236,19 @@ const DashboardPage = () => {
             ['- Role: TEAM_LEAD or MEMBER (required)'],
             [''],
             ['Optional Columns:'],
-            ['- Name: Full name of the invitee'],
-            ['- Team: Must match an existing team name'],
-            ['- Category: Department or function (e.g., Sales, Marketing)'],
+            ['- Team: Team name (will be created automatically if it doesn\'t exist)'],
             [''],
             ['Notes:'],
             ['- Maximum file size: 5MB'],
             ['- Supported formats: .xlsx, .xls, .csv'],
+            ['- Teams will be created automatically from the upload'],
+            ['- Team leads are identified by TEAM_LEAD role'],
             ['- Invites expire after 72 hours']
         ];
         const wsInstructions = XLSX.utils.aoa_to_sheet(instructions);
-        wsInstructions['!cols'] = [{ wch: 50 }];
+        wsInstructions['!cols'] = [{ wch: 60 }];
         XLSX.utils.book_append_sheet(wb, wsInstructions, 'Instructions');
-        
+
         XLSX.writeFile(wb, 'bulk-invite-template.xlsx');
     };
 
@@ -1207,15 +1290,15 @@ const DashboardPage = () => {
             }
 
             // Validate columns
-            const requiredColumns = ['Email', 'Role'];
+            const requiredColumns = ['Email', 'Team', 'Role'];
             const firstRow = jsonData[0];
             const missingColumns = requiredColumns.filter(col => !(col in firstRow));
-            
+
             if (missingColumns.length > 0) {
-                setBulkInviteErrors([{ 
-                    row: 1, 
-                    email: '', 
-                    error: `Missing columns: ${missingColumns.join(', ')}` 
+                setBulkInviteErrors([{
+                    row: 1,
+                    email: '',
+                    error: `Missing columns: ${missingColumns.join(', ')}. Required: Email, Team, Role`
                 }]);
                 return;
             }
@@ -1523,6 +1606,66 @@ const DashboardPage = () => {
                             <p>Contact us anytime at:</p>
                             <a href="mailto:Hello@apraizal.com" className="support-email">Hello@apraizal.com</a>
                         </div>
+                        {selectedMemberDetail && (
+                            <div className="modal-overlay" onClick={handleCloseMemberDetail}>
+                                <div className="member-detail-modal" onClick={(e) => e.stopPropagation()}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                                        <h3 style={{ margin: 0 }}>Member Details</h3>
+                                        <button className="btn-secondary" style={{ fontSize: '0.85em', padding: '6px 12px' }} onClick={handleCloseMemberDetail}>Close</button>
+                                    </div>
+                                    <div style={{ marginBottom: '12px' }}>
+                                        <strong style={{ fontSize: '1.1em' }}>{selectedMemberDetail.member.user.name || selectedMemberDetail.member.user.email}</strong>
+                                        <div style={{ fontSize: '0.85em', color: 'var(--text-muted)' }}>{selectedMemberDetail.member.user.email}</div>
+                                    </div>
+                                    <div className="member-detail-grid">
+                                        <div>
+                                            <small className="detail-label">Team</small>
+                                            <p>{selectedMemberDetail.teamName}</p>
+                                        </div>
+                                        <div>
+                                            <small className="detail-label">Role</small>
+                                            <p>{selectedMemberDetail.roleLabel}</p>
+                                        </div>
+                                        <div>
+                                            <small className="detail-label">Category</small>
+                                            <p>{selectedMemberDetail.category}</p>
+                                        </div>
+                                        <div>
+                                            <small className="detail-label">Date Joined</small>
+                                            <p>{formatJoinedDate(selectedMemberDetail.member.joinedAt)}</p>
+                                        </div>
+                                    </div>
+                                    <div className="member-detail-stats">
+                                        {(['pending', 'ongoing', 'completed', 'overdue', 'total'] as const).map((key) => {
+                                            const detailStats = selectedMemberDetail.stats?.stats;
+                                            const value = detailStats ? (detailStats[key] || 0) : 0;
+                                            return (
+                                                <div key={key} className="member-detail-stat-card">
+                                                    <div className="member-detail-stat-label">{key.charAt(0).toUpperCase() + key.slice(1)}</div>
+                                                    <div className="member-detail-stat-value">{value}</div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                    <div className="member-detail-actions" style={{ marginTop: '20px', display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+                                        <button
+                                            className="btn-outline-blue"
+                                            onClick={() => {
+                                                const member = selectedMemberDetail.member;
+                                                setAssigneeFilterId(member.userId);
+                                                const params = new URLSearchParams(location.search);
+                                                params.set('section', 'team-tracker');
+                                                navigate(`/dashboard?${params.toString()}`);
+                                                handleCloseMemberDetail();
+                                            }}
+                                        >
+                                            View Tasks
+                                        </button>
+                                        <button className="btn-secondary" onClick={handleCloseMemberDetail}>Close</button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
                     </div>
 
                     <a href="mailto:Hello@apraizal.com" className="btn-primary" style={{ textDecoration: 'none', display: 'inline-block' }}>
@@ -1712,6 +1855,7 @@ const DashboardPage = () => {
 
                 {currentSection === 'team-tracker' && canTrackTeam && (
                     <TeamTrackerView
+                        teamName={teamTrackerName}
                         tasks={isTeamLead ? tasks.filter(t => t.assignee?.id !== user?.id) : tasks}
                         members={(organization?.members || [])
                             .filter(m => m.userId !== user?.id)
@@ -1792,23 +1936,19 @@ const DashboardPage = () => {
                                     </div>
                                     {teamError && <p className="team-error">{teamError}</p>}
                                     <form className="team-invite-form" onSubmit={handleInviteMember}>
-                                        <input
-                                            type="text"
-                                            value={inviteName}
-                                            onChange={(e) => setInviteName(e.target.value)}
-                                            placeholder="Full name (optional)"
-                                        />
-                                        <input
-                                            type="email"
-                                            value={inviteEmail}
-                                            onChange={(e) => setInviteEmail(e.target.value)}
-                                            placeholder="name@company.com"
-                                            required
-                                        />
-                                        <select value={inviteRole} onChange={(e) => setInviteRole(e.target.value)}>
-                                            <option value="MEMBER">Member</option>
-                                            <option value="TEAM_LEAD">Team Lead</option>
-                                        </select>
+                                        <div className="team-invite-fields">
+                                            <input
+                                                type="email"
+                                                value={inviteEmail}
+                                                onChange={(e) => setInviteEmail(e.target.value)}
+                                                placeholder="team.member@company.com"
+                                                required
+                                            />
+                                            <select value={inviteRole} onChange={(e) => setInviteRole(e.target.value)}>
+                                                <option value="MEMBER">Member</option>
+                                                <option value="TEAM_LEAD">Team Lead</option>
+                                            </select>
+                                        </div>
                                         <button type="submit" className="btn-primary" disabled={inviting}>
                                             {inviting ? 'Sending...' : 'Send Invite'}
                                         </button>
@@ -1821,7 +1961,7 @@ const DashboardPage = () => {
                                                 <div key={invite.id} className="team-invite-row">
                                                     <div className="team-member-info">
                                                         <div>
-                                                            <strong>{invite.name && invite.name.trim() ? invite.name : invite.email}</strong>
+                                                            <strong>{invite.email}</strong>
                                                         </div>
                                                     </div>
                                                     <div className="team-member-role">
@@ -1869,7 +2009,9 @@ const DashboardPage = () => {
                                                         style={{ cursor: 'pointer', flex: 1 }}
                                                     >
                                                         <h4>{team.name}</h4>
-                                                        <p className="team-lead">Lead: {team.leadUser.name || team.leadUser.email}</p>
+                                                        <p className={`team-lead ${team.leadUser ? '' : 'team-lead-missing'}`}>
+                                                            Lead: {team.leadUser?.name || team.leadUser?.email || 'Unassigned'}
+                                                        </p>
                                                         <p className="team-members-count">{(team.people || []).filter((p) => p.role !== 'ADMIN').length || 0} members</p>
                                                     </div>
                                                     <div className="team-card-actions" style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
@@ -1956,85 +2098,60 @@ const DashboardPage = () => {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {(organization?.members || [])
-                                            .filter((member) => {
-                                                // Exclude ADMIN and current user
-                                                if (member.role === 'ADMIN' || member.userId === user?.id) return false;
-
-                                                // Apply owner filter - show members who are assignees on tasks
-                                                if (ownerFilter !== 'all' && member.userId !== ownerFilter) return false;
-
-                                                // Apply supporter filter - show members who are supporters on tasks
-                                                if (supporterFilter !== 'all' && member.userId !== supporterFilter) return false;
-
-                                                return true;
-                                            })
-                                            .map((member) => {
-                                                // Find member stats
-                                                const stats = memberStats.find(m => m.userId === member.userId);
-                                                
-                                                // Find member's team
-                                                const memberTeam = teams.find(t => t.members?.some(m => m.userId === member.userId));
-                                                
-                                                // Determine category based on task stats
-                                                let category = 'Regular';
-                                                if (stats) {
-                                                    if (stats.stats.total > 20) category = 'High Performer';
-                                                    else if (stats.stats.total > 10) category = 'Active';
-                                                    else if (stats.stats.total > 5) category = 'Moderate';
-                                                    else category = 'New';
-                                                }
-
-                                                return (
-                                                    <tr key={member.id} className="member-table-row" style={{ borderBottom: '1px solid var(--border-color)', transition: 'background 0.2s' }} onMouseEnter={(e) => e.currentTarget.style.background = 'var(--hover-bg)'} onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
-                                                        <td style={{ padding: '12px 16px' }}>
-                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                                                <div className="member-avatar" style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'var(--primary-color)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.85em', fontWeight: 600 }}>
-                                                                    {getInitials(member.user.name || member.user.email)}
-                                                                </div>
-                                                                <strong>{member.user.name || member.user.email}</strong>
+                                        {memberRows.length > 0 ? (
+                                            memberRows.map((row) => (
+                                                <tr key={row.member.id} className="member-table-row" style={{ borderBottom: '1px solid var(--border-color)', transition: 'background 0.2s' }} onMouseEnter={(e) => e.currentTarget.style.background = 'var(--hover-bg)'} onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
+                                                    <td style={{ padding: '12px 16px' }}>
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                                            <div className="member-avatar" style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'var(--primary-color)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.85em', fontWeight: 600 }}>
+                                                                {getInitials(row.member.user.name || row.member.user.email)}
                                                             </div>
-                                                        </td>
-                                                        <td style={{ padding: '12px 16px', color: 'var(--text-muted)' }}>{member.user.email}</td>
-                                                        <td style={{ padding: '12px 16px' }}>{memberTeam ? memberTeam.name : 'No team'}</td>
-                                                        <td style={{ padding: '12px 16px' }}>
-                                                            <span className={`role-badge ${member.role.toLowerCase()}`}>{formatRole(member.role)}</span>
-                                                        </td>
-                                                        <td style={{ padding: '12px 16px' }}>
-                                                            <span className="category-badge" style={{ padding: '4px 10px', borderRadius: '12px', fontSize: '0.8em', background: category === 'High Performer' ? '#DCFCE7' : category === 'Active' ? '#E0F2FE' : category === 'Moderate' ? '#FEF3C7' : '#F1F5F9', color: category === 'High Performer' ? '#166534' : category === 'Active' ? '#0369A1' : category === 'Moderate' ? '#92400E' : '#475569' }}>
-                                                                {category}
-                                                            </span>
-                                                        </td>
-                                                        <td style={{ padding: '12px 16px', textAlign: 'center' }}>
-                                                            <button
-                                                                className="btn-delete-small"
-                                                                onClick={(e) => {
-                                                                    e.stopPropagation();
-                                                                    handleRemoveMember(member.id);
-                                                                }}
-                                                                style={{ padding: '6px 12px', fontSize: '0.8em' }}
-                                                            >
-                                                                Remove
-                                                            </button>
-                                                        </td>
-                                                        <td style={{ padding: '12px 16px', textAlign: 'center' }}>
-                                                            <button
-                                                                className="btn-action"
-                                                                onClick={(e) => {
-                                                                    e.stopPropagation();
-                                                                    setAssigneeFilterId(member.userId);
-                                                                    const params = new URLSearchParams(location.search);
-                                                                    params.set('section', 'team-tracker');
-                                                                    navigate(`/dashboard?${params.toString()}`);
-                                                                }}
-                                                                style={{ padding: '6px 12px', fontSize: '0.8em' }}
-                                                            >
-                                                                View Details
-                                                            </button>
-                                                        </td>
-                                                    </tr>
-                                                );
-                                            })}
+                                                            <strong>{row.member.user.name || row.member.user.email}</strong>
+                                                        </div>
+                                                    </td>
+                                                    <td style={{ padding: '12px 16px', color: 'var(--text-muted)' }}>{row.member.user.email}</td>
+                                                    <td style={{ padding: '12px 16px' }}>{row.teamName}</td>
+                                                    <td style={{ padding: '12px 16px' }}>
+                                                        <span className={`role-badge ${row.member.role.toLowerCase()}`}>{row.roleLabel}</span>
+                                                    </td>
+                                                    <td style={{ padding: '12px 16px' }}>
+                                                        <span className="category-badge" style={{ padding: '4px 10px', borderRadius: '12px', fontSize: '0.8em', ...getCategoryStyles(row.category) }}>
+                                                            {row.category}
+                                                        </span>
+                                                    </td>
+                                                    <td style={{ padding: '12px 16px', textAlign: 'center' }}>
+                                                        <button
+                                                            className="btn-delete-small"
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                handleRemoveMember(row.member.id);
+                                                            }}
+                                                            style={{ padding: '6px 12px', fontSize: '0.8em' }}
+                                                        >
+                                                            Remove
+                                                        </button>
+                                                    </td>
+                                                    <td style={{ padding: '12px 16px', textAlign: 'center' }}>
+                                                        <button
+                                                            className="btn-action"
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                handleOpenMemberDetail(row);
+                                                            }}
+                                                            style={{ padding: '6px 12px', fontSize: '0.8em' }}
+                                                        >
+                                                            View
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            ))
+                                        ) : (
+                                            <tr>
+                                                <td colSpan={7} style={{ padding: '16px', textAlign: 'center', color: 'var(--text-muted)' }}>
+                                                    No members found in this category.
+                                                </td>
+                                            </tr>
+                                        )}
                                     </tbody>
                                 </table>
                             </div>
@@ -2116,7 +2233,22 @@ const DashboardPage = () => {
                                 <div key={appraisal.id} className="task-card" style={{ padding: '24px' }}>
                                     <div className="task-header" style={{ marginBottom: 16 }}>
                                         <div>
-                                            <h3 style={{ margin: 0, fontSize: '1.2em' }}>{appraisal.subjectUser?.name || appraisal.subjectUser?.email || 'Team Member'}</h3>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
+                                                <h3 style={{ margin: 0, fontSize: '1.2em' }}>{appraisal.subjectUser?.name || appraisal.subjectUser?.email || 'Team Member'}</h3>
+                                                {appraisal.subjectUser?.team && (
+                                                    <span style={{
+                                                        background: '#E0F2FE',
+                                                        color: '#0369A1',
+                                                        padding: '4px 12px',
+                                                        borderRadius: '100px',
+                                                        fontSize: '0.75em',
+                                                        fontWeight: 700,
+                                                        textTransform: 'uppercase'
+                                                    }}>
+                                                        {appraisal.subjectUser.team.name}
+                                                    </span>
+                                                )}
+                                            </div>
                                             <p className="org-subtitle" style={{ marginTop: 4 }}>Cycle: {appraisal.cycle}</p>
                                         </div>
                                         <div style={{ textAlign: 'right' }}>
@@ -3141,7 +3273,7 @@ const DashboardPage = () => {
                                 <input type="text" value={teamForm.name} onChange={(e) => setTeamForm({ ...teamForm, name: e.target.value })} required autoFocus />
                             </div>
                             <div className="form-group">
-                                <label>Team Lead (Team Lead role only) - Optional</label>
+                                <label>Team Lead - Optional</label>
                                 <select
                                     value={teamForm.leadUserId}
                                     onChange={(e) => {
@@ -3165,28 +3297,25 @@ const DashboardPage = () => {
                                         <option disabled value="">No team leads available</option>
                                     )}
                                 </select>
-                                {teamLeadUsers.length === 0 && (
-                                    <small style={{ color: 'var(--text-muted)', display: 'block', marginTop: '4px' }}>
-                                        No users with Team Lead role. You can create a team without a lead for now.
-                                    </small>
-                                )}
                             </div>
                             <div className="form-group">
                                 <label>Members</label>
                                 <div className="team-members-list" style={{ maxHeight: 220, overflowY: 'auto' }}>
-                                    {assignableUsers.map((member) => (
-                                        <label key={member.user.id} className="team-member-row" style={{ cursor: 'pointer' }}>
-                                            <div className="team-member-info">
-                                                <strong>{member.user.name || member.user.email}</strong>
-                                                <span>{formatRole(member.role)}</span>
-                                            </div>
-                                            <input
-                                                type="checkbox"
-                                                checked={teamForm.memberUserIds.includes(member.user.id)}
-                                                onChange={() => toggleTeamMember(member.user.id)}
-                                            />
-                                        </label>
-                                    ))}
+                                    {assignableUsers
+                                        .filter((member) => member.role !== 'TEAM_LEAD')
+                                        .map((member) => (
+                                            <label key={member.user.id} className="team-member-row" style={{ cursor: 'pointer' }}>
+                                                <div className="team-member-info">
+                                                    <strong>{member.user.name || member.user.email}</strong>
+                                                    <span>{formatRole(member.role)}</span>
+                                                </div>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={teamForm.memberUserIds.includes(member.user.id)}
+                                                    onChange={() => toggleTeamMember(member.user.id)}
+                                                />
+                                            </label>
+                                        ))}
                                 </div>
                             </div>
                             <div className="modal-actions">
@@ -3208,7 +3337,7 @@ const DashboardPage = () => {
                                 <input type="text" value={teamForm.name} onChange={(e) => setTeamForm({ ...teamForm, name: e.target.value })} required autoFocus />
                             </div>
                             <div className="form-group">
-                                <label>Team Lead</label>
+                                <label>Team Lead - Optional</label>
                                 <select
                                     value={teamForm.leadUserId}
                                     onChange={(e) => {
@@ -3219,9 +3348,8 @@ const DashboardPage = () => {
                                             memberUserIds: prev.memberUserIds.includes(leadId) ? prev.memberUserIds : [...prev.memberUserIds, leadId]
                                         }));
                                     }}
-                                    required
                                 >
-                                    <option value="">Select lead</option>
+                                    <option value="">Select lead (optional)</option>
                                     {teamLeadUsers.length > 0 ? (
                                         teamLeadUsers.map((member) => (
                                             <option key={member.user.id} value={member.user.id}>
@@ -3232,28 +3360,25 @@ const DashboardPage = () => {
                                         <option disabled value="">No team leads available</option>
                                     )}
                                 </select>
-                                {teamLeadUsers.length === 0 && (
-                                    <small style={{ color: '#DC2626', display: 'block', marginTop: '4px' }}>
-                                        No users with Team Lead role. Please invite someone as a Team Lead first.
-                                    </small>
-                                )}
                             </div>
                             <div className="form-group">
                                 <label>Members</label>
                                 <div className="team-members-list" style={{ maxHeight: 220, overflowY: 'auto' }}>
-                                    {assignableUsers.map((member) => (
-                                        <label key={member.user.id} className="team-member-row" style={{ cursor: 'pointer' }}>
-                                            <div className="team-member-info">
-                                                <strong>{member.user.name || member.user.email}</strong>
-                                                <span>{formatRole(member.role)}</span>
-                                            </div>
-                                            <input
-                                                type="checkbox"
-                                                checked={teamForm.memberUserIds.includes(member.user.id)}
-                                                onChange={() => toggleTeamMember(member.user.id)}
-                                            />
-                                        </label>
-                                    ))}
+                                    {assignableUsers
+                                        .filter((member) => member.role !== 'TEAM_LEAD')
+                                        .map((member) => (
+                                            <label key={member.user.id} className="team-member-row" style={{ cursor: 'pointer' }}>
+                                                <div className="team-member-info">
+                                                    <strong>{member.user.name || member.user.email}</strong>
+                                                    <span>{formatRole(member.role)}</span>
+                                                </div>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={teamForm.memberUserIds.includes(member.user.id)}
+                                                    onChange={() => toggleTeamMember(member.user.id)}
+                                                />
+                                            </label>
+                                        ))}
                                 </div>
                             </div>
                             <div className="modal-actions">
@@ -3382,46 +3507,52 @@ const DashboardPage = () => {
                             <h3 style={{ marginTop: 8 }}>Key Results</h3>
                             {newOkr.keyResults.map((kr, index) => (
                                 <div key={index} style={{ border: '1px solid var(--border-color)', borderRadius: 10, padding: 12, marginBottom: 10 }}>
-                                    <div className="form-group">
-                                        <label>Key Result</label>
-                                        <input
-                                            type="text"
-                                            value={kr.title}
-                                            onChange={(e) => {
-                                                const next = [...newOkr.keyResults];
-                                                next[index].title = e.target.value;
-                                                setNewOkr({ ...newOkr, keyResults: next });
-                                            }}
-                                            required
-                                        />
-                                    </div>
-                                    <div className="form-row">
-                                        <div className="form-group">
-                                            <label>Tag Name</label>
-                                            <input
-                                                type="text"
-                                                value={kr.tagName}
-                                                onChange={(e) => {
-                                                    const next = [...newOkr.keyResults];
-                                                    next[index].tagName = e.target.value;
-                                                    setNewOkr({ ...newOkr, keyResults: next });
-                                                }}
-                                                required
-                                            />
-                                        </div>
-                                        <div className="form-group">
-                                            <label>Tag Color</label>
-                                            <input
-                                                type="color"
-                                                value={kr.tagColor}
-                                                onChange={(e) => {
-                                                    const next = [...newOkr.keyResults];
-                                                    next[index].tagColor = e.target.value;
-                                                    setNewOkr({ ...newOkr, keyResults: next });
-                                                }}
-                                            />
-                                        </div>
-                                    </div>
+                            <div className="form-group">
+                                <label>Key Result</label>
+                                <input
+                                    type="text"
+                                    value={kr.title}
+                                    onChange={(e) => {
+                                        const next = [...newOkr.keyResults];
+                                        next[index].title = e.target.value;
+                                        setNewOkr({ ...newOkr, keyResults: next });
+                                    }}
+                                    required
+                                />
+                            </div>
+                            <div className="form-row">
+                                <div className="form-group">
+                                    <label>Tag Name</label>
+                                    <input
+                                        type="text"
+                                        list="okr-tag-options"
+                                        placeholder="Start typing to select someone (alerts them on creation)"
+                                        value={kr.tagName}
+                                        onChange={(e) => {
+                                            const next = [...newOkr.keyResults];
+                                            next[index].tagName = e.target.value;
+                                            const matched = availableTags.find((tag) => tag.name?.toLowerCase() === e.target.value.toLowerCase().trim());
+                                            if (matched?.color) {
+                                                next[index].tagColor = matched.color;
+                                            }
+                                            setNewOkr({ ...newOkr, keyResults: next });
+                                        }}
+                                        required
+                                    />
+                                </div>
+                                <div className="form-group">
+                                    <label>Tag Color</label>
+                                    <input
+                                        type="color"
+                                        value={kr.tagColor}
+                                        onChange={(e) => {
+                                            const next = [...newOkr.keyResults];
+                                            next[index].tagColor = e.target.value;
+                                            setNewOkr({ ...newOkr, keyResults: next });
+                                        }}
+                                    />
+                                </div>
+                            </div>
                                 </div>
                             ))}
                             <button
@@ -3521,46 +3652,52 @@ const DashboardPage = () => {
                             <h3 style={{ marginTop: 8 }}>Key Results</h3>
                             {editOkrForm.keyResults.map((kr, index) => (
                                 <div key={index} style={{ border: '1px solid var(--border-color)', borderRadius: 10, padding: 12, marginBottom: 10 }}>
-                                    <div className="form-group">
-                                        <label>Key Result</label>
-                                        <input
-                                            type="text"
-                                            value={kr.title}
-                                            onChange={(e) => {
-                                                const next = [...editOkrForm.keyResults];
-                                                next[index].title = e.target.value;
-                                                setEditOkrForm({ ...editOkrForm, keyResults: next });
-                                            }}
-                                            required
-                                        />
-                                    </div>
-                                    <div className="form-row">
-                                        <div className="form-group">
-                                            <label>Tag Name</label>
-                                            <input
-                                                type="text"
-                                                value={kr.tagName}
-                                                onChange={(e) => {
-                                                    const next = [...editOkrForm.keyResults];
-                                                    next[index].tagName = e.target.value;
-                                                    setEditOkrForm({ ...editOkrForm, keyResults: next });
-                                                }}
-                                                required
-                                            />
-                                        </div>
-                                        <div className="form-group">
-                                            <label>Tag Color</label>
-                                            <input
-                                                type="color"
-                                                value={kr.tagColor}
-                                                onChange={(e) => {
-                                                    const next = [...editOkrForm.keyResults];
-                                                    next[index].tagColor = e.target.value;
-                                                    setEditOkrForm({ ...editOkrForm, keyResults: next });
-                                                }}
-                                            />
-                                        </div>
-                                    </div>
+                            <div className="form-group">
+                                <label>Key Result</label>
+                                <input
+                                    type="text"
+                                    value={kr.title}
+                                    onChange={(e) => {
+                                        const next = [...editOkrForm.keyResults];
+                                        next[index].title = e.target.value;
+                                        setEditOkrForm({ ...editOkrForm, keyResults: next });
+                                    }}
+                                    required
+                                />
+                            </div>
+                            <div className="form-row">
+                                <div className="form-group">
+                                    <label>Tag Name</label>
+                                    <input
+                                        type="text"
+                                        list="okr-tag-options"
+                                        placeholder="Start typing to select someone (alerts them on edit)"
+                                        value={kr.tagName}
+                                        onChange={(e) => {
+                                            const next = [...editOkrForm.keyResults];
+                                            next[index].tagName = e.target.value;
+                                            const matched = availableTags.find((tag) => tag.name?.toLowerCase() === e.target.value.toLowerCase().trim());
+                                            if (matched?.color) {
+                                                next[index].tagColor = matched.color;
+                                            }
+                                            setEditOkrForm({ ...editOkrForm, keyResults: next });
+                                        }}
+                                        required
+                                    />
+                                </div>
+                                <div className="form-group">
+                                    <label>Tag Color</label>
+                                    <input
+                                        type="color"
+                                        value={kr.tagColor}
+                                        onChange={(e) => {
+                                            const next = [...editOkrForm.keyResults];
+                                            next[index].tagColor = e.target.value;
+                                            setEditOkrForm({ ...editOkrForm, keyResults: next });
+                                        }}
+                                    />
+                                </div>
+                            </div>
                                     <button
                                         type="button"
                                         className="btn-logout"
@@ -3716,7 +3853,7 @@ const DashboardPage = () => {
                             {!bulkInviteResult ? (
                                 <>
                                     <div className="invite-instructions">
-                                        <p>Upload a spreadsheet (.xlsx or .csv) to invite multiple members at once. The file must contain <strong>Email</strong> and <strong>Role</strong> (MEMBER or TEAM_LEAD) columns.</p>
+                                        <p>Upload a spreadsheet (.xlsx or .csv) to invite multiple members at once. The file must contain <strong>Email</strong>, <strong>Team</strong>, and <strong>Role</strong> (TEAM_LEAD or MEMBER) columns. Teams will be created automatically.</p>
                                         <button onClick={handleDownloadSampleSheet} className="btn-text">Download Sample Template</button>
                                     </div>
 
@@ -3746,6 +3883,7 @@ const DashboardPage = () => {
                                                     <thead>
                                                         <tr>
                                                             <th>Email</th>
+                                                            <th>Team</th>
                                                             <th>Role</th>
                                                         </tr>
                                                     </thead>
@@ -3753,6 +3891,7 @@ const DashboardPage = () => {
                                                         {bulkInvitePreview.map((row, i) => (
                                                             <tr key={i}>
                                                                 <td>{row.Email}</td>
+                                                                <td>{row.Team || '-'}</td>
                                                                 <td>{row.Role}</td>
                                                             </tr>
                                                         ))}
@@ -3868,6 +4007,11 @@ const DashboardPage = () => {
                     </div>
                 </div>
             )}
+            <datalist id="okr-tag-options">
+                {availableTags.map((tag) => (
+                    <option key={tag.id} value={tag.name}></option>
+                ))}
+            </datalist>
         </div>
     );
 };

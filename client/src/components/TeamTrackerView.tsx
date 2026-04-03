@@ -33,6 +33,7 @@ interface TeamMember {
 }
 
 interface TeamTrackerViewProps {
+    teamName?: string | null;
     tasks: Task[];
     members: TeamMember[];
     selectedMemberId: string | null;
@@ -47,6 +48,7 @@ interface TeamTrackerViewProps {
 }
 
 const TeamTrackerView: React.FC<TeamTrackerViewProps> = ({
+    teamName,
     tasks,
     members,
     selectedMemberId,
@@ -83,32 +85,45 @@ const TeamTrackerView: React.FC<TeamTrackerViewProps> = ({
             { key: 'overdue', label: 'Overdue' }
         ];
 
-    const filteredTasks = tasks.filter(task => {
-        // Member filter
-        if (selectedMemberId && task.assignee?.id !== selectedMemberId) return false;
+    const isFilterActive = (key: typeof filters[number]['key']) => {
+        if (filter === 'created' && key === 'pending') return true;
+        if (filter === 'in_progress' && key === 'ongoing') return true;
+        return filter === key;
+    };
 
-        // Status filter
-        if (filter === 'pending') return task.status === 'CREATED';
-        if (filter === 'ongoing') return task.status === 'IN_PROGRESS';
-        if (filter === 'completed') return task.status === 'COMPLETED';
-        if (filter === 'overdue') {
-            return task.status !== 'COMPLETED' && task.dueDate && new Date(task.dueDate) < new Date();
-        }
-        if (filter === 'my') {
-            return task.assignee?.id === userId;
-        }
-        if (filter === 'supporting') {
-            return task.supporter?.id === userId;
-        }
+    // Use useMemo to optimize filtering performance
+    const filteredTasks = React.useMemo(() => {
+        return tasks.filter(task => {
+            // Member filter
+            if (selectedMemberId && task.assignee?.id !== selectedMemberId) return false;
 
-        // Priority filter
-        if (priorityFilter !== 'all' && task.priority !== priorityFilter) return false;
+            // Status filter - handle both UI filter keys and backend status values
+            if (filter === 'pending' || filter === 'created') {
+                if (task.status !== 'CREATED') return false;
+            } else if (filter === 'ongoing' || filter === 'in_progress') {
+                if (task.status !== 'IN_PROGRESS') return false;
+            } else if (filter === 'completed') {
+                if (task.status !== 'COMPLETED') return false;
+            } else if (filter === 'overdue') {
+                if (task.status === 'COMPLETED' || !task.dueDate || new Date(task.dueDate) >= new Date()) {
+                    return false;
+                }
+            } else if (filter === 'my') {
+                if (task.assignee?.id !== userId) return false;
+            } else if (filter === 'supporting') {
+                if (task.supporter?.id !== userId) return false;
+            }
+            // 'all' filter shows everything
 
-        // Tag/OKR filter
-        if (tagFilter !== 'all' && task.tag?.id !== tagFilter) return false;
+            // Priority filter
+            if (priorityFilter !== 'all' && task.priority !== priorityFilter) return false;
 
-        return true;
-    });
+            // Tag/OKR filter
+            if (tagFilter !== 'all' && task.tag?.id !== tagFilter) return false;
+
+            return true;
+        });
+    }, [tasks, selectedMemberId, filter, priorityFilter, tagFilter, userId]);
 
     const getInitials = (name: string) => {
         return name.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2);
@@ -129,7 +144,7 @@ const TeamTrackerView: React.FC<TeamTrackerViewProps> = ({
     return (
         <div className="tracker-view">
             <div className="tracker-view-header">
-                <h1>Team Tracker</h1>
+                <h1>{teamName ? `${teamName} Team Tracker` : 'Team Tracker'}</h1>
                 <div className="tracker-view-actions">
                     <button className="btn-outline-blue" onClick={onSendAlert}>
                         Send Alert
@@ -149,7 +164,7 @@ const TeamTrackerView: React.FC<TeamTrackerViewProps> = ({
                     className={`tracker-tab ${!selectedMemberId ? 'active' : ''}`}
                     onClick={() => onMemberSelect('')}
                 >
-                    Everywhere
+                    Everyone
                 </button>
                 {members.map((member) => (
                     <button
@@ -166,7 +181,7 @@ const TeamTrackerView: React.FC<TeamTrackerViewProps> = ({
                 {filters.map(f => (
                     <button
                         key={f.key}
-                        className={`tracker-tab ${filter === f.key ? 'active' : ''}`}
+                        className={`tracker-tab ${isFilterActive(f.key) ? 'active' : ''}`}
                         onClick={() => onFilterChange(f.key)}
                         style={{ fontSize: '0.85em', padding: '8px 4px' }}
                     >

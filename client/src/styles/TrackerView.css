@@ -64,7 +64,7 @@
 .tracker-tabs {
     display: flex;
     gap: 24px;
-    border-bottom: 1px solid #F1F5F9;
+    border-bottom: 2px solid #E2E8F0;
     margin-bottom: 8px;
 }
 
@@ -72,12 +72,14 @@
     padding: 12px 4px;
     background: transparent;
     border: none;
-    border-bottom: 2px solid transparent;
+    border-bottom: 3px solid transparent;
+    margin-bottom: -2px;
     cursor: pointer;
     font-size: 0.95em;
     font-weight: 600;
     color: #64748B;
     transition: all 0.2s ease;
+    position: relative;
 }
 
 .tracker-tab:hover {
@@ -87,6 +89,7 @@
 .tracker-tab.active {
     color: var(--primary-blue);
     border-bottom-color: var(--primary-blue);
+    font-weight: 700;
 }
 
 /* Table Design */
@@ -234,19 +237,30 @@
 
 .team-invite-form {
     display: grid;
-    grid-template-columns: 1fr 1.5fr auto auto;
-    gap: 12px;
+    grid-template-columns: 1fr auto;
+    gap: 16px;
     align-items: center;
 }
 
-.team-invite-form input,
-.team-invite-form select {
+.team-invite-fields {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex: 1;
+    min-width: 0;
+}
+
+.team-invite-fields input,
+.team-invite-fields select {
     padding: 10px 16px;
     border: 1px solid #E2E8F0;
-    border-radius: 10px;
+    border-radius: 999px;
     font-size: 0.95em;
     font-weight: 500;
     transition: all 0.2s ease;
+    flex: 1;
+    min-width: 160px;
+    background-color: white;
 }
 
 .team-invite-form input:focus,
@@ -254,6 +268,26 @@
     outline: none;
     border-color: var(--primary-blue);
     box-shadow: 0 0 0 3px rgba(29, 112, 226, 0.1);
+}
+
+.team-invite-form button {
+    padding: 12px 26px;
+    border-radius: 999px;
+    height: 48px;
+}
+
+.team-invite-form .btn-primary {
+    width: auto;
+}
+
+@media (max-width: 768px) {
+    .team-invite-form {
+        grid-template-columns: 1fr;
+    }
+
+    .team-invite-form button {
+        width: 100%;
+    }
 }
 
 .team-invite-form input::placeholder {
@@ -389,6 +423,11 @@
     margin: 0 0 6px 0;
 }
 
+.team-lead-missing {
+    color: #F97316;
+    font-weight: 600;
+}
+
 .team-members-count {
     font-size: 0.85em;
     color: #94A3B8;
@@ -502,6 +541,57 @@
     background: #FEF2F2;
     border-radius: 8px;
     border: 1px solid #FEE2E2;
+}
+
+.member-detail-modal {
+    background: white;
+    border-radius: 20px;
+    padding: 32px;
+    max-width: 540px;
+    width: min(100%, 540px);
+    box-shadow: var(--shadow-lg);
+}
+
+.member-detail-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+    margin-bottom: 16px;
+}
+
+.detail-label {
+    display: block;
+    font-size: 0.7em;
+    color: #64748B;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 4px;
+}
+
+.member-detail-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+    gap: 12px;
+}
+
+.member-detail-stat-card {
+    background: #F8FAFC;
+    border-radius: 12px;
+    padding: 12px;
+    text-align: center;
+}
+
+.member-detail-stat-label {
+    font-size: 0.7em;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #64748B;
+}
+
+.member-detail-stat-value {
+    font-size: 1.3em;
+    font-weight: 700;
+    color: #0F172A;
 }
 
 /* Responsive */

@@ -437,14 +437,43 @@ export const bulkInviteMembers = async (req: Request, res: Response) => {
           }
         }
 
-        // Validate team if provided
+        // Validate team if provided, or create it if it doesn't exist
         let teamId: string | null = null;
         if (teamName) {
           const normalizedTeamName = normalizeOrgName(teamName);
-          const team = teamNameMap.get(normalizedTeamName);
+          let team = teamNameMap.get(normalizedTeamName);
+          
+          // Auto-create team if it doesn't exist
           if (!team) {
-            results.failed.push({ row: rowNum, email, error: `Team "${teamName}" does not exist` });
-            continue;
+            try {
+              const newTeam = await prisma.team.create({
+                data: {
+                  organizationId,
+                  name: teamName,
+                  normalizedName: normalizeOrgName(teamName)
+                }
+              });
+              teamNameMap.set(normalizedTeamName, newTeam);
+              team = newTeam;
+            } catch (createError: any) {
+              // If team creation fails, check if it was created by another concurrent request
+              const existingTeam = await prisma.team.findFirst({
+                where: {
+                  organizationId,
+                  name: {
+                    equals: teamName,
+                    mode: 'insensitive'
+                  }
+                }
+              });
+              if (existingTeam) {
+                team = existingTeam;
+                teamNameMap.set(normalizedTeamName, existingTeam);
+              } else {
+                results.failed.push({ row: rowNum, email, error: `Failed to create team "${teamName}": ${createError.message}` });
+                continue;
+              }
+            }
           }
           teamId = team.id;
         }
@@ -2136,7 +2165,39 @@ export const listAppraisals = async (req: Request, res: Response) => {
       orderBy: { createdAt: 'desc' }
     });
 
-    return res.json(appraisals);
+    // Get team memberships for all subject users
+    const subjectUserIds = appraisals.map(a => a.subjectUserId);
+    const memberships = await prisma.organizationMember.findMany({
+      where: {
+        organizationId,
+        userId: { in: subjectUserIds }
+      },
+      include: {
+        team: {
+          select: {
+            id: true,
+            name: true
+          }
+        }
+      }
+    });
+
+    // Create a map of userId to team
+    const userTeamMap = new Map<string, { id: string; name: string } | null>();
+    memberships.forEach(m => {
+      userTeamMap.set(m.userId, m.team);
+    });
+
+    // Transform to include team info in subjectUser
+    const transformedAppraisals = appraisals.map(appraisal => ({
+      ...appraisal,
+      subjectUser: appraisal.subjectUser ? {
+        ...appraisal.subjectUser,
+        team: userTeamMap.get(appraisal.subjectUserId) || null
+      } : null
+    }));
+
+    return res.json(transformedAppraisals);
   } catch (error) {
     console.error('List appraisals error:', error);
     return res.status(500).json({ error: 'Internal server error' });
