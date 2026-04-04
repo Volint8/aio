@@ -418,10 +418,12 @@ const DashboardPage = () => {
     const navigate = useNavigate();
     const requestedSection = (new URLSearchParams(location.search).get('section') || 'board') as DashboardSection;
     const requestedTrackerView = (new URLSearchParams(location.search).get('view') || 'users') as TrackerView;
-    const isAdmin = organization?.userRole === 'ADMIN';
-    const isTeamLead = organization?.userRole === 'TEAM_LEAD';
-    const isMember = organization?.userRole === 'MEMBER';
-    const canTrackTeam = organization?.userRole === 'ADMIN' || organization?.userRole === 'TEAM_LEAD';
+    const storedOrgRole = (localStorage.getItem('selectedOrgRole') || '').toUpperCase();
+    const effectiveOrgRole = (organization?.userRole || storedOrgRole).toUpperCase();
+    const isAdmin = effectiveOrgRole === 'ADMIN';
+    const isTeamLead = effectiveOrgRole === 'TEAM_LEAD';
+    const isMember = effectiveOrgRole === 'MEMBER';
+    const canTrackTeam = effectiveOrgRole === 'ADMIN' || effectiveOrgRole === 'TEAM_LEAD';
     const canUseTrackerCharts = isAdmin || isTeamLead;
     const trackerView: TrackerView = requestedTrackerView === 'teams' ? 'teams' : 'users';
 
