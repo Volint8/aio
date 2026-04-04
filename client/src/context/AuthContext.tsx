@@ -17,6 +17,7 @@ interface AuthContextType {
     inviteAcceptInit: (token: string, pass: string, name?: string) => Promise<{ mode: string; email: string }>;
     inviteAcceptComplete: (token: string, pass: string) => Promise<void>;
     verifyOtp: (email: string, otp: string) => Promise<void>;
+    resendOtp: (email: string) => Promise<{ message: string }>;
     forgotPasswordInit: (email: string) => Promise<{ message: string }>;
     forgotPasswordComplete: (email: string, otp: string, newPassword: string) => Promise<{ message: string; token: string; user: User }>;
     logout: () => void;
@@ -86,6 +87,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         api.defaults.headers.common['Authorization'] = `Bearer ${res.data.token}`;
     };
 
+    const resendOtp = async (email: string) => {
+        const res = await api.post('/auth/resend-otp', { email });
+        return res.data;
+    };
+
     const forgotPasswordInit = async (email: string) => {
         const res = await api.post('/auth/forgot-password/init', { email });
         return { message: res.data.message };
@@ -114,6 +120,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             inviteAcceptInit,
             inviteAcceptComplete,
             verifyOtp,
+            resendOtp,
             forgotPasswordInit,
             forgotPasswordComplete,
             logout,

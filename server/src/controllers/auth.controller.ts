@@ -406,7 +406,28 @@ export const verifyOtp = async (req: Request, res: Response) => {
 
     if (!user.otp || !user.otpExpiresAt || user.otp !== otp || new Date() > user.otpExpiresAt) {
       if (user.otpExpiresAt && new Date() > user.otpExpiresAt) {
-        await prisma.user.delete({ where: { id: user.id } });
+        // Clean up: delete organization and all its data when OTP expires
+        await prisma.$transaction(async (tx) => {
+          // Find the organization this admin created
+          const orgMember = await tx.organizationMember.findFirst({
+            where: { userId: user.id }
+          });
+          
+          if (orgMember) {
+            // Delete all members of the organization
+            await tx.organizationMember.deleteMany({
+              where: { organizationId: orgMember.organizationId }
+            });
+            // Delete the organization (cascade will handle related data)
+            await tx.organization.delete({
+              where: { id: orgMember.organizationId }
+            });
+          }
+          
+          // Delete the user
+          await tx.user.delete({ where: { id: user.id } });
+        });
+        
         return res.status(400).json({ error: 'OTP expired. Please register again.' });
       }
 
@@ -441,6 +462,43 @@ export const verifyOtp = async (req: Request, res: Response) => {
   }
 };
 
+export const resendOtp = async (req: Request, res: Response) => {
+  try {
+    const { email } = req.body as { email?: string };
+
+    if (!email) {
+      return res.status(400).json({ error: 'Email is required' });
+    }
+
+    const normalizedEmail = normalizeEmail(email);
+    const user = await prisma.user.findUnique({ where: { email: normalizedEmail } });
+
+    if (!user) {
+      return res.status(400).json({ error: 'User not found' });
+    }
+
+    if (user.isVerified) {
+      return res.status(400).json({ error: 'User already verified' });
+    }
+
+    // Generate new OTP
+    const otp = randomOtp();
+    const otpExpiresAt = otpExpiryDate();
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { otp, otpExpiresAt }
+    });
+
+    await sendOtpEmail(normalizedEmail, otp);
+
+    return res.json({ message: 'New OTP sent to your email' });
+  } catch (error) {
+    console.error('Resend OTP error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
 export const login = async (req: Request, res: Response) => {
   try {
     const { email, password } = req.body as { email?: string; password?: string };
@@ -457,7 +515,28 @@ export const login = async (req: Request, res: Response) => {
 
     if (!user.isVerified) {
       if (user.otpExpiresAt && new Date() > user.otpExpiresAt) {
-        await prisma.user.delete({ where: { id: user.id } });
+        // Clean up: delete organization and all its data when OTP expires
+        await prisma.$transaction(async (tx) => {
+          // Find the organization this admin created
+          const orgMember = await tx.organizationMember.findFirst({
+            where: { userId: user.id }
+          });
+          
+          if (orgMember) {
+            // Delete all members of the organization
+            await tx.organizationMember.deleteMany({
+              where: { organizationId: orgMember.organizationId }
+            });
+            // Delete the organization (cascade will handle related data)
+            await tx.organization.delete({
+              where: { id: orgMember.organizationId }
+            });
+          }
+          
+          // Delete the user
+          await tx.user.delete({ where: { id: user.id } });
+        });
+        
         return res.status(400).json({ error: 'Registration expired. Please sign up again.' });
       }
       return res.status(401).json({ error: 'Please verify your email first.' });

@@ -4,6 +4,7 @@ import {
     signup,
     getMe,
     verifyOtp,
+    resendOtp,
     adminSignupInit,
     adminSignupComplete,
     inviteAcceptInit,
@@ -23,6 +24,7 @@ router.post('/admin-signup/complete', adminSignupComplete);
 router.post('/invites/accept/init', inviteAcceptInit);
 router.post('/invites/accept/complete', inviteAcceptComplete);
 router.post('/verify-otp', verifyOtp);
+router.post('/resend-otp', resendOtp);
 router.post('/forgot-password/init', forgotPasswordInit);
 router.post('/forgot-password/complete', forgotPasswordComplete);
 router.post('/change-password', authenticateToken, changePassword);
