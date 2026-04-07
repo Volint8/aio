@@ -15,6 +15,9 @@ export const authenticateToken = (req: Request, res: Response, next: NextFunctio
         if (err) {
             return res.status(403).json({ error: 'Invalid or expired token' });
         }
+        if (user && !user.userId && user.id) {
+            user.userId = user.id;
+        }
         (req as any).user = user;
         next();
     });

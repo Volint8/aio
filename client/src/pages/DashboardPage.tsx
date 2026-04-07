@@ -1927,16 +1927,47 @@ const DashboardPage = () => {
                                 <div className="team-invite-panel">
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
                                         <h3 style={{ margin: 0 }}>Invite Team Members</h3>
-                                        <button 
-                                            type="button" 
-                                            className="btn-secondary" 
+                                        <button
+                                            type="button"
+                                            className="btn-secondary"
                                             onClick={handleOpenBulkInviteModal}
                                             style={{ padding: '8px 16px', fontSize: '0.9em' }}
+                                            disabled={!isAdmin}
                                         >
                                             📊 Bulk Invite
                                         </button>
                                     </div>
-                                    {teamError && <p className="team-error">{teamError}</p>}
+                                    {teamError && (
+                                        <div className="team-error" style={{ 
+                                            padding: '12px 16px', 
+                                            background: '#FEF2F2', 
+                                            border: '1px solid #FECACA', 
+                                            borderRadius: '8px', 
+                                            color: '#991B1B',
+                                            marginBottom: '16px',
+                                            display: 'flex',
+                                            justifyContent: 'space-between',
+                                            alignItems: 'center'
+                                        }}>
+                                            <span>{teamError}</span>
+                                            <button 
+                                                type="button"
+                                                onClick={fetchData}
+                                                style={{
+                                                    background: 'none',
+                                                    border: '1px solid #991B1B',
+                                                    borderRadius: '4px',
+                                                    padding: '4px 12px',
+                                                    cursor: 'pointer',
+                                                    fontSize: '0.85em',
+                                                    color: '#991B1B',
+                                                    fontWeight: 600
+                                                }}
+                                            >
+                                                Refresh Data
+                                            </button>
+                                        </div>
+                                    )}
                                     <form className="team-invite-form" onSubmit={handleInviteMember}>
                                         <div className="team-invite-fields">
                                             <input
@@ -1945,13 +1976,14 @@ const DashboardPage = () => {
                                                 onChange={(e) => setInviteEmail(e.target.value)}
                                                 placeholder="team.member@company.com"
                                                 required
+                                                disabled={!isAdmin || inviting}
                                             />
-                                            <select value={inviteRole} onChange={(e) => setInviteRole(e.target.value)}>
+                                            <select value={inviteRole} onChange={(e) => setInviteRole(e.target.value)} disabled={!isAdmin || inviting}>
                                                 <option value="MEMBER">Member</option>
                                                 <option value="TEAM_LEAD">Team Lead</option>
                                             </select>
                                         </div>
-                                        <button type="submit" className="btn-primary" disabled={inviting}>
+                                        <button type="submit" className="btn-primary" disabled={!isAdmin || inviting}>
                                             {inviting ? 'Sending...' : 'Send Invite'}
                                         </button>
                                     </form>
