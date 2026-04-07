@@ -145,15 +145,20 @@ export const getOrgs = async (req: Request, res: Response) => {
 export const createOrg = async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.userId as string;
-    const userRole = (req as any).user.role as string;
     const { name } = req.body as { name?: string };
-
-    if (userRole !== 'ADMIN') {
-      return res.status(403).json({ error: 'Only system administrators can create organizations' });
-    }
 
     if (!name?.trim()) {
       return res.status(400).json({ error: 'Organization name is required' });
+    }
+
+    // Check if user has admin role in any organization
+    const memberships = await prisma.organizationMember.findMany({
+      where: { userId }
+    });
+
+    const hasAdminRole = memberships.some(m => m.role === 'ADMIN');
+    if (!hasAdminRole) {
+      return res.status(403).json({ error: 'Only organization administrators can create new organizations' });
     }
 
     const uniqueName = await makeUniqueOrgName(name.trim());

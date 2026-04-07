@@ -18,9 +18,9 @@ const prisma = new PrismaClient();
 const DOMAIN_ALREADY_EXISTS_ERROR =
   'An organization already exists for this email domain. Please sign in or contact your administrator.';
 
-const signAuthToken = (user: { id: string; email: string; role: string }) => {
+const signAuthToken = (user: { id: string; email: string; role: string; orgRole?: string | null }) => {
   return jwt.sign(
-    { userId: user.id, email: user.email, role: user.role },
+    { userId: user.id, email: user.email, role: user.role, orgRole: user.orgRole },
     process.env.JWT_SECRET as string,
     { expiresIn: '7d' }
   );
@@ -368,7 +368,15 @@ export const inviteAcceptComplete = async (req: Request, res: Response) => {
       });
     });
 
-    const authToken = signAuthToken({ id: user.id, email: user.email, role: user.role });
+    // Fetch user's primary organization membership role
+    const primaryMembership = await prisma.organizationMember.findFirst({
+      where: { userId: user.id },
+      orderBy: { joinedAt: 'asc' }
+    });
+
+    const orgRole = primaryMembership?.role || null;
+
+    const authToken = signAuthToken({ id: user.id, email: user.email, role: user.role, orgRole });
 
     return res.json({
       token: authToken,
@@ -376,7 +384,8 @@ export const inviteAcceptComplete = async (req: Request, res: Response) => {
         id: user.id,
         email: user.email,
         name: user.name,
-        role: user.role
+        role: user.role,
+        orgRole
       }
     });
   } catch (error) {
@@ -445,7 +454,15 @@ export const verifyOtp = async (req: Request, res: Response) => {
 
     await attachInviteMembershipIfPending(verifiedUser.id);
 
-    const authToken = signAuthToken({ id: verifiedUser.id, email: verifiedUser.email, role: verifiedUser.role });
+    // Fetch user's primary organization membership role
+    const primaryMembership = await prisma.organizationMember.findFirst({
+      where: { id: verifiedUser.id },
+      orderBy: { joinedAt: 'asc' }
+    });
+
+    const orgRole = primaryMembership?.role || null;
+
+    const authToken = signAuthToken({ id: verifiedUser.id, email: verifiedUser.email, role: verifiedUser.role, orgRole });
 
     return res.json({
       token: authToken,
@@ -453,7 +470,8 @@ export const verifyOtp = async (req: Request, res: Response) => {
         id: verifiedUser.id,
         email: verifiedUser.email,
         name: verifiedUser.name,
-        role: verifiedUser.role
+        role: verifiedUser.role,
+        orgRole
       }
     });
   } catch (error) {
@@ -549,7 +567,15 @@ export const login = async (req: Request, res: Response) => {
 
     await attachInviteMembershipIfPending(user.id);
 
-    const token = signAuthToken({ id: user.id, email: user.email, role: user.role });
+    // Fetch user's primary organization membership role
+    const primaryMembership = await prisma.organizationMember.findFirst({
+      where: { userId: user.id },
+      orderBy: { joinedAt: 'asc' }
+    });
+
+    const orgRole = primaryMembership?.role || null;
+
+    const token = signAuthToken({ id: user.id, email: user.email, role: user.role, orgRole });
 
     return res.json({
       token,
@@ -557,7 +583,8 @@ export const login = async (req: Request, res: Response) => {
         id: user.id,
         email: user.email,
         name: user.name,
-        role: user.role
+        role: user.role,
+        orgRole
       }
     });
   } catch (error) {
@@ -690,7 +717,15 @@ export const forgotPasswordComplete = async (req: Request, res: Response) => {
       }
     });
 
-    const authToken = signAuthToken({ id: user.id, email: user.email, role: user.role });
+    // Fetch user's primary organization membership role
+    const primaryMembership = await prisma.organizationMember.findFirst({
+      where: { userId: user.id },
+      orderBy: { joinedAt: 'asc' }
+    });
+
+    const orgRole = primaryMembership?.role || null;
+
+    const authToken = signAuthToken({ id: user.id, email: user.email, role: user.role, orgRole });
 
     return res.json({
       message: 'Password reset successful',
@@ -699,7 +734,8 @@ export const forgotPasswordComplete = async (req: Request, res: Response) => {
         id: user.id,
         email: user.email,
         name: user.name,
-        role: user.role
+        role: user.role,
+        orgRole
       }
     });
   } catch (error) {
