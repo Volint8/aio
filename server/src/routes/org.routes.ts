@@ -2,6 +2,7 @@ import { Router } from 'express';
 import {
     getOrgs,
     createOrg,
+    updateOrg,
     getOrgById,
     addMember,
     updateMemberRole,
@@ -64,6 +65,7 @@ const upload = multer({
 router.get('/name-suggestions', getOrgNameSuggestions);
 router.get('/', authenticateToken, getOrgs);
 router.post('/', authenticateToken, createOrg);
+router.patch('/:id', authenticateToken, updateOrg);
 router.get('/:id', authenticateToken, getOrgById);
 router.post('/:id/members', authenticateToken, addMember);
 router.patch('/:id/members/:memberId/role', authenticateToken, updateMemberRole);

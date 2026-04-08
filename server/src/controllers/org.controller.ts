@@ -186,6 +186,58 @@ export const createOrg = async (req: Request, res: Response) => {
   }
 };
 
+export const updateOrg = async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user.userId as string;
+    const id = req.params.id as string;
+    const { name } = req.body as { name?: string };
+
+    if (!name?.trim()) {
+      return res.status(400).json({ error: 'Organization name is required' });
+    }
+
+    const membership = await getMembership(userId, id);
+
+    if (!membership || membership.role !== 'ADMIN') {
+      return res.status(403).json({ error: 'Only organization administrators can update the organization' });
+    }
+
+    // Check if name is actually changing
+    const existingOrg = await prisma.organization.findUnique({ where: { id } });
+    if (!existingOrg) {
+      return res.status(404).json({ error: 'Organization not found' });
+    }
+
+    const normalizedName = normalizeOrgName(name.trim());
+
+    // Only check uniqueness if name is actually changing
+    if (normalizedName !== existingOrg.normalizedName) {
+      const existingName = await prisma.organization.findUnique({
+        where: { normalizedName }
+      });
+      if (existingName && existingName.id !== id) {
+        return res.status(409).json({ error: 'Organization name already exists' });
+      }
+    }
+
+    const uniqueName = name.trim();
+    const slug = existingOrg.slug; // Keep existing slug
+
+    const organization = await prisma.organization.update({
+      where: { id },
+      data: {
+        name: uniqueName,
+        normalizedName
+      }
+    });
+
+    return res.json(organization);
+  } catch (error) {
+    console.error('Update org error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
 export const getOrgById = async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.userId as string;
@@ -371,10 +423,10 @@ export const bulkInviteMembers = async (req: Request, res: Response) => {
     const requiredColumns = ['Email', 'Role'];
     const firstRow = data[0];
     const missingColumns = requiredColumns.filter(col => !(col in firstRow));
-    
+
     if (missingColumns.length > 0) {
-      return res.status(400).json({ 
-        error: `Missing required columns: ${missingColumns.join(', ')}. Required columns are: ${requiredColumns.join(', ')}` 
+      return res.status(400).json({
+        error: `Missing required columns: ${missingColumns.join(', ')}. Required columns are: ${requiredColumns.join(', ')}`
       });
     }
 
@@ -447,7 +499,7 @@ export const bulkInviteMembers = async (req: Request, res: Response) => {
         if (teamName) {
           const normalizedTeamName = normalizeOrgName(teamName);
           let team = teamNameMap.get(normalizedTeamName);
-          
+
           // Auto-create team if it doesn't exist
           if (!team) {
             try {
@@ -542,10 +594,10 @@ export const bulkInviteMembers = async (req: Request, res: Response) => {
         });
 
       } catch (error: any) {
-        results.failed.push({ 
-          row: rowNum, 
-          email: row['Email']?.toString() || 'Unknown', 
-          error: error.message || 'Unknown error' 
+        results.failed.push({
+          row: rowNum,
+          email: row['Email']?.toString() || 'Unknown',
+          error: error.message || 'Unknown error'
         });
       }
     }
@@ -895,7 +947,7 @@ export const createTeam = async (req: Request, res: Response) => {
 
     const created = await prisma.$transaction(async (tx) => {
       let participantIds: string[] = [];
-      
+
       if (leadUserId) {
         participantIds = await validateTeamParticipants(tx, organizationId, leadUserId, memberUserIds);
       } else if (memberUserIds.length > 0) {
@@ -906,16 +958,16 @@ export const createTeam = async (req: Request, res: Response) => {
             userId: { in: memberUserIds }
           }
         });
-        
+
         if (memberships.length !== memberUserIds.length) {
           throw new Error('All team members must be members of this organization');
         }
-        
+
         const hasAdmin = memberships.some((m: any) => m.role === 'ADMIN');
         if (hasAdmin) {
           throw new Error('Admins cannot be assigned to teams');
         }
-        
+
         participantIds = memberUserIds;
       }
 
@@ -1793,11 +1845,11 @@ export const listOkrs = async (req: Request, res: Response) => {
     if (membership.role === 'MEMBER' || membership.role === 'TEAM_LEAD') {
       // Filter by status: only OPEN okrs
       where.status = 'OPEN';
-      
+
       // Filter by date: only okrs where periodStart <= today AND periodEnd >= today
       where.periodStart = { lte: now };
       where.periodEnd = { gte: now };
-      
+
       // Also filter by assignment scope
       const assignmentScope = [
         { assignments: { some: { targetType: 'MEMBER', targetId: userId } } },
@@ -2071,27 +2123,27 @@ export const generateAppraisal = async (req: Request, res: Response) => {
     // Calculate OKR-linked tasks (all OKRs or specific selected OKRs)
     const okrLinkedTasks = okrIds && okrIds.length > 0
       ? await prisma.task.count({
-          where: {
-            organizationId,
-            assigneeId: subjectUserId,
-            deletedAt: null,
-            tag: {
-              keyResults: {
-                some: {
-                  okrId: { in: okrIds }
-                }
+        where: {
+          organizationId,
+          assigneeId: subjectUserId,
+          deletedAt: null,
+          tag: {
+            keyResults: {
+              some: {
+                okrId: { in: okrIds }
               }
             }
           }
-        })
+        }
+      })
       : await prisma.task.count({
-          where: {
-            organizationId,
-            assigneeId: subjectUserId,
-            deletedAt: null,
-            tag: { keyResults: { some: {} } }
-          }
-        });
+        where: {
+          organizationId,
+          assigneeId: subjectUserId,
+          deletedAt: null,
+          tag: { keyResults: { some: {} } }
+        }
+      });
 
     const tasksCompleted = allTasks > 0 ? (completedTasks / allTasks) * 100 : 0;
     const deadlinesMet = allTasks > 0 ? ((allTasks - overdueTasks) / allTasks) * 100 : 0;

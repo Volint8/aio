@@ -62,7 +62,7 @@ export const sendAlert = async (req: Request, res: Response) => {
         <div style="background-color: #f4f4f4; padding: 15px; border-radius: 5px; margin: 20px 0;">
           <p style="margin: 0;">${message}</p>
         </div>
-        <p style="color: #666; font-size: 12px;">This is an automated alert from Apraizal Platform.</p>
+        <p style="color: #666; font-size: 12px;">This is an automated alert from Apraizal.</p>
       </div>
     `;
 
