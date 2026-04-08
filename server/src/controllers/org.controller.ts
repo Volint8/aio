@@ -259,6 +259,7 @@ export const getOrgById = async (req: Request, res: Response) => {
                 id: true,
                 email: true,
                 name: true,
+                jobTitle: true,
                 signupSource: true,
                 initialRole: true,
                 createdAt: true
@@ -1627,6 +1628,7 @@ export const createOkr = async (req: Request, res: Response) => {
       description,
       periodStart,
       periodEnd,
+      status,
       assignments = [],
       keyResults = []
     } = req.body as {
@@ -1634,6 +1636,7 @@ export const createOkr = async (req: Request, res: Response) => {
       description?: string;
       periodStart?: string;
       periodEnd?: string;
+      status?: string;
       assignments?: Array<{ targetType: string; targetId: string }>;
       keyResults?: Array<{ title: string; tagName: string; tagColor?: string }>;
     };
@@ -1655,6 +1658,7 @@ export const createOkr = async (req: Request, res: Response) => {
           description,
           periodStart: new Date(periodStart),
           periodEnd: new Date(periodEnd),
+          status: status || 'NOT_YET_OPEN',
           createdBy: userId,
           assignments: {
             create: assignments
@@ -1664,17 +1668,30 @@ export const createOkr = async (req: Request, res: Response) => {
         }
       });
 
+      // First pass: create or get all unique tags
+      const tagMap = new Map<string, any>();
+      for (const kr of keyResults) {
+        if (!kr?.tagName?.trim()) continue;
+        const normalizedName = normalizeOrgName(kr.tagName);
+        if (!tagMap.has(normalizedName)) {
+          const tag = await createOrReuseTag({
+            tx,
+            organizationId,
+            name: kr.tagName,
+            color: kr.tagColor
+          });
+          tagMap.set(normalizedName, tag);
+        }
+      }
+
+      // Second pass: create key results using the tags
       for (const kr of keyResults) {
         if (!kr?.title?.trim() || !kr?.tagName?.trim()) {
           continue;
         }
 
-        const tag = await createOrReuseTag({
-          tx,
-          organizationId,
-          name: kr.tagName,
-          color: kr.tagColor
-        });
+        const normalizedName = normalizeOrgName(kr.tagName);
+        const tag = tagMap.get(normalizedName);
 
         await tx.okrKeyResult.create({
           data: {
@@ -1707,117 +1724,151 @@ export const createOkr = async (req: Request, res: Response) => {
     // Send notifications to teams assigned to this OKR
     const teamAssignments = assignments.filter((a) => a.targetType === 'TEAM' && a.targetId);
     if (teamAssignments.length > 0 && okr) {
-      const creator = await prisma.user.findUnique({
-        where: { id: userId },
-        select: { name: true }
-      });
+      try {
+        const creator = await prisma.user.findUnique({
+          where: { id: userId },
+          select: { name: true }
+        });
 
-      const organization = await prisma.organization.findUnique({
-        where: { id: organizationId },
-        select: { name: true }
-      });
+        const organization = await prisma.organization.findUnique({
+          where: { id: organizationId },
+          select: { name: true }
+        });
 
-      for (const assignment of teamAssignments) {
-        try {
-          const team = await prisma.team.findUnique({
-            where: { id: assignment.targetId },
-            include: {
-              members: {
-                include: {
-                  user: {
-                    select: {
-                      id: true,
-                      email: true,
-                      name: true
+        for (const assignment of teamAssignments) {
+          try {
+            const team = await prisma.team.findUnique({
+              where: { id: assignment.targetId },
+              include: {
+                members: {
+                  include: {
+                    user: {
+                      select: {
+                        id: true,
+                        email: true,
+                        name: true
+                      }
                     }
                   }
                 }
               }
-            }
-          });
+            });
 
-          if (team) {
-            for (const member of team.members) {
-              try {
-                await sendOkrNotificationEmail({
-                  to: member.user.email,
-                  recipientName: member.user.name,
-                  okrTitle: okr.title,
-                  okrDescription: okr.description || null,
-                  teamName: team.name,
-                  organizationName: organization?.name || '',
-                  creatorName: creator?.name || null,
-                  periodStart,
-                  periodEnd
-                });
-              } catch (memberNotifyErr) {
-                console.error(`Failed to notify member ${member.user.email} about OKR:`, memberNotifyErr);
+            if (team) {
+              // Create in-app notification for the team
+              await prisma.notification.create({
+                data: {
+                  organizationId,
+                  senderId: userId,
+                  targetType: 'TEAM',
+                  targetId: assignment.targetId,
+                  type: 'PRIORITY_ALERT',
+                  message: `New OKR assigned to ${team.name}: ${okr.title}`
+                }
+              });
+
+              // Send email notifications to all team members
+              for (const member of team.members) {
+                try {
+                  await sendOkrNotificationEmail({
+                    to: member.user.email,
+                    recipientName: member.user.name,
+                    okrTitle: okr.title,
+                    okrDescription: okr.description || null,
+                    teamName: team.name,
+                    organizationName: organization?.name || '',
+                    creatorName: creator?.name || null,
+                    periodStart,
+                    periodEnd
+                  });
+                } catch (memberNotifyErr) {
+                  console.error(`Failed to notify member ${member.user.email} about OKR:`, memberNotifyErr);
+                }
               }
             }
+          } catch (teamNotifyErr) {
+            console.error(`Failed to notify team ${assignment.targetId} about OKR:`, teamNotifyErr);
           }
-        } catch (teamNotifyErr) {
-          console.error(`Failed to notify team ${assignment.targetId} about OKR:`, teamNotifyErr);
         }
+      } catch (notificationErr) {
+        console.error('Failed to send team notifications:', notificationErr);
       }
     }
 
     // Send notifications to members tagged in key results (by tag name matching member name)
     if (keyResults.length > 0 && okr) {
-      const allMembers = await prisma.organizationMember.findMany({
-        where: { organizationId },
-        include: {
-          user: {
-            select: {
-              id: true,
-              email: true,
-              name: true
+      try {
+        const allMembers = await prisma.organizationMember.findMany({
+          where: { organizationId },
+          include: {
+            user: {
+              select: {
+                id: true,
+                email: true,
+                name: true
+              }
+            }
+          }
+        });
+
+        const organization = await prisma.organization.findUnique({
+          where: { id: organizationId },
+          select: { name: true }
+        });
+
+        const creator = await prisma.user.findUnique({
+          where: { id: userId },
+          select: { name: true }
+        });
+
+        // Create a map of member names (normalized) to members
+        const memberNameMap = new Map<string, typeof allMembers[0]>();
+        allMembers.forEach((member) => {
+          if (member.user.name) {
+            memberNameMap.set(normalizeOrgName(member.user.name), member);
+          }
+          memberNameMap.set(normalizeOrgName(member.user.email), member);
+        });
+
+        // Check each key result's tag name for member matches
+        for (const kr of keyResults) {
+          if (!kr?.tagName?.trim()) continue;
+
+          const normalizedTagName = normalizeOrgName(kr.tagName);
+          const matchedMember = memberNameMap.get(normalizedTagName);
+
+          if (matchedMember) {
+            try {
+              // Create in-app notification
+              await prisma.notification.create({
+                data: {
+                  organizationId,
+                  senderId: userId,
+                  targetType: 'INDIVIDUAL',
+                  targetId: matchedMember.user.id,
+                  type: 'PRIORITY_ALERT',
+                  message: `You've been mentioned in OKR "${okr.title}": ${kr.title}`
+                }
+              });
+
+              // Also send email notification
+              await sendKeyResultNotificationEmail({
+                to: matchedMember.user.email,
+                recipientName: matchedMember.user.name,
+                okrTitle: okr.title,
+                keyResultTitle: kr.title,
+                organizationName: organization?.name || '',
+                creatorName: creator?.name || null,
+                periodStart,
+                periodEnd
+              });
+            } catch (memberNotifyErr) {
+              console.error(`Failed to notify ${matchedMember.user.email} about key result tag:`, memberNotifyErr);
             }
           }
         }
-      });
-
-      const organization = await prisma.organization.findUnique({
-        where: { id: organizationId },
-        select: { name: true }
-      });
-
-      const creator = await prisma.user.findUnique({
-        where: { id: userId },
-        select: { name: true }
-      });
-
-      // Create a map of member names (normalized) to members
-      const memberNameMap = new Map<string, typeof allMembers[0]>();
-      allMembers.forEach((member) => {
-        if (member.user.name) {
-          memberNameMap.set(normalizeOrgName(member.user.name), member);
-        }
-        memberNameMap.set(normalizeOrgName(member.user.email), member);
-      });
-
-      // Check each key result's tag name for member matches
-      for (const kr of keyResults) {
-        if (!kr?.tagName?.trim()) continue;
-
-        const normalizedTagName = normalizeOrgName(kr.tagName);
-        const matchedMember = memberNameMap.get(normalizedTagName);
-
-        if (matchedMember) {
-          try {
-            await sendKeyResultNotificationEmail({
-              to: matchedMember.user.email,
-              recipientName: matchedMember.user.name,
-              okrTitle: okr.title,
-              keyResultTitle: kr.title,
-              organizationName: organization?.name || '',
-              creatorName: creator?.name || null,
-              periodStart,
-              periodEnd
-            });
-          } catch (memberNotifyErr) {
-            console.error(`Failed to notify ${matchedMember.user.email} about key result tag:`, memberNotifyErr);
-          }
-        }
+      } catch (notificationErr) {
+        console.error('Failed to send key result notifications:', notificationErr);
       }
     }
 

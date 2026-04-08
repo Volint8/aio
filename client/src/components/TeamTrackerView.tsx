@@ -94,8 +94,8 @@ const TeamTrackerView: React.FC<TeamTrackerViewProps> = ({
     // Use useMemo to optimize filtering performance
     const filteredTasks = React.useMemo(() => {
         return tasks.filter(task => {
-            // Member filter
-            if (selectedMemberId && task.assignee?.id !== selectedMemberId) return false;
+            // Member filter - skip for 'my' and 'supporting' filters as they have their own user-based logic
+            if (selectedMemberId && filter !== 'my' && filter !== 'supporting' && task.assignee?.id !== selectedMemberId) return false;
 
             // Status filter - handle both UI filter keys and backend status values
             if (filter === 'pending' || filter === 'created') {

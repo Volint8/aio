@@ -11,7 +11,8 @@ import {
     inviteAcceptComplete,
     forgotPasswordInit,
     forgotPasswordComplete,
-    changePassword
+    changePassword,
+    updateUserProfile
 } from '../controllers/auth.controller';
 import { authenticateToken } from '../middleware/auth.middleware';
 
@@ -28,6 +29,7 @@ router.post('/resend-otp', resendOtp);
 router.post('/forgot-password/init', forgotPasswordInit);
 router.post('/forgot-password/complete', forgotPasswordComplete);
 router.post('/change-password', authenticateToken, changePassword);
+router.put('/users/:id', authenticateToken, updateUserProfile);
 router.get('/me', authenticateToken, getMe);
 
 export default router;

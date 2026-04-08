@@ -7,6 +7,18 @@ interface LayoutProps {
     children: React.ReactNode;
 }
 
+interface Notification {
+    id: string;
+    message: string;
+    type: string;
+    isRead: boolean;
+    createdAt: string;
+    sender?: {
+        name: string | null;
+        email: string;
+    };
+}
+
 const Layout: React.FC<LayoutProps> = ({ children }) => {
     const { user, logout } = useAuth();
     const navigate = useNavigate();
@@ -14,6 +26,9 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     const [currentOrgRole, setCurrentOrgRole] = useState(localStorage.getItem('selectedOrgRole') || '');
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [selectedOrgName, setSelectedOrgName] = useState(localStorage.getItem('selectedOrgName') || '');
+    const [notifications, setNotifications] = useState<Notification[]>([]);
+    const [showNotifications, setShowNotifications] = useState(false);
+    const [notificationCount, setNotificationCount] = useState(0);
 
     useEffect(() => {
         const orgId = localStorage.getItem('selectedOrgId');
@@ -33,6 +48,29 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                 setCurrentOrgRole(localStorage.getItem('selectedOrgRole') || '');
                 setSelectedOrgName(localStorage.getItem('selectedOrgName') || '');
             });
+    }, [location.pathname]);
+
+    // Fetch notifications
+    useEffect(() => {
+        const orgId = localStorage.getItem('selectedOrgId');
+        if (!orgId) return;
+
+        const fetchNotifications = async () => {
+            try {
+                const res = await api.get('/notifications/', {
+                    params: { organizationId: orgId }
+                });
+                setNotifications(res.data);
+                setNotificationCount(res.data.filter((n: Notification) => !n.isRead).length);
+            } catch (error) {
+                console.error('Failed to fetch notifications:', error);
+            }
+        };
+
+        fetchNotifications();
+        // Refresh notifications every 30 seconds
+        const interval = setInterval(fetchNotifications, 30000);
+        return () => clearInterval(interval);
     }, [location.pathname]);
 
 
@@ -154,6 +192,35 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
     const navItems = isAdminInCurrentOrg ? adminNavItems : isTeamLeadInCurrentOrg ? teamLeadNavItems : memberNavItems;
 
+    const handleMarkAsRead = async (notificationId: string) => {
+        try {
+            await api.patch(`/notifications/${notificationId}/read`);
+            setNotifications(prev =>
+                prev.map(n => n.id === notificationId ? { ...n, isRead: true } : n)
+            );
+            setNotificationCount(prev => Math.max(0, prev - 1));
+        } catch (error) {
+            console.error('Failed to mark notification as read:', error);
+        }
+    };
+
+    const handleDismissNotifications = () => {
+        setShowNotifications(false);
+    };
+
+    // Close notifications dropdown when clicking outside
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            const target = event.target as Element;
+            if (showNotifications && !target.closest('.notification-bell-container')) {
+                setShowNotifications(false);
+            }
+        };
+
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, [showNotifications]);
+
     return (
         <div className="app-container">
             {/* Mobile sidebar overlay */}
@@ -229,6 +296,136 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                                 <polyline points="9 22 9 12 15 12 15 22"></polyline>
                             </svg>
                             {selectedOrgName || 'Organization'}
+                        </div>
+
+                        {/* Notification Bell */}
+                        <div className="notification-bell-container" style={{ position: 'relative' }}>
+                            <button
+                                className="notification-bell"
+                                onClick={() => setShowNotifications(!showNotifications)}
+                                style={{
+                                    background: '#f1f5f9',
+                                    border: 'none',
+                                    borderRadius: '50%',
+                                    width: '40px',
+                                    height: '40px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    cursor: 'pointer',
+                                    position: 'relative',
+                                    color: '#64748b'
+                                }}
+                            >
+                                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+                                    <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+                                </svg>
+                                {notificationCount > 0 && (
+                                    <span className="unread-badge" style={{
+                                        position: 'absolute',
+                                        top: '-2px',
+                                        right: '-2px',
+                                        background: '#ef4444',
+                                        color: 'white',
+                                        fontSize: '10px',
+                                        padding: '2px 5px',
+                                        borderRadius: '10px',
+                                        fontWeight: 700
+                                    }}>
+                                        {notificationCount}
+                                    </span>
+                                )}
+                            </button>
+
+                            {/* Notifications Dropdown */}
+                            {showNotifications && (
+                                <div className="notifications-menu" style={{
+                                    position: 'absolute',
+                                    top: '50px',
+                                    right: '0',
+                                    width: '380px',
+                                    maxHeight: '500px',
+                                    background: 'white',
+                                    borderRadius: '12px',
+                                    boxShadow: '0 10px 40px rgba(0,0,0,0.15)',
+                                    border: '1px solid #e2e8f0',
+                                    overflow: 'hidden',
+                                    zIndex: 1000
+                                }}>
+                                    <div style={{
+                                        padding: '16px 20px',
+                                        borderBottom: '1px solid #e2e8f0',
+                                        display: 'flex',
+                                        justifyContent: 'space-between',
+                                        alignItems: 'center'
+                                    }}>
+                                        <h3 style={{ margin: 0, fontSize: '1em', fontWeight: 600 }}>Notifications</h3>
+                                        <button
+                                            onClick={handleDismissNotifications}
+                                            style={{
+                                                background: 'none',
+                                                border: 'none',
+                                                cursor: 'pointer',
+                                                fontSize: '1.2em',
+                                                color: '#64748b'
+                                            }}
+                                        >
+                                            ✕
+                                        </button>
+                                    </div>
+                                    <div style={{
+                                        maxHeight: '400px',
+                                        overflowY: 'auto'
+                                    }}>
+                                        {notifications.length === 0 ? (
+                                            <div style={{
+                                                padding: '40px 20px',
+                                                textAlign: 'center',
+                                                color: '#94a3b8'
+                                            }}>
+                                                No notifications
+                                            </div>
+                                        ) : (
+                                            notifications.map((notification) => (
+                                                <div
+                                                    key={notification.id}
+                                                    onClick={() => !notification.isRead && handleMarkAsRead(notification.id)}
+                                                    style={{
+                                                        padding: '16px 20px',
+                                                        borderBottom: '1px solid #f1f5f9',
+                                                        cursor: notification.isRead ? 'default' : 'pointer',
+                                                        background: notification.isRead ? 'white' : '#f8fafc',
+                                                        borderLeft: notification.isRead ? '3px solid transparent' : '3px solid #3b82f6'
+                                                    }}
+                                                >
+                                                    <p style={{
+                                                        margin: '0 0 8px 0',
+                                                        fontSize: '0.9em',
+                                                        color: '#0f172a',
+                                                        fontWeight: notification.isRead ? 400 : 600
+                                                    }}>
+                                                        {notification.message}
+                                                    </p>
+                                                    <div style={{
+                                                        display: 'flex',
+                                                        justifyContent: 'space-between',
+                                                        fontSize: '0.75em',
+                                                        color: '#64748b'
+                                                    }}>
+                                                        <span>
+                                                            {notification.sender?.name || notification.sender?.email || 'System'}
+                                                        </span>
+                                                        <span>
+                                                            {new Date(notification.createdAt).toLocaleDateString()}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            ))
+                                        )}
+                                    </div>
+                                </div>
+                            )}
                         </div>
 
                         <div className="user-pill" style={{ background: 'none', padding: '0' }}>

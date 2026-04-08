@@ -421,7 +421,7 @@ export const verifyOtp = async (req: Request, res: Response) => {
           const orgMember = await tx.organizationMember.findFirst({
             where: { userId: user.id }
           });
-          
+
           if (orgMember) {
             // Delete all members of the organization
             await tx.organizationMember.deleteMany({
@@ -432,11 +432,11 @@ export const verifyOtp = async (req: Request, res: Response) => {
               where: { id: orgMember.organizationId }
             });
           }
-          
+
           // Delete the user
           await tx.user.delete({ where: { id: user.id } });
         });
-        
+
         return res.status(400).json({ error: 'OTP expired. Please register again.' });
       }
 
@@ -539,7 +539,7 @@ export const login = async (req: Request, res: Response) => {
           const orgMember = await tx.organizationMember.findFirst({
             where: { userId: user.id }
           });
-          
+
           if (orgMember) {
             // Delete all members of the organization
             await tx.organizationMember.deleteMany({
@@ -550,11 +550,11 @@ export const login = async (req: Request, res: Response) => {
               where: { id: orgMember.organizationId }
             });
           }
-          
+
           // Delete the user
           await tx.user.delete({ where: { id: user.id } });
         });
-        
+
         return res.status(400).json({ error: 'Registration expired. Please sign up again.' });
       }
       return res.status(401).json({ error: 'Please verify your email first.' });
@@ -603,6 +603,7 @@ export const getMe = async (req: Request, res: Response) => {
         id: true,
         email: true,
         name: true,
+        jobTitle: true,
         role: true,
         createdAt: true
       }
@@ -776,6 +777,42 @@ export const changePassword = async (req: Request, res: Response) => {
     return res.json({ message: 'Password changed successfully' });
   } catch (error) {
     console.error('Change password error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+export const updateUserProfile = async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user.userId as string;
+    const targetUserId = req.params.id as string;
+    const { name, jobTitle } = req.body as { name?: string; jobTitle?: string | null };
+
+    // Users can only update their own profile
+    if (userId !== targetUserId) {
+      return res.status(403).json({ error: 'You can only update your own profile' });
+    }
+
+    if (!name?.trim()) {
+      return res.status(400).json({ error: 'Name is required' });
+    }
+
+    const updated = await prisma.user.update({
+      where: { id: targetUserId },
+      data: {
+        name: name.trim(),
+        ...(jobTitle !== undefined ? { jobTitle: jobTitle?.trim() || null } : {})
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        jobTitle: true
+      }
+    });
+
+    return res.json(updated);
+  } catch (error) {
+    console.error('Update profile error:', error);
     return res.status(500).json({ error: 'Internal server error' });
   }
 };

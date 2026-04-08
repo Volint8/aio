@@ -14,11 +14,12 @@ const notifyTaskAssignment = async (params: {
     assigneeId: string;
     assignerId: string;
     taskTitle: string;
+    organizationId: string;
     organizationName: string;
     dueDate?: Date | null;
     priority?: string | null;
 }) => {
-    const { assigneeId, assignerId, taskTitle, organizationName, dueDate, priority } = params;
+    const { assigneeId, assignerId, taskTitle, organizationId, organizationName, dueDate, priority } = params;
 
     if (!assigneeId || assigneeId === assignerId) {
         return;
@@ -36,21 +37,34 @@ const notifyTaskAssignment = async (params: {
             })
         ]);
 
-        if (!assignee?.email) {
-            return;
+        // Create in-app notification
+        if (assignee) {
+            await prisma.notification.create({
+                data: {
+                    organizationId,
+                    senderId: assignerId,
+                    targetType: 'INDIVIDUAL',
+                    targetId: assigneeId,
+                    type: 'PRIORITY_ALERT',
+                    message: `New task assigned to you: ${taskTitle}`
+                }
+            });
         }
 
-        await sendTaskAssignmentEmail({
-            to: assignee.email,
-            assigneeName: assignee.name,
-            taskTitle,
-            organizationName,
-            assignerName: assigner?.name || assigner?.email,
-            dueDate,
-            priority
-        });
+        // Send email notification
+        if (assignee?.email) {
+            await sendTaskAssignmentEmail({
+                to: assignee.email,
+                assigneeName: assignee.name,
+                taskTitle,
+                organizationName,
+                assignerName: assigner?.name || assigner?.email,
+                dueDate,
+                priority
+            });
+        }
     } catch (error) {
-        console.error('Task assignment email failed:', error);
+        console.error('Task assignment notification failed:', error);
     }
 };
 
@@ -337,6 +351,7 @@ export const createTask = async (req: Request, res: Response) => {
             assigneeId: task?.assignee?.id || '',
             assignerId: userId,
             taskTitle: task?.title || title,
+            organizationId: organizationId,
             organizationName: task?.organization?.name || '',
             dueDate: task?.dueDate,
             priority: task?.priority
@@ -627,6 +642,7 @@ export const updateTask = async (req: Request, res: Response) => {
                 assigneeId: normalizedAssigneeId,
                 assignerId: userId,
                 taskTitle: updatedTask?.title || task.title,
+                organizationId: task.organizationId,
                 organizationName: updatedTask?.organization?.name || '',
                 dueDate: updatedTask?.dueDate,
                 priority: updatedTask?.priority

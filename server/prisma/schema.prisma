@@ -12,6 +12,7 @@ model User {
   email                     String               @unique
   passwordHash              String
   name                      String?
+  jobTitle                  String?              // Professional role: Software Engineer, Marketer, etc.
   role                      String               @default("USER") // USER, ADMIN
   isVerified                Boolean              @default(false)
   otp                       String?
