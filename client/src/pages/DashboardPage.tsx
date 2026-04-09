@@ -7,6 +7,7 @@ import TaskTrackerView from "../components/TaskTrackerView";
 import TeamTrackerView from "../components/TeamTrackerView";
 import OkrView from "../components/OkrView";
 import SubscriptionPage from "./SubscriptionPage";
+import ErrorDialog from "../components/ErrorDialog";
 import * as XLSX from "xlsx";
 import "../styles/Dashboard.css";
 
@@ -357,11 +358,11 @@ const DashboardPage = () => {
     e.preventDefault();
     try {
       if (!alertForm.targetId) {
-        alert("Target is required");
+        showError("Validation Error", "Target is required");
         return;
       }
       if (!alertForm.message) {
-        alert("Message is required");
+        showError("Validation Error", "Message is required");
         return;
       }
       await api.post("/notifications/send-alert", {
@@ -375,9 +376,9 @@ const DashboardPage = () => {
         type: "DEADLINE_REMINDER",
         message: "",
       });
-      alert("Alert sent successfully");
+      showError("Success", "Alert sent successfully");
     } catch (error: any) {
-      alert(error.response?.data?.error || "Failed to send alert");
+      showError("Error", error.response?.data?.error || "Failed to send alert");
     }
   };
 
@@ -496,6 +497,18 @@ const DashboardPage = () => {
   const [quotes, setQuotes] = useState<QuoteRecord[]>([]);
   const [quoteForm, setQuoteForm] = useState({ text: "", author: "" });
   const [quoteSubmitting, setQuoteSubmitting] = useState(false);
+
+  // Error dialog state
+  const [errorDialog, setErrorDialog] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+  }>({ isOpen: false, title: "", message: "" });
+
+  // Helper function to show error dialog
+  const showError = (title: string, message: string) => {
+    setErrorDialog({ isOpen: true, title, message });
+  };
 
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -685,6 +698,27 @@ const DashboardPage = () => {
   }, [menuOpenTaskId]);
 
   useEffect(() => {
+    // Check if we're in a reload loop (max 2 attempts)
+    const reloadCount = parseInt(
+      sessionStorage.getItem("orgReloadCount") || "0",
+      10,
+    );
+    if (reloadCount >= 2) {
+      console.error(
+        "Too many org reload attempts, stopping to prevent infinite loop",
+      );
+      sessionStorage.removeItem("orgReloadCount");
+      setLoading(false);
+      setOrganization(null);
+      setErrorDialog({
+        isOpen: true,
+        title: "Unable to Load",
+        message:
+          "We couldn't load your organization data. Please check your internet connection and refresh the page.",
+      });
+      return;
+    }
+
     if (!orgId) {
       // Auto-select the first organization
       api
@@ -695,15 +729,75 @@ const DashboardPage = () => {
             const firstOrg = organizations[0];
             localStorage.setItem("selectedOrgId", firstOrg.id);
             localStorage.setItem("selectedOrgRole", firstOrg.userRole);
-            window.location.reload(); // Reload to apply the selected org
+            sessionStorage.setItem("orgReloadCount", "1");
+            window.location.reload();
+          } else {
+            // No organizations available, show empty state
+            sessionStorage.removeItem("orgReloadCount");
+            setLoading(false);
+            setOrganization(null);
           }
         })
         .catch(() => {
           console.error("Failed to fetch organizations");
+          // Increment reload counter
+          sessionStorage.setItem("orgReloadCount", String(reloadCount + 1));
+          // Clear stale org data
+          localStorage.removeItem("selectedOrgId");
+          localStorage.removeItem("selectedOrgRole");
+          localStorage.removeItem("selectedOrgName");
+
+          if (reloadCount < 1) {
+            // Only reload once more
+            window.location.reload();
+          } else {
+            // Stop reloading, show error dialog
+            sessionStorage.removeItem("orgReloadCount");
+            setLoading(false);
+            setErrorDialog({
+              isOpen: true,
+              title: "Connection Error",
+              message:
+                "Unable to load organizations. Please check your internet connection and try again.",
+            });
+          }
         });
       return;
     }
-    fetchData();
+
+    // Validate that the selected org still exists and user has access
+    api
+      .get(`/orgs/${orgId}`)
+      .then(() => {
+        // Org is valid, proceed with fetching dashboard data
+        sessionStorage.removeItem("orgReloadCount");
+        fetchData();
+      })
+      .catch((error) => {
+        // Org doesn't exist or user lost access
+        console.error("Selected org is invalid or inaccessible:", error);
+        localStorage.removeItem("selectedOrgId");
+        localStorage.removeItem("selectedOrgRole");
+        localStorage.removeItem("selectedOrgName");
+
+        // Increment reload counter
+        sessionStorage.setItem("orgReloadCount", String(reloadCount + 1));
+
+        if (reloadCount < 1) {
+          // Only reload once more to trigger auto-selection
+          window.location.reload();
+        } else {
+          // Stop reloading to prevent infinite loop
+          sessionStorage.removeItem("orgReloadCount");
+          setLoading(false);
+          setErrorDialog({
+            isOpen: true,
+            title: "Access Error",
+            message:
+              "Unable to access this organization. You may have been removed or the organization no longer exists.",
+          });
+        }
+      });
   }, [orgId, filter, taskClientFilter, assigneeFilterId]);
 
   const getInitials = (name: string) => {
@@ -825,7 +919,7 @@ const DashboardPage = () => {
       setQuoteForm({ text: "", author: "" });
       await fetchQuotes();
     } catch (error: any) {
-      alert(error.response?.data?.error || "Failed to add quote");
+      showError("Error", error.response?.data?.error || "Failed to add quote");
     } finally {
       setQuoteSubmitting(false);
     }
@@ -837,7 +931,7 @@ const DashboardPage = () => {
       await api.delete(`/orgs/${orgId}/quotes/${quoteId}`);
       await fetchQuotes();
     } catch (error: any) {
-      alert(error.response?.data?.error || "Failed to delete quote");
+      showError("Error", error.response?.data?.error || "Failed to delete quote");
     }
   };
 
@@ -879,67 +973,90 @@ const DashboardPage = () => {
 
       setQuotes(quotesRes.data || []);
 
-      const [clientsRes] = await Promise.all([
-        api.get(`/orgs/${orgId}/clients`),
-      ]);
+      // Fetch clients separately with error handling
+      let clientsRes;
+      try {
+        clientsRes = await api.get(`/orgs/${orgId}/clients`);
+      } catch (error) {
+        console.error("Failed to fetch clients:", error);
+        clientsRes = { data: [] };
+      }
 
       const role = orgRes.data.userRole;
       const orgMembers = orgRes.data.members || [];
       localStorage.setItem("selectedOrgRole", role);
 
       if (role === "ADMIN") {
-        const [teamsRes, invitesRes, memberStatsRes, distributionRes] =
-          await Promise.all([
-            api.get(`/orgs/${orgId}/teams`),
-            api.get(`/orgs/${orgId}/invites`),
+        try {
+          const [teamsRes, invitesRes, memberStatsRes, distributionRes] =
+            await Promise.all([
+              api.get(`/orgs/${orgId}/teams`),
+              api.get(`/orgs/${orgId}/invites`),
+              api.get("/tasks/team-stats", {
+                params: { organizationId: orgId },
+              }),
+              api.get("/tasks/team-distribution", {
+                params: { organizationId: orgId },
+              }),
+            ]);
+          setTeams(teamsRes.data || []);
+          setInvites(invitesRes.data || []);
+          // Filter out ADMIN users from member stats
+          const filteredMemberStats = (memberStatsRes.data || []).filter(
+            (m: any) => {
+              const member = orgMembers.find(
+                (orgMember: any) => orgMember.userId === m.userId,
+              );
+              return member?.role !== "ADMIN";
+            },
+          );
+          setMemberStats(filteredMemberStats);
+          setTeamDistribution(distributionRes.data || []);
+        } catch (error) {
+          console.error("Failed to fetch admin data:", error);
+          setTeams([]);
+          setInvites([]);
+          setMemberStats([]);
+          setTeamDistribution([]);
+        }
+      } else if (role === "TEAM_LEAD") {
+        try {
+          const [memberStatsRes, distRes] = await Promise.all([
             api.get("/tasks/team-stats", { params: { organizationId: orgId } }),
             api.get("/tasks/team-distribution", {
               params: { organizationId: orgId },
             }),
           ]);
-        setTeams(teamsRes.data || []);
-        setInvites(invitesRes.data || []);
-        // Filter out ADMIN users from member stats
-        const filteredMemberStats = (memberStatsRes.data || []).filter(
-          (m: any) => {
-            const member = orgMembers.find(
-              (orgMember: any) => orgMember.userId === m.userId,
-            );
-            return member?.role !== "ADMIN";
-          },
-        );
-        setMemberStats(filteredMemberStats);
-        setTeamDistribution(distributionRes.data || []);
-      } else if (role === "TEAM_LEAD") {
-        const [memberStatsRes, distRes] = await Promise.all([
-          api.get("/tasks/team-stats", { params: { organizationId: orgId } }),
-          api.get("/tasks/team-distribution", {
-            params: { organizationId: orgId },
-          }),
-        ]);
-        const distributionData = distRes.data || [];
-        setTeams(
-          distributionData.map((item: any) => ({
-            id: item.teamId,
-            name: item.teamName,
-            leadUser: item.leadUser,
-            stats: item.stats,
-            members: [],
-            people: item.people || [],
-          })),
-        );
-        setInvites([]);
-        // Filter out ADMIN users from member stats
-        const filteredMemberStats = (memberStatsRes.data || []).filter(
-          (m: any) => {
-            const member = orgMembers.find(
-              (orgMember: any) => orgMember.userId === m.userId,
-            );
-            return member?.role !== "ADMIN";
-          },
-        );
-        setMemberStats(filteredMemberStats);
-        setTeamDistribution(distributionData);
+          const distributionData = distRes.data || [];
+          setTeams(
+            distributionData.map((item: any) => ({
+              id: item.teamId,
+              name: item.teamName,
+              leadUser: item.leadUser,
+              stats: item.stats,
+              members: [],
+              people: item.people || [],
+            })),
+          );
+          setInvites([]);
+          // Filter out ADMIN users from member stats
+          const filteredMemberStats = (memberStatsRes.data || []).filter(
+            (m: any) => {
+              const member = orgMembers.find(
+                (orgMember: any) => orgMember.userId === m.userId,
+              );
+              return member?.role !== "ADMIN";
+            },
+          );
+          setMemberStats(filteredMemberStats);
+          setTeamDistribution(distributionData);
+        } catch (error) {
+          console.error("Failed to fetch team lead data:", error);
+          setTeams([]);
+          setInvites([]);
+          setMemberStats([]);
+          setTeamDistribution([]);
+        }
       } else {
         setTeams([]);
         setInvites([]);
@@ -1019,7 +1136,7 @@ const DashboardPage = () => {
       // Show error message to user
       const errorMessage =
         error.response?.data?.error || error.message || "Failed to load data";
-      alert(`Error loading dashboard: ${errorMessage}`);
+      showError("Dashboard Error", `Error loading dashboard: ${errorMessage}`);
     } finally {
       setLoading(false);
     }
@@ -1059,11 +1176,11 @@ const DashboardPage = () => {
     e.preventDefault();
     try {
       if (!newTask.assigneeId) {
-        alert("Primary assignee is required");
+        showError("Validation Error", "Primary assignee is required");
         return;
       }
       if (newTask.supporterId && newTask.supporterId === newTask.assigneeId) {
-        alert("Supporter cannot be the same as primary assignee");
+        showError("Validation Error", "Supporter cannot be the same as primary assignee");
         return;
       }
       await api.post("/tasks", {
@@ -1084,7 +1201,8 @@ const DashboardPage = () => {
       await fetchData();
     } catch (error: any) {
       const errorData = error.response?.data?.error;
-      alert(
+      showError(
+        "Error",
         (typeof errorData === "object" ? errorData.message : errorData) ||
           "Failed to create task",
       );
@@ -1109,11 +1227,11 @@ const DashboardPage = () => {
   const handleUpdateTask = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editTask.assigneeId) {
-      alert("Primary assignee is required");
+      showError("Validation Error", "Primary assignee is required");
       return;
     }
     if (editTask.supporterId && editTask.supporterId === editTask.assigneeId) {
-      alert("Supporter cannot be the same as primary assignee");
+      showError("Validation Error", "Supporter cannot be the same as primary assignee");
       return;
     }
     try {
@@ -1131,7 +1249,8 @@ const DashboardPage = () => {
       await fetchData();
     } catch (error: any) {
       const errorData = error.response?.data?.error;
-      alert(
+      showError(
+        "Error",
         (typeof errorData === "object" ? errorData.message : errorData) ||
           "Failed to update task",
       );
@@ -1173,7 +1292,8 @@ const DashboardPage = () => {
       await fetchData();
     } catch (error: any) {
       const errorData = error.response?.data?.error;
-      alert(
+      showError(
+        "Error",
         (typeof errorData === "object" ? errorData.message : errorData) ||
           "Failed to create OKR",
       );
@@ -1238,7 +1358,7 @@ const DashboardPage = () => {
       setEditingOkr(null);
       await fetchData();
     } catch (error: any) {
-      alert(error.response?.data?.error || "Failed to update OKR");
+      showError("Error", error.response?.data?.error || "Failed to update OKR");
     }
   };
 
@@ -1253,7 +1373,7 @@ const DashboardPage = () => {
       await api.delete(`/orgs/${orgId}/okrs/${okrId}`);
       await fetchData();
     } catch (error: any) {
-      alert(error.response?.data?.error || "Failed to delete OKR");
+      showError("Error", error.response?.data?.error || "Failed to delete OKR");
     }
   };
 
@@ -1265,7 +1385,7 @@ const DashboardPage = () => {
       });
       await fetchData();
     } catch (error: any) {
-      alert(error.response?.data?.error || "Failed to make OKR global");
+      showError("Error", error.response?.data?.error || "Failed to make OKR global");
     }
   };
 
@@ -1282,7 +1402,7 @@ const DashboardPage = () => {
       setTagForm({ name: "", color: "#2563eb" });
       await fetchData();
     } catch (error: any) {
-      alert(error.response?.data?.error || "Failed to save tag");
+      showError("Error", error.response?.data?.error || "Failed to save tag");
     }
   };
 
@@ -1292,7 +1412,7 @@ const DashboardPage = () => {
       await api.delete(`/orgs/${orgId}/tags/${tagId}`);
       await fetchData();
     } catch (error: any) {
-      alert(error.response?.data?.error || "Failed to delete tag");
+      showError("Error", error.response?.data?.error || "Failed to delete tag");
     }
   };
 
@@ -1314,7 +1434,8 @@ const DashboardPage = () => {
       await fetchData();
     } catch (error: any) {
       const errorData = error.response?.data?.error;
-      alert(
+      showError(
+        "Error",
         (typeof errorData === "object" ? errorData.message : errorData) ||
           "Failed to generate appraisal",
       );
@@ -1338,7 +1459,7 @@ const DashboardPage = () => {
   const handleCreateTeam = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!teamForm.name.trim()) {
-      alert("Team name is required");
+      showError("Validation Error", "Team name is required");
       return;
     }
     try {
@@ -1348,7 +1469,8 @@ const DashboardPage = () => {
       await fetchData();
     } catch (error: any) {
       const errorData = error.response?.data?.error;
-      alert(
+      showError(
+        "Error",
         (typeof errorData === "object" ? errorData.message : errorData) ||
           "Failed to create team",
       );
@@ -1376,7 +1498,8 @@ const DashboardPage = () => {
       await fetchData();
     } catch (error: any) {
       const errorData = error.response?.data?.error;
-      alert(
+      showError(
+        "Error",
         (typeof errorData === "object" ? errorData.message : errorData) ||
           "Failed to update team",
       );
@@ -1394,7 +1517,8 @@ const DashboardPage = () => {
       await fetchData();
     } catch (error: any) {
       const errorData = error.response?.data?.error;
-      alert(
+      showError(
+        "Error",
         (typeof errorData === "object" ? errorData.message : errorData) ||
           "Failed to delete team",
       );
@@ -1437,7 +1561,7 @@ const DashboardPage = () => {
       const errorData = error.response?.data?.error;
       const message =
         typeof errorData === "object" ? errorData.message : errorData;
-      alert(message || "Failed to resend invite");
+      showError("Error", message || "Failed to resend invite");
     }
   };
 
@@ -1454,7 +1578,7 @@ const DashboardPage = () => {
       const errorData = error.response?.data?.error;
       const message =
         typeof errorData === "object" ? errorData.message : errorData;
-      alert(message || "Failed to delete invite");
+      showError("Error", message || "Failed to delete invite");
     }
   };
 
@@ -1516,13 +1640,13 @@ const DashboardPage = () => {
       "text/csv",
     ];
     if (!validTypes.includes(file.type) && !file.name.endsWith(".csv")) {
-      alert("Invalid file type. Please upload an Excel or CSV file.");
+      showError("Invalid File", "Invalid file type. Please upload an Excel or CSV file.");
       return;
     }
 
     // Validate file size (5MB)
     if (file.size > 5 * 1024 * 1024) {
-      alert("File size must be less than 5MB");
+      showError("File Too Large", "File size must be less than 5MB");
       return;
     }
 
@@ -1669,7 +1793,7 @@ const DashboardPage = () => {
       const errorData = error.response?.data?.error;
       const message =
         typeof errorData === "object" ? errorData.message : errorData;
-      alert(message || "Failed to remove member");
+      showError("Error", message || "Failed to remove member");
     }
   };
 
@@ -2202,7 +2326,8 @@ const DashboardPage = () => {
       await fetchData();
     } catch (error: any) {
       const errorData = error.response?.data?.error;
-      alert(
+      showError(
+        "Error",
         (typeof errorData === "object" ? errorData.message : errorData) ||
           "Failed to create client",
       );
@@ -2222,7 +2347,8 @@ const DashboardPage = () => {
       await fetchData();
     } catch (error: any) {
       const errorData = error.response?.data?.error;
-      alert(
+      showError(
+        "Error",
         (typeof errorData === "object" ? errorData.message : errorData) ||
           "Failed to update client",
       );
@@ -2240,7 +2366,7 @@ const DashboardPage = () => {
       setShowAddLinkModal(false);
       await fetchData();
     } catch {
-      alert("Failed to attach link");
+      showError("Error", "Failed to attach link");
     }
   };
 
@@ -2249,7 +2375,7 @@ const DashboardPage = () => {
       await api.put(`/tasks/${taskId}`, { status: newStatus });
       await fetchData();
     } catch {
-      alert("Failed to update task");
+      showError("Error", "Failed to update task");
     }
   };
 
@@ -2260,7 +2386,7 @@ const DashboardPage = () => {
       setSelectedTaskId(null);
       await fetchData();
     } catch {
-      alert("Failed to delete task");
+      showError("Error", "Failed to delete task");
     }
   };
 
@@ -2270,7 +2396,7 @@ const DashboardPage = () => {
       setSelectedTaskId(null);
       await fetchData();
     } catch {
-      alert("Failed to restore task");
+      showError("Error", "Failed to restore task");
     }
   };
 
@@ -2286,7 +2412,7 @@ const DashboardPage = () => {
       await fetchActivity(taskId);
       await fetchData();
     } catch {
-      alert("Failed to add comment");
+      showError("Error", "Failed to add comment");
     } finally {
       setSubmittingCommentTaskId(null);
     }
@@ -2322,7 +2448,7 @@ const DashboardPage = () => {
       await fetchActivity(selectedTaskId);
       await fetchData();
     } catch {
-      alert("Failed to submit work");
+      showError("Error", "Failed to submit work");
     }
   };
 
@@ -2344,7 +2470,7 @@ const DashboardPage = () => {
       await fetchActivity(selectedTaskId);
       await fetchData();
     } catch {
-      alert("Failed to review submission");
+      showError("Error", "Failed to review submission");
     }
   };
 
@@ -4080,7 +4206,7 @@ const DashboardPage = () => {
                                       );
                                       await fetchData();
                                     } catch {
-                                      alert("Upload failed");
+                                      showError("Error", "Upload failed");
                                     }
                                   }
                                 }}
@@ -6447,6 +6573,15 @@ const DashboardPage = () => {
           </div>
         </div>
       )}
+
+      {/* Error Dialog */}
+      <ErrorDialog
+        isOpen={errorDialog.isOpen}
+        title={errorDialog.title}
+        message={errorDialog.message}
+        onClose={() => setErrorDialog({ ...errorDialog, isOpen: false })}
+      />
+
       <datalist id="okr-tag-options">
         {availableTags.map((tag) => (
           <option key={tag.id} value={tag.name}></option>

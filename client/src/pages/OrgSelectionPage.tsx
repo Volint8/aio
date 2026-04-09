@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import ErrorDialog from '../components/ErrorDialog';
 import '../styles/OrgSelection.css';
 
 interface Organization {
@@ -32,6 +33,13 @@ const OrgSelectionPage = () => {
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [newOrgName, setNewOrgName] = useState('');
     const [creating, setCreating] = useState(false);
+    
+    // Error dialog state
+    const [errorDialog, setErrorDialog] = useState<{
+        isOpen: boolean;
+        title: string;
+        message: string;
+    }>({ isOpen: false, title: '', message: '' });
 
     const [selectedOrgForTeam, setSelectedOrgForTeam] = useState<Organization | null>(null);
     const [teamMembers, setTeamMembers] = useState<OrganizationMember[]>([]);
@@ -74,7 +82,11 @@ const OrgSelectionPage = () => {
         } catch (error: any) {
             const errorData = error.response?.data?.error;
             const message = typeof errorData === 'object' ? errorData.message : errorData;
-            alert(message || 'Failed to create organization');
+            setErrorDialog({
+                isOpen: true,
+                title: 'Error',
+                message: message || 'Failed to create organization'
+            });
         } finally {
             setCreating(false);
         }
@@ -377,6 +389,14 @@ const OrgSelectionPage = () => {
                     </div>
                 </div>
             )}
+            
+            {/* Error Dialog */}
+            <ErrorDialog
+                isOpen={errorDialog.isOpen}
+                title={errorDialog.title}
+                message={errorDialog.message}
+                onClose={() => setErrorDialog({ ...errorDialog, isOpen: false })}
+            />
         </div>
     );
 };

@@ -77,6 +77,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setUser(res.data.user);
     localStorage.setItem("token", res.data.token);
     api.defaults.headers.common["Authorization"] = `Bearer ${res.data.token}`;
+    
+    // Clear stale org selection on fresh login
+    localStorage.removeItem("selectedOrgId");
+    localStorage.removeItem("selectedOrgRole");
+    localStorage.removeItem("selectedOrgName");
   };
 
   const adminSignupInit = async (
