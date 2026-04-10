@@ -96,6 +96,44 @@ const createOrReuseTag = async (params: {
   });
 };
 
+type OkrImpactKrSummary = {
+  krId: string;
+  krTitle: string;
+  metricName: string | null;
+  metricUnit: string | null;
+  targetValue: number | null;
+  actualValue: number;
+  weight: number;
+  achievedPct: number | null;
+};
+
+type OkrImpactSummary = {
+  okrs: Array<{
+    okrId: string;
+    okrTitle: string;
+    achievedPct: number | null;
+    targetValueTotal: number | null;
+    actualValueTotal: number;
+    keyResults: OkrImpactKrSummary[];
+    quantitativeKrCount: number;
+    excludedKrCount: number;
+  }>;
+  totals: {
+    achievedPct: number | null;
+    quantitativeOkrCount: number;
+    excludedOkrCount: number;
+  };
+};
+
+const asNumberOrNull = (value: unknown): number | null => {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+};
+
 export const getOrgNameSuggestions = async (req: Request, res: Response) => {
   try {
     const email = req.query.email as string | undefined;
@@ -1638,7 +1676,15 @@ export const createOkr = async (req: Request, res: Response) => {
       periodEnd?: string;
       status?: string;
       assignments?: Array<{ targetType: string; targetId: string }>;
-      keyResults?: Array<{ title: string; tagName: string; tagColor?: string }>;
+      keyResults?: Array<{
+        title: string;
+        tagName: string;
+        tagColor?: string;
+        metricName?: string;
+        metricUnit?: string;
+        targetValue?: number | string | null;
+        weight?: number | string | null;
+      }>;
     };
 
     if (!title || !periodStart || !periodEnd) {
@@ -1697,7 +1743,11 @@ export const createOkr = async (req: Request, res: Response) => {
           data: {
             okrId: created.id,
             title: kr.title.trim(),
-            tagId: tag.id
+            tagId: tag.id,
+            metricName: kr.metricName?.trim() || null,
+            metricUnit: kr.metricUnit?.trim() || null,
+            targetValue: asNumberOrNull(kr.targetValue),
+            weight: asNumberOrNull(kr.weight) ?? 1
           }
         });
       }
@@ -1967,7 +2017,15 @@ export const updateOkr = async (req: Request, res: Response) => {
       periodStart?: string;
       periodEnd?: string;
       assignments?: Array<{ targetType: string; targetId: string }>;
-      keyResults?: Array<{ title: string; tagName: string; tagColor?: string }>;
+      keyResults?: Array<{
+        title: string;
+        tagName: string;
+        tagColor?: string;
+        metricName?: string;
+        metricUnit?: string;
+        targetValue?: number | string | null;
+        weight?: number | string | null;
+      }>;
       status?: string;
     };
 
@@ -2022,7 +2080,11 @@ export const updateOkr = async (req: Request, res: Response) => {
             data: {
               okrId,
               title: kr.title.trim(),
-              tagId: tag.id
+              tagId: tag.id,
+              metricName: kr.metricName?.trim() || null,
+              metricUnit: kr.metricUnit?.trim() || null,
+              targetValue: asNumberOrNull(kr.targetValue),
+              weight: asNumberOrNull(kr.weight) ?? 1
             }
           });
         }
@@ -2139,7 +2201,13 @@ export const generateAppraisal = async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.userId as string;
     const organizationId = req.params.id as string;
-    const { subjectUserId, cycle, okrIds } = req.body as { subjectUserId?: string; cycle?: string; okrIds?: string[] };
+    const { subjectUserId, cycle, okrIds, fromDate, toDate } = req.body as {
+      subjectUserId?: string;
+      cycle?: string;
+      okrIds?: string[];
+      fromDate?: string;
+      toDate?: string;
+    };
 
     if (!subjectUserId || !cycle) {
       return res.status(400).json({ error: 'subjectUserId and cycle are required' });
@@ -2155,69 +2223,167 @@ export const generateAppraisal = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Subject user is not a member of this organization' });
     }
 
-    // Performance Calculations
+    const from = fromDate ? new Date(fromDate) : null;
+    const to = toDate ? new Date(toDate) : null;
+    if ((fromDate && Number.isNaN(from?.getTime())) || (toDate && Number.isNaN(to?.getTime()))) {
+      return res.status(400).json({ error: 'Invalid fromDate or toDate' });
+    }
+
+    const taskWhere: any = {
+      organizationId,
+      assigneeId: subjectUserId,
+      deletedAt: null
+    };
+    if (from || to) {
+      taskWhere.createdAt = {
+        ...(from ? { gte: from } : {}),
+        ...(to ? { lte: to } : {})
+      };
+    }
+
+    // Task performance calculations
     const now = new Date();
     const [allTasks, completedTasks, overdueTasks] = await Promise.all([
-      prisma.task.count({ where: { organizationId, assigneeId: subjectUserId, deletedAt: null } }),
-      prisma.task.count({ where: { organizationId, assigneeId: subjectUserId, status: 'COMPLETED', deletedAt: null } }),
+      prisma.task.count({ where: taskWhere }),
+      prisma.task.count({ where: { ...taskWhere, status: 'COMPLETED' } }),
       prisma.task.count({
         where: {
-          organizationId,
-          assigneeId: subjectUserId,
-          deletedAt: null,
+          ...taskWhere,
           status: { not: 'COMPLETED' },
           dueDate: { lt: now }
         }
       })
     ]);
 
-    // Calculate OKR-linked tasks (all OKRs or specific selected OKRs)
-    const okrLinkedTasks = okrIds && okrIds.length > 0
-      ? await prisma.task.count({
-        where: {
-          organizationId,
-          assigneeId: subjectUserId,
-          deletedAt: null,
-          tag: {
-            keyResults: {
-              some: {
-                okrId: { in: okrIds }
-              }
-            }
-          }
-        }
-      })
-      : await prisma.task.count({
-        where: {
-          organizationId,
-          assigneeId: subjectUserId,
-          deletedAt: null,
-          tag: { keyResults: { some: {} } }
-        }
-      });
-
     const tasksCompleted = allTasks > 0 ? (completedTasks / allTasks) * 100 : 0;
     const deadlinesMet = allTasks > 0 ? ((allTasks - overdueTasks) / allTasks) * 100 : 0;
 
-    let okrContribution = 'LOW';
-    const okrRatio = allTasks > 0 ? (okrLinkedTasks / allTasks) : 0;
-    if (okrRatio > 0.5) okrContribution = 'HIGH';
-    else if (okrRatio > 0.2) okrContribution = 'MEDIUM';
+    // Quantitative OKR impact calculations
+    const okrScopeWhere: any = { organizationId };
+    if (okrIds && okrIds.length > 0) {
+      okrScopeWhere.id = { in: okrIds };
+    }
 
-    // Rating Logic
+    const scopedOkrs = await prisma.okr.findMany({
+      where: okrScopeWhere,
+      include: {
+        keyResults: {
+          select: {
+            id: true,
+            title: true,
+            metricName: true,
+            metricUnit: true,
+            targetValue: true,
+            weight: true
+          }
+        }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    const krIds = scopedOkrs.flatMap((okr) => okr.keyResults.map((kr) => kr.id));
+    const impactRows = krIds.length > 0
+      ? await prisma.taskKrImpact.findMany({
+        where: {
+          okrKeyResultId: { in: krIds },
+          task: { is: taskWhere }
+        },
+        select: {
+          okrKeyResultId: true,
+          actualValue: true
+        }
+      })
+      : [];
+
+    const actualByKr = new Map<string, number>();
+    for (const row of impactRows) {
+      const prev = actualByKr.get(row.okrKeyResultId) || 0;
+      actualByKr.set(row.okrKeyResultId, prev + row.actualValue);
+    }
+
+    const okrSummaries: OkrImpactSummary['okrs'] = scopedOkrs.map((okr) => {
+      const keyResults: OkrImpactKrSummary[] = okr.keyResults.map((kr) => {
+        const actualValue = actualByKr.get(kr.id) || 0;
+        const targetValue = kr.targetValue ?? null;
+        const achievedPct =
+          targetValue && targetValue > 0
+            ? Math.min((actualValue / targetValue) * 100, 100)
+            : null;
+
+        return {
+          krId: kr.id,
+          krTitle: kr.title,
+          metricName: kr.metricName || null,
+          metricUnit: kr.metricUnit || null,
+          targetValue,
+          actualValue,
+          weight: kr.weight || 1,
+          achievedPct
+        };
+      });
+
+      const quantitativeKrs = keyResults.filter((kr) => kr.achievedPct !== null);
+      const excludedKrCount = keyResults.length - quantitativeKrs.length;
+      const weightTotal = quantitativeKrs.reduce((acc, kr) => acc + (kr.weight || 1), 0);
+      const achievedPct = weightTotal > 0
+        ? quantitativeKrs.reduce((acc, kr) => acc + ((kr.achievedPct || 0) * (kr.weight || 1)), 0) / weightTotal
+        : null;
+
+      const hasAnyTarget = quantitativeKrs.length > 0;
+      const targetValueTotal = hasAnyTarget
+        ? quantitativeKrs.reduce((acc, kr) => acc + (kr.targetValue || 0), 0)
+        : null;
+      const actualValueTotal = keyResults.reduce((acc, kr) => acc + kr.actualValue, 0);
+
+      return {
+        okrId: okr.id,
+        okrTitle: okr.title,
+        achievedPct,
+        targetValueTotal,
+        actualValueTotal,
+        keyResults,
+        quantitativeKrCount: quantitativeKrs.length,
+        excludedKrCount
+      };
+    });
+
+    const quantitativeOkrs = okrSummaries.filter((okr) => okr.achievedPct !== null);
+    const okrImpactScore = quantitativeOkrs.length > 0
+      ? quantitativeOkrs.reduce((acc, okr) => acc + (okr.achievedPct || 0), 0) / quantitativeOkrs.length
+      : 0;
+    const okrImpactSummary: OkrImpactSummary = {
+      okrs: okrSummaries,
+      totals: {
+        achievedPct: quantitativeOkrs.length > 0 ? okrImpactScore : null,
+        quantitativeOkrCount: quantitativeOkrs.length,
+        excludedOkrCount: okrSummaries.length - quantitativeOkrs.length
+      }
+    };
+
+    let okrContribution = 'LOW';
+    if (okrImpactScore >= 70) okrContribution = 'HIGH';
+    else if (okrImpactScore >= 30) okrContribution = 'MEDIUM';
+
+    // Rating logic
     let overallRating = 'AVERAGE';
-    const performanceScore = (tasksCompleted * 0.5) + (deadlinesMet * 0.3) + (okrRatio * 100 * 0.2);
-    if (performanceScore > 85) overallRating = 'EXCELLENT';
-    else if (performanceScore > 70) overallRating = 'GOOD';
+    const performanceScore = (tasksCompleted * 0.4) + (deadlinesMet * 0.3) + (okrImpactScore * 0.3);
+    if (performanceScore >= 85) overallRating = 'EXCELLENT';
+    else if (performanceScore >= 70) overallRating = 'GOOD';
     else if (performanceScore < 40) overallRating = 'POOR';
 
     const subjectUser = await prisma.user.findUnique({ where: { id: subjectUserId }, select: { name: true, email: true } });
     const name = subjectUser?.name || subjectUser?.email || 'Employee';
 
-    const summary = `Performance appraisal for ${name} during ${cycle}.
-Tasks Completed: ${Math.round(tasksCompleted)}%
-Deadlines Met: ${Math.round(deadlinesMet)}%
-OKR Contribution: ${okrContribution}
+    const renderedOkrLines = okrSummaries.slice(0, 3).map((okr) => {
+      if (okr.targetValueTotal && okr.targetValueTotal > 0 && okr.achievedPct !== null) {
+        return `For OKR "${okr.okrTitle}", delivered ${Math.round(okr.actualValueTotal * 100) / 100} against target ${Math.round(okr.targetValueTotal * 100) / 100}, achieving ${Math.round(okr.achievedPct)}%.`;
+      }
+      return `For OKR "${okr.okrTitle}", quantitative target data is not configured (N/A).`;
+    });
+
+    const summary = `${name} logged ${allTasks} tasks during ${cycle}.
+${name} completed ${completedTasks} tasks (${Math.round(tasksCompleted)}%) and met deadlines on ${Math.round(deadlinesMet)}% of tasks.
+${renderedOkrLines.length > 0 ? renderedOkrLines.join('\n') : 'No scoped OKRs were included for this appraisal.'}
 Overall Rating: ${overallRating}`;
 
     const created = await prisma.appraisal.create({
@@ -2230,6 +2396,17 @@ Overall Rating: ${overallRating}`;
         tasksCompleted,
         deadlinesMet,
         okrContribution,
+        okrImpactScore,
+        okrImpactSummary: okrImpactSummary as any,
+        scoreBreakdown: {
+          tasksCompletedWeight: 0.4,
+          deadlinesMetWeight: 0.3,
+          okrImpactWeight: 0.3,
+          tasksCompleted,
+          deadlinesMet,
+          okrImpactScore,
+          performanceScore
+        } as any,
         overallRating,
         status: 'GENERATED'
       }

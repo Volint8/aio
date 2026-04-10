@@ -11,6 +11,10 @@ interface Okr {
     keyResults?: Array<{
         id: string;
         title: string;
+        metricName?: string | null;
+        metricUnit?: string | null;
+        targetValue?: number | null;
+        weight?: number;
         tag: {
             id: string;
             name: string;
@@ -102,7 +106,14 @@ const OkrView: React.FC<OkrViewProps> = ({
                                 <div className="okr-kr-list">
                                     {okr.keyResults.map(kr => (
                                         <div key={kr.id} className="okr-kr-item">
-                                            <span>{kr.title}</span>
+                                            <span>
+                                                {kr.title}
+                                                {kr.targetValue !== null && kr.targetValue !== undefined && (
+                                                    <small style={{ display: 'block', color: '#64748b', fontWeight: 500 }}>
+                                                        Target: {kr.targetValue}{kr.metricUnit || ''} {kr.metricName ? `(${kr.metricName})` : ''}
+                                                    </small>
+                                                )}
+                                            </span>
                                             <span
                                                 className="okr-kr-tag"
                                                 style={{ backgroundColor: `${kr.tag.color}15`, color: kr.tag.color, borderColor: `${kr.tag.color}30`, cursor: 'pointer' }}

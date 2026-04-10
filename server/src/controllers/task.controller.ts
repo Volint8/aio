@@ -253,6 +253,26 @@ export const getTasks = async (req: Request, res: Response) => {
                 },
                 attachments: true,
                 tag: true,
+                krImpacts: {
+                    include: {
+                        okrKeyResult: {
+                            select: {
+                                id: true,
+                                title: true,
+                                metricName: true,
+                                metricUnit: true,
+                                targetValue: true,
+                                weight: true,
+                                okr: {
+                                    select: {
+                                        id: true,
+                                        title: true
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
                 taskTeams: {
                     include: {
                         team: {
@@ -342,6 +362,21 @@ export const createTask = async (req: Request, res: Response) => {
                     supporter: { select: { id: true, email: true, name: true } },
                     organization: { select: { id: true, name: true } },
                     tag: true,
+                    krImpacts: {
+                        include: {
+                            okrKeyResult: {
+                                select: {
+                                    id: true,
+                                    title: true,
+                                    metricName: true,
+                                    metricUnit: true,
+                                    targetValue: true,
+                                    weight: true,
+                                    okr: { select: { id: true, title: true } }
+                                }
+                            }
+                        }
+                    },
                     taskTeams: { include: { team: { select: { id: true, name: true } } } }
                 }
             });
@@ -431,6 +466,26 @@ export const getTaskById = async (req: Request, res: Response) => {
                 },
                 attachments: true,
                 tag: true,
+                krImpacts: {
+                    include: {
+                        okrKeyResult: {
+                            select: {
+                                id: true,
+                                title: true,
+                                metricName: true,
+                                metricUnit: true,
+                                targetValue: true,
+                                weight: true,
+                                okr: {
+                                    select: {
+                                        id: true,
+                                        title: true
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
                 taskTeams: {
                     include: {
                         team: {
@@ -632,6 +687,21 @@ export const updateTask = async (req: Request, res: Response) => {
                     supporter: { select: { id: true, email: true, name: true } },
                     organization: { select: { id: true, name: true } },
                     tag: true,
+                    krImpacts: {
+                        include: {
+                            okrKeyResult: {
+                                select: {
+                                    id: true,
+                                    title: true,
+                                    metricName: true,
+                                    metricUnit: true,
+                                    targetValue: true,
+                                    weight: true,
+                                    okr: { select: { id: true, title: true } }
+                                }
+                            }
+                        }
+                    },
                     taskTeams: { include: { team: { select: { id: true, name: true } } } }
                 }
             });
@@ -768,6 +838,21 @@ export const restoreTask = async (req: Request, res: Response) => {
                 },
                 attachments: true,
                 tag: true,
+                krImpacts: {
+                    include: {
+                        okrKeyResult: {
+                            select: {
+                                id: true,
+                                title: true,
+                                metricName: true,
+                                metricUnit: true,
+                                targetValue: true,
+                                weight: true,
+                                okr: { select: { id: true, title: true } }
+                            }
+                        }
+                    }
+                },
                 taskTeams: {
                     include: {
                         team: {
@@ -1569,6 +1654,202 @@ export const reviewSubmission = async (req: Request, res: Response) => {
     } catch (error) {
         console.error('Review submission error:', error);
         res.status(500).json({ error: 'Internal server error' });
+    }
+};
+
+export const getTaskKrImpacts = async (req: Request, res: Response) => {
+    try {
+        const taskId = req.params.id as string;
+        const userId = (req as any).user.userId as string;
+
+        const task = await prisma.task.findUnique({
+            where: { id: taskId }
+        });
+
+        if (!task) {
+            return res.status(404).json({ error: 'Task not found' });
+        }
+
+        if (!ensureTaskIsActive(task)) {
+            return res.status(400).json({ error: 'Task is in Recently Deleted' });
+        }
+
+        const membership = await prisma.organizationMember.findUnique({
+            where: {
+                userId_organizationId: {
+                    userId,
+                    organizationId: task.organizationId
+                }
+            }
+        });
+
+        if (!membership) {
+            return res.status(403).json({ error: 'Access denied' });
+        }
+
+        const impacts = await prisma.taskKrImpact.findMany({
+            where: { taskId },
+            include: {
+                okrKeyResult: {
+                    select: {
+                        id: true,
+                        title: true,
+                        metricName: true,
+                        metricUnit: true,
+                        targetValue: true,
+                        weight: true,
+                        okr: {
+                            select: {
+                                id: true,
+                                title: true
+                            }
+                        }
+                    }
+                }
+            },
+            orderBy: { createdAt: 'desc' }
+        });
+
+        return res.json(impacts);
+    } catch (error) {
+        console.error('Get task KR impacts error:', error);
+        return res.status(500).json({ error: 'Internal server error' });
+    }
+};
+
+export const upsertTaskKrImpacts = async (req: Request, res: Response) => {
+    try {
+        const taskId = req.params.id as string;
+        const userId = (req as any).user.userId as string;
+        const { impacts } = req.body as {
+            impacts?: Array<{
+                okrKeyResultId?: string;
+                plannedValue?: number | string | null;
+                actualValue?: number | string;
+                notes?: string | null;
+            }>;
+        };
+
+        if (!Array.isArray(impacts)) {
+            return res.status(400).json({ error: 'impacts array is required' });
+        }
+
+        const task = await prisma.task.findUnique({
+            where: { id: taskId }
+        });
+
+        if (!task) {
+            return res.status(404).json({ error: 'Task not found' });
+        }
+
+        if (!ensureTaskIsActive(task)) {
+            return res.status(400).json({ error: 'Task is in Recently Deleted' });
+        }
+
+        const membership = await prisma.organizationMember.findUnique({
+            where: {
+                userId_organizationId: {
+                    userId,
+                    organizationId: task.organizationId
+                }
+            }
+        });
+
+        if (!membership) {
+            return res.status(403).json({ error: 'Access denied' });
+        }
+
+        const canEdit =
+            membership.role === 'ADMIN' ||
+            membership.role === 'TEAM_LEAD' ||
+            task.assigneeId === userId ||
+            task.supporterId === userId;
+        if (!canEdit) {
+            return res.status(403).json({ error: 'Only admins, team leads, assignee, or supporter can edit KR impacts' });
+        }
+
+        const sanitized = impacts
+            .map((impact) => {
+                const actualValue = typeof impact.actualValue === 'number'
+                    ? impact.actualValue
+                    : typeof impact.actualValue === 'string' && impact.actualValue.trim() !== ''
+                        ? Number(impact.actualValue)
+                        : null;
+                const plannedValue = typeof impact.plannedValue === 'number'
+                    ? impact.plannedValue
+                    : typeof impact.plannedValue === 'string' && impact.plannedValue.trim() !== ''
+                        ? Number(impact.plannedValue)
+                        : null;
+                return {
+                    okrKeyResultId: impact.okrKeyResultId || '',
+                    actualValue,
+                    plannedValue,
+                    notes: impact.notes?.trim() || null
+                };
+            })
+            .filter((impact) => impact.okrKeyResultId);
+
+        const invalidImpact = sanitized.find((impact) => impact.actualValue === null || Number.isNaN(impact.actualValue));
+        if (invalidImpact) {
+            return res.status(400).json({ error: 'Each impact entry must have a valid actualValue' });
+        }
+
+        const krIds = Array.from(new Set(sanitized.map((impact) => impact.okrKeyResultId)));
+        const keyResults = krIds.length > 0
+            ? await prisma.okrKeyResult.findMany({
+                where: { id: { in: krIds } },
+                include: { okr: { select: { organizationId: true } } }
+            })
+            : [];
+        if (keyResults.length !== krIds.length || keyResults.some((kr) => kr.okr.organizationId !== task.organizationId)) {
+            return res.status(400).json({ error: 'One or more key results are invalid for this task organization' });
+        }
+
+        const result = await prisma.$transaction(async (tx) => {
+            await tx.taskKrImpact.deleteMany({ where: { taskId } });
+
+            if (sanitized.length > 0) {
+                for (const impact of sanitized) {
+                    await tx.taskKrImpact.create({
+                        data: {
+                            taskId,
+                            okrKeyResultId: impact.okrKeyResultId,
+                            plannedValue: impact.plannedValue,
+                            actualValue: impact.actualValue as number,
+                            notes: impact.notes
+                        }
+                    });
+                }
+            }
+
+            return tx.taskKrImpact.findMany({
+                where: { taskId },
+                include: {
+                    okrKeyResult: {
+                        select: {
+                            id: true,
+                            title: true,
+                            metricName: true,
+                            metricUnit: true,
+                            targetValue: true,
+                            weight: true,
+                            okr: {
+                                select: {
+                                    id: true,
+                                    title: true
+                                }
+                            }
+                        }
+                    }
+                },
+                orderBy: { createdAt: 'desc' }
+            });
+        });
+
+        return res.json(result);
+    } catch (error) {
+        console.error('Upsert task KR impacts error:', error);
+        return res.status(500).json({ error: 'Internal server error' });
     }
 };
 

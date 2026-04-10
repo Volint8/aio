@@ -110,6 +110,7 @@ model Task {
   activityLogs   ActivityLog[]
   tag            Tag?             @relation(fields: [tagId], references: [id])
   taskTeams      TaskTeam[]
+  krImpacts      TaskKrImpact[]
 
   @@index([organizationId, deletedAt])
   @@index([deletedAt])
@@ -236,12 +237,17 @@ model OkrKeyResult {
   okrId     String
   title     String
   tagId     String
+  metricName String?
+  metricUnit String?
+  targetValue Float?
+  weight    Float    @default(1)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   okr       Okr      @relation(fields: [okrId], references: [id], onDelete: Cascade)
   tag       Tag      @relation(fields: [tagId], references: [id])
+  impacts   TaskKrImpact[]
 
-  @@unique([tagId])
+  @@index([tagId])
 }
 
 model Appraisal {
@@ -254,6 +260,9 @@ model Appraisal {
   tasksCompleted  Float? // Percentage
   deadlinesMet    Float? // Percentage
   okrContribution String? // HIGH, MEDIUM, LOW
+  okrImpactScore  Float? // Percentage
+  okrImpactSummary Json?
+  scoreBreakdown  Json?
   overallRating   String? // EXCELLENT, GOOD, AVERAGE, POOR
   status          String       @default("GENERATED") // GENERATED, PUBLISHED
   createdAt       DateTime     @default(now())
@@ -261,6 +270,22 @@ model Appraisal {
   organization    Organization @relation(fields: [organizationId], references: [id])
   subjectUser     User         @relation("AppraisalSubject", fields: [subjectUserId], references: [id])
   createdByUser   User         @relation("AppraisalCreator", fields: [createdByUserId], references: [id])
+}
+
+model TaskKrImpact {
+  id             String       @id @default(uuid())
+  taskId         String
+  okrKeyResultId String
+  plannedValue   Float?
+  actualValue    Float
+  notes          String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  task           Task         @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  okrKeyResult   OkrKeyResult @relation(fields: [okrKeyResultId], references: [id], onDelete: Cascade)
+
+  @@unique([taskId, okrKeyResultId])
+  @@index([okrKeyResultId])
 }
 
 model Team {

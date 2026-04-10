@@ -146,7 +146,37 @@ interface Okr {
     id: string;
     title: string;
     tag: Tag;
+    metricName?: string | null;
+    metricUnit?: string | null;
+    targetValue?: number | null;
+    weight?: number;
   }>;
+}
+
+interface AppraisalOkrImpactKr {
+  krId: string;
+  krTitle: string;
+  metricName?: string | null;
+  metricUnit?: string | null;
+  targetValue?: number | null;
+  actualValue: number;
+  achievedPct?: number | null;
+}
+
+interface AppraisalOkrImpactSummary {
+  okrs: Array<{
+    okrId: string;
+    okrTitle: string;
+    achievedPct?: number | null;
+    targetValueTotal?: number | null;
+    actualValueTotal: number;
+    keyResults: AppraisalOkrImpactKr[];
+  }>;
+  totals?: {
+    achievedPct?: number | null;
+    quantitativeOkrCount?: number;
+    excludedOkrCount?: number;
+  };
 }
 
 interface Appraisal {
@@ -154,6 +184,12 @@ interface Appraisal {
   cycle: string;
   summary: string;
   status: string;
+  tasksCompleted?: number | null;
+  deadlinesMet?: number | null;
+  okrContribution?: string | null;
+  okrImpactScore?: number | null;
+  okrImpactSummary?: AppraisalOkrImpactSummary | null;
+  overallRating?: string | null;
   subjectUser?: {
     id: string;
     name?: string | null;
@@ -424,7 +460,17 @@ const DashboardPage = () => {
     status: "NOT_YET_OPEN",
     assignedToTeamId: "",
     supportedByTeamIds: [] as string[],
-    keyResults: [{ title: "", tagName: "", tagColor: "#2563eb" }],
+    keyResults: [
+      {
+        title: "",
+        tagName: "",
+        tagColor: "#2563eb",
+        metricName: "",
+        metricUnit: "",
+        targetValue: "",
+        weight: "1",
+      },
+    ],
   });
 
   const [editOkrForm, setEditOkrForm] = useState({
@@ -434,7 +480,17 @@ const DashboardPage = () => {
     periodEnd: "",
     assignedToTeamId: "",
     supportedByTeamIds: [] as string[],
-    keyResults: [{ title: "", tagName: "", tagColor: "#2563eb" }],
+    keyResults: [
+      {
+        title: "",
+        tagName: "",
+        tagColor: "#2563eb",
+        metricName: "",
+        metricUnit: "",
+        targetValue: "",
+        weight: "1",
+      },
+    ],
     status: "OPEN",
   });
   const [newAppraisal, setNewAppraisal] = useState({
@@ -931,7 +987,10 @@ const DashboardPage = () => {
       await api.delete(`/orgs/${orgId}/quotes/${quoteId}`);
       await fetchQuotes();
     } catch (error: any) {
-      showError("Error", error.response?.data?.error || "Failed to delete quote");
+      showError(
+        "Error",
+        error.response?.data?.error || "Failed to delete quote",
+      );
     }
   };
 
@@ -1180,7 +1239,10 @@ const DashboardPage = () => {
         return;
       }
       if (newTask.supporterId && newTask.supporterId === newTask.assigneeId) {
-        showError("Validation Error", "Supporter cannot be the same as primary assignee");
+        showError(
+          "Validation Error",
+          "Supporter cannot be the same as primary assignee",
+        );
         return;
       }
       await api.post("/tasks", {
@@ -1231,7 +1293,10 @@ const DashboardPage = () => {
       return;
     }
     if (editTask.supporterId && editTask.supporterId === editTask.assigneeId) {
-      showError("Validation Error", "Supporter cannot be the same as primary assignee");
+      showError(
+        "Validation Error",
+        "Supporter cannot be the same as primary assignee",
+      );
       return;
     }
     try {
@@ -1286,7 +1351,17 @@ const DashboardPage = () => {
         status: "NOT_YET_OPEN",
         assignedToTeamId: "",
         supportedByTeamIds: [],
-        keyResults: [{ title: "", tagName: "", tagColor: "#2563eb" }],
+        keyResults: [
+          {
+            title: "",
+            tagName: "",
+            tagColor: "#2563eb",
+            metricName: "",
+            metricUnit: "",
+            targetValue: "",
+            weight: "1",
+          },
+        ],
       });
       setShowCreateOkrModal(false);
       await fetchData();
@@ -1324,7 +1399,27 @@ const DashboardPage = () => {
         title: kr.title,
         tagName: kr.tag.name,
         tagColor: kr.tag.color,
-      })) || [{ title: "", tagName: "", tagColor: "#2563eb" }],
+        metricName: kr.metricName || "",
+        metricUnit: kr.metricUnit || "",
+        targetValue:
+          kr.targetValue !== null && kr.targetValue !== undefined
+            ? String(kr.targetValue)
+            : "",
+        weight:
+          kr.weight !== null && kr.weight !== undefined
+            ? String(kr.weight)
+            : "1",
+      })) || [
+        {
+          title: "",
+          tagName: "",
+          tagColor: "#2563eb",
+          metricName: "",
+          metricUnit: "",
+          targetValue: "",
+          weight: "1",
+        },
+      ],
       status: okr.status || "OPEN",
     });
     setShowEditOkrModal(true);
@@ -1385,7 +1480,10 @@ const DashboardPage = () => {
       });
       await fetchData();
     } catch (error: any) {
-      showError("Error", error.response?.data?.error || "Failed to make OKR global");
+      showError(
+        "Error",
+        error.response?.data?.error || "Failed to make OKR global",
+      );
     }
   };
 
@@ -1419,8 +1517,23 @@ const DashboardPage = () => {
   const handleCreateAppraisal = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      const start = new Date(newAppraisal.periodStart);
+      const end = new Date(newAppraisal.periodEnd);
+      const sameMonth =
+        start.getFullYear() === end.getFullYear() &&
+        start.getMonth() === end.getMonth();
+      const cycle = sameMonth
+        ? start.toLocaleDateString(undefined, {
+            month: "long",
+            year: "numeric",
+          })
+        : `${start.toLocaleDateString()} - ${end.toLocaleDateString()}`;
+
       await api.post(`/orgs/${orgId}/appraisals/generate`, {
-        ...newAppraisal,
+        subjectUserId: newAppraisal.subjectUserId,
+        cycle,
+        fromDate: newAppraisal.periodStart || undefined,
+        toDate: newAppraisal.periodEnd || undefined,
         okrIds: selectedOkrIds.length > 0 ? selectedOkrIds : undefined,
       });
       setNewAppraisal({
@@ -1640,7 +1753,10 @@ const DashboardPage = () => {
       "text/csv",
     ];
     if (!validTypes.includes(file.type) && !file.name.endsWith(".csv")) {
-      showError("Invalid File", "Invalid file type. Please upload an Excel or CSV file.");
+      showError(
+        "Invalid File",
+        "Invalid file type. Please upload an Excel or CSV file.",
+      );
       return;
     }
 
@@ -1809,7 +1925,7 @@ const DashboardPage = () => {
 
     try {
       setProfileUpdating(true);
-      await api.put(`/users/${user?.id}`, {
+      await api.put(`/auth/users/${user?.id}`, {
         name: profileForm.name.trim(),
         jobTitle: profileForm.jobTitle.trim() || null,
       });
@@ -2015,62 +2131,6 @@ const DashboardPage = () => {
 
           {isAdmin && (
             <>
-              <div className="settings-card">
-                <div className="card-header">
-                  <div className="card-icon">
-                    <svg
-                      width="20"
-                      height="20"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <rect x="2" y="5" width="20" height="14" rx="2" />
-                      <line x1="2" y1="10" x2="22" y2="10" />
-                    </svg>
-                  </div>
-                  <h3>Subscription</h3>
-                </div>
-                <p className="card-description">
-                  Manage your organization's plan and billing status
-                </p>
-
-                <div className="subscription-status">
-                  <div className="plan-badge">Standard Plan</div>
-                  <div className="plan-detail">
-                    <span>Status:</span>
-                    <span className="status-active">Active</span>
-                  </div>
-                  <div className="plan-detail">
-                    <span>Organization:</span>
-                    <span>{organization?.name}</span>
-                  </div>
-                  <div className="plan-usage">
-                    <div className="usage-header">
-                      <span>Team Members</span>
-                      <span>{organization?.members?.length || 0} / 50</span>
-                    </div>
-                    <div className="usage-bar">
-                      <div
-                        className="usage-fill"
-                        style={{
-                          width: `${Math.min(((organization?.members?.length || 0) / 50) * 100, 100)}%`,
-                        }}
-                      ></div>
-                    </div>
-                  </div>
-                </div>
-                <button
-                  className="btn-secondary"
-                  style={{ width: "100%", marginTop: "auto" }}
-                >
-                  Manage Billing
-                </button>
-              </div>
-
               <div className="settings-card quotes-management">
                 <div className="card-header">
                   <div className="card-icon">
@@ -3276,7 +3336,7 @@ const DashboardPage = () => {
               </button>
             </div>
             <div className="tasks-list">
-              {appraisals.map((appraisal: any) => (
+              {appraisals.map((appraisal: Appraisal) => (
                 <div
                   key={appraisal.id}
                   className="task-card"
@@ -3387,7 +3447,7 @@ const DashboardPage = () => {
                     </div>
                     <div style={{ textAlign: "center" }}>
                       <div style={{ fontSize: "1.1em", fontWeight: 700 }}>
-                        {appraisal.okrContribution}
+                        {Math.round(appraisal.okrImpactScore || 0)}%
                       </div>
                       <div
                         style={{
@@ -3396,7 +3456,7 @@ const DashboardPage = () => {
                           textTransform: "uppercase",
                         }}
                       >
-                        OKR Contribution
+                        OKR Impact
                       </div>
                     </div>
                   </div>
@@ -3411,6 +3471,50 @@ const DashboardPage = () => {
                   >
                     {appraisal.summary}
                   </p>
+
+                  {appraisal.okrImpactSummary?.okrs &&
+                    appraisal.okrImpactSummary.okrs.length > 0 && (
+                      <div
+                        style={{
+                          border: "1px solid #e2e8f0",
+                          borderRadius: 10,
+                          padding: 12,
+                          marginBottom: 20,
+                          background: "#ffffff",
+                        }}
+                      >
+                        <div
+                          style={{
+                            fontSize: "0.8em",
+                            fontWeight: 700,
+                            color: "#334155",
+                            marginBottom: 8,
+                            textTransform: "uppercase",
+                          }}
+                        >
+                          OKR Target vs Actual
+                        </div>
+                        {appraisal.okrImpactSummary.okrs
+                          .slice(0, 3)
+                          .map((okr) => (
+                            <div key={okr.okrId} style={{ marginBottom: 8 }}>
+                              <div
+                                style={{ fontWeight: 600, fontSize: "0.9em" }}
+                              >
+                                {okr.okrTitle}
+                              </div>
+                              <div
+                                style={{ fontSize: "0.85em", color: "#475569" }}
+                              >
+                                {okr.targetValueTotal &&
+                                okr.targetValueTotal > 0
+                                  ? `${Math.round((okr.actualValueTotal || 0) * 100) / 100} / ${Math.round((okr.targetValueTotal || 0) * 100) / 100} (${Math.round(okr.achievedPct || 0)}%)`
+                                  : "N/A (no quantitative target configured)"}
+                              </div>
+                            </div>
+                          ))}
+                      </div>
+                    )}
 
                   <div
                     style={{
@@ -5736,6 +5840,64 @@ const DashboardPage = () => {
                       />
                     </div>
                   </div>
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label>Metric Name</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Users"
+                        value={kr.metricName || ""}
+                        onChange={(e) => {
+                          const next = [...newOkr.keyResults];
+                          next[index].metricName = e.target.value;
+                          setNewOkr({ ...newOkr, keyResults: next });
+                        }}
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>Unit</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. M"
+                        value={kr.metricUnit || ""}
+                        onChange={(e) => {
+                          const next = [...newOkr.keyResults];
+                          next[index].metricUnit = e.target.value;
+                          setNewOkr({ ...newOkr, keyResults: next });
+                        }}
+                      />
+                    </div>
+                  </div>
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label>Target Value</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="any"
+                        value={kr.targetValue || ""}
+                        onChange={(e) => {
+                          const next = [...newOkr.keyResults];
+                          next[index].targetValue = e.target.value;
+                          setNewOkr({ ...newOkr, keyResults: next });
+                        }}
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>Weight</label>
+                      <input
+                        type="number"
+                        min="0.1"
+                        step="0.1"
+                        value={kr.weight || "1"}
+                        onChange={(e) => {
+                          const next = [...newOkr.keyResults];
+                          next[index].weight = e.target.value;
+                          setNewOkr({ ...newOkr, keyResults: next });
+                        }}
+                      />
+                    </div>
+                  </div>
                 </div>
               ))}
               <button
@@ -5746,7 +5908,15 @@ const DashboardPage = () => {
                     ...newOkr,
                     keyResults: [
                       ...newOkr.keyResults,
-                      { title: "", tagName: "", tagColor: "#2563eb" },
+                      {
+                        title: "",
+                        tagName: "",
+                        tagColor: "#2563eb",
+                        metricName: "",
+                        metricUnit: "",
+                        targetValue: "",
+                        weight: "1",
+                      },
                     ],
                   })
                 }
@@ -6012,6 +6182,64 @@ const DashboardPage = () => {
                       />
                     </div>
                   </div>
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label>Metric Name</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Users"
+                        value={kr.metricName || ""}
+                        onChange={(e) => {
+                          const next = [...editOkrForm.keyResults];
+                          next[index].metricName = e.target.value;
+                          setEditOkrForm({ ...editOkrForm, keyResults: next });
+                        }}
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>Unit</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. M"
+                        value={kr.metricUnit || ""}
+                        onChange={(e) => {
+                          const next = [...editOkrForm.keyResults];
+                          next[index].metricUnit = e.target.value;
+                          setEditOkrForm({ ...editOkrForm, keyResults: next });
+                        }}
+                      />
+                    </div>
+                  </div>
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label>Target Value</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="any"
+                        value={kr.targetValue || ""}
+                        onChange={(e) => {
+                          const next = [...editOkrForm.keyResults];
+                          next[index].targetValue = e.target.value;
+                          setEditOkrForm({ ...editOkrForm, keyResults: next });
+                        }}
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>Weight</label>
+                      <input
+                        type="number"
+                        min="0.1"
+                        step="0.1"
+                        value={kr.weight || "1"}
+                        onChange={(e) => {
+                          const next = [...editOkrForm.keyResults];
+                          next[index].weight = e.target.value;
+                          setEditOkrForm({ ...editOkrForm, keyResults: next });
+                        }}
+                      />
+                    </div>
+                  </div>
                   <button
                     type="button"
                     className="btn-logout"
@@ -6028,7 +6256,17 @@ const DashboardPage = () => {
                         ...editOkrForm,
                         keyResults: next.length
                           ? next
-                          : [{ title: "", tagName: "", tagColor: "#2563eb" }],
+                          : [
+                              {
+                                title: "",
+                                tagName: "",
+                                tagColor: "#2563eb",
+                                metricName: "",
+                                metricUnit: "",
+                                targetValue: "",
+                                weight: "1",
+                              },
+                            ],
                       });
                     }}
                   >
@@ -6044,7 +6282,15 @@ const DashboardPage = () => {
                     ...editOkrForm,
                     keyResults: [
                       ...editOkrForm.keyResults,
-                      { title: "", tagName: "", tagColor: "#2563eb" },
+                      {
+                        title: "",
+                        tagName: "",
+                        tagColor: "#2563eb",
+                        metricName: "",
+                        metricUnit: "",
+                        targetValue: "",
+                        weight: "1",
+                      },
                     ],
                   })
                 }
