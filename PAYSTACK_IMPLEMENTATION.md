@@ -23,7 +23,12 @@ Add the following to your `.env` file:
 ```env
 # Paystack
 PAYSTACK_SECRET_KEY=sk_test_your_paystack_secret_key_here
-PAYSTACK_WEBHOOK_SECRET=whsk_test_your_webhook_secret_here
+# Optional: if you use a distinct webhook signing secret, set it here.
+# If unset, the server uses PAYSTACK_SECRET_KEY for webhook signature verification.
+PAYSTACK_WEBHOOK_SECRET=
+# Optional: routing id for setups where Paystack can only call one "central" webhook.
+# This value is added to transaction metadata as `webhookRouterKey`.
+PAYSTACK_WEBHOOK_ROUTER_KEY=apraizal-prod
 CLIENT_URL=http://localhost:5173
 ```
 
@@ -35,7 +40,34 @@ CLIENT_URL=http://localhost:5173
 4. Create a new webhook endpoint:
    - URL: `https://your-domain.com/payments/webhook`
    - Events: `charge.success`, `subscription.create`, `subscription.disable`, `subscription.enable`
-5. Copy the **Webhook Secret** (starts with `whsk_test_` or `whsk_live_`)
+5. Ensure your webhook is signed and `PAYSTACK_SECRET_KEY` (or `PAYSTACK_WEBHOOK_SECRET` if set) matches your Paystack account.
+
+## Recurring Subscriptions (Plan Codes)
+
+If you want Paystack to create a subscription automatically (and emit `subscription.create` / `subscription.disable` / `subscription.enable` events),
+you must pass a Paystack **plan code** when initializing a transaction.
+
+Configure plan codes via env vars (examples):
+
+```env
+PAYSTACK_PLAN_100_MONTHLY=PLN_xxxxx
+PAYSTACK_PLAN_100_YEARLY=PLN_xxxxx
+PAYSTACK_PLAN_250_MONTHLY=PLN_xxxxx
+PAYSTACK_PLAN_250_YEARLY=PLN_xxxxx
+PAYSTACK_PLAN_500_MONTHLY=PLN_xxxxx
+PAYSTACK_PLAN_500_YEARLY=PLN_xxxxx
+PAYSTACK_PLAN_1000_MONTHLY=PLN_xxxxx
+PAYSTACK_PLAN_1000_YEARLY=PLN_xxxxx
+```
+
+## Single Webhook Receiver (Forwarding)
+
+If Paystack can only call one webhook URL (e.g. a central gateway service), route events using:
+
+- `data.reference` prefix: this implementation generates references like `apz_<uuid>`.
+- `data.metadata.webhookRouterKey`: set `PAYSTACK_WEBHOOK_ROUTER_KEY` and your gateway can forward only matching events.
+
+Important: if your gateway forwards the webhook to `/payments/webhook`, it must forward the raw JSON bytes unchanged and preserve the `x-paystack-signature` header, otherwise signature verification will fail.
 
 ## Architecture
 
@@ -225,7 +257,6 @@ Use these Paystack test cards:
 1. Set test keys in `.env`:
    ```env
    PAYSTACK_SECRET_KEY=sk_test_xxx
-   PAYSTACK_WEBHOOK_SECRET=whsk_test_xxx
    ```
 
 2. Start server and client
@@ -257,7 +288,6 @@ ngrok http 3000
 1. Check webhook logs in Paystack dashboard
 2. Verify webhook signature is correct
 3. Check server logs for errors
-4. Ensure `PAYSTACK_WEBHOOK_SECRET` is set correctly
 
 ### "Invalid Signature" Error
 

@@ -1,10 +1,13 @@
 import axios, { AxiosInstance } from 'axios';
+import crypto from 'crypto';
 
 interface InitializePaymentData {
   email: string;
   amount: number;
   metadata?: Record<string, any>;
   callback_url?: string;
+  reference?: string;
+  plan?: string; // Paystack plan code (enables subscription billing)
 }
 
 interface InitializePaymentResponse {
@@ -72,11 +75,14 @@ interface CreateSubscriptionResponse {
 
 export class PaystackService {
   private readonly secretKey: string;
+  private readonly webhookSecret: string;
   private readonly baseUrl = 'https://api.paystack.co';
   private readonly client: AxiosInstance;
 
   constructor() {
     this.secretKey = process.env.PAYSTACK_SECRET_KEY || '';
+    // Paystack typically signs webhooks with your secret key; allow override if provided.
+    this.webhookSecret = process.env.PAYSTACK_WEBHOOK_SECRET || this.secretKey;
     if (!this.secretKey) {
       console.warn('PAYSTACK_SECRET_KEY is not set. Paystack payments will not work.');
     }
@@ -135,19 +141,22 @@ export class PaystackService {
    * Verify webhook signature using HMAC
    */
   verifyWebhookSignature(payload: Buffer, signature: string): boolean {
-    const crypto = require('crypto');
-    const hash = crypto
-      .createHmac('sha512', this.secretKey)
+    if (!signature) return false;
+
+    const expected = crypto
+      .createHmac('sha512', this.webhookSecret)
       .update(payload)
       .digest('hex');
 
-    return hash === signature;
+    // Avoid timing side channels.
+    if (expected.length !== signature.length) return false;
+    return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signature));
   }
 
   /**
    * Parse webhook event from request body
    */
-  parseWebhookEvent(body: any): { event: string; data: any; id: string } {
+  parseWebhookEvent(body: any): { event: string; data: any; id?: string } {
     return {
       event: body.event,
       data: body.data,
@@ -160,28 +169,22 @@ export class PaystackService {
    */
   async createOrGetCustomer(data: CreateCustomerData): Promise<CreateCustomerResponse['data']> {
     try {
-      // First, try to find existing customers with this email
-      const listResponse = await this.client.get<{
-        status: boolean;
-        message: string;
-        data: {
-          customers: Array<{
-            customer_code: string;
-            id: number;
-            email: string;
-            first_name: string;
-            last_name: string;
-          }>;
-        };
-      }>('/customer', { params: { perPage: 100, page: 1 } });
+      // Prefer the canonical "fetch customer" endpoint by email/code.
+      try {
+        const getResponse = await this.client.get<{
+          status: boolean;
+          message: string;
+          data: CreateCustomerResponse['data'];
+        }>(`/customer/${encodeURIComponent(data.email)}`);
 
-      if (listResponse.data.status) {
-        const existingCustomer = listResponse.data.data.customers.find(
-          (c) => c.email.toLowerCase() === data.email.toLowerCase()
-        );
-
-        if (existingCustomer) {
-          return existingCustomer;
+        if (getResponse.data.status && getResponse.data.data?.customer_code) {
+          return getResponse.data.data;
+        }
+      } catch (error: any) {
+        // If not found, proceed to create.
+        const status = error?.response?.status;
+        if (status && status !== 404) {
+          throw error;
         }
       }
 

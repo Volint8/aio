@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
+import crypto from 'crypto';
 import { paystackService } from '../infrastructure/payment/paystack.service';
 import { subscriptionService } from '../application/services/subscription.service';
 import { getTierByUserCount, getPriceForTier } from '../config/pricing.config';
@@ -11,6 +12,17 @@ interface InitializePaymentBody {
   billingPeriod?: 'monthly' | 'yearly';
   currency?: string;
   userCount?: number;
+}
+
+function getPaystackPlanCode(userCount: number, billingPeriod: 'monthly' | 'yearly'): string | undefined {
+  const period = billingPeriod === 'yearly' ? 'YEARLY' : 'MONTHLY';
+  const envKey = `PAYSTACK_PLAN_${userCount}_${period}`;
+  return process.env[envKey];
+}
+
+function getWebhookRouterKey(): string {
+  // Used by an upstream "single webhook" receiver to route/fan-out events.
+  return "apraizal-prod";
 }
 
 /**
@@ -73,20 +85,33 @@ export const initializePayment = async (req: Request, res: Response) => {
       console.error('Failed to create Paystack customer:', error);
     }
 
+    // Optional Paystack plan code for recurring subscriptions.
+    const paystackPlanCode = getPaystackPlanCode(userCount, billingPeriod);
+    const webhookRouterKey = getWebhookRouterKey();
+
     // Initialize Paystack payment
     const frontendUrl = process.env.CLIENT_URL || 'http://localhost:5173';
     const callbackUrl = `${frontendUrl}/payment/callback`;
 
+    // Use our own reference so we can deterministically link webhooks/subscriptions.
+    const reference = `apz_${crypto.randomUUID()}`;
+
     const paymentData = await paystackService.initializePayment({
       email: user.email,
       amount, // Amount is already in kobo (NGN)
+      reference,
+      plan: paystackPlanCode,
       metadata: {
+        reference,
+        webhookRouterKey,
         userId,
         organizationId,
         plan,
         billingPeriod,
         currency,
         userCount,
+        paystackCustomerId,
+        paystackPlanCode,
       },
       callback_url: callbackUrl,
     });
@@ -99,13 +124,16 @@ export const initializePayment = async (req: Request, res: Response) => {
         amount,
         currency,
         status: 'pending',
-        paystackReference: paymentData.reference,
+        paystackReference: paymentData.reference || reference,
         paystackAccessCode: paymentData.access_code,
         paystackAuthorizationUrl: paymentData.authorization_url,
         metadata: {
           plan,
           billingPeriod,
           userCount,
+          paystackCustomerId,
+          paystackPlanCode,
+          webhookRouterKey,
         },
       },
     });
@@ -134,6 +162,19 @@ export const verifyPayment = async (req: Request, res: Response) => {
     const { reference } = req.params;
     const referenceStr = Array.isArray(reference) ? reference[0] : reference;
 
+    // Get payment record first and ensure it belongs to the user.
+    const payment = await prisma.payment.findUnique({
+      where: { paystackReference: referenceStr },
+    });
+
+    if (!payment) {
+      return res.status(404).json({ error: 'Payment record not found' });
+    }
+
+    if (payment.userId !== userId) {
+      return res.status(403).json({ error: 'Not allowed to verify this payment' });
+    }
+
     // Verify with Paystack
     const verification = await paystackService.verifyPayment(referenceStr);
 
@@ -142,15 +183,6 @@ export const verifyPayment = async (req: Request, res: Response) => {
         error: 'Payment not successful',
         status: verification.status,
       });
-    }
-
-    // Get payment record
-    const payment = await prisma.payment.findUnique({
-      where: { paystackReference: referenceStr },
-    });
-
-    if (!payment) {
-      return res.status(404).json({ error: 'Payment record not found' });
     }
 
     // Update payment status
@@ -191,22 +223,28 @@ export const verifyPayment = async (req: Request, res: Response) => {
     });
 
     // Update payment with subscription ID
-    await prisma.payment.update({
+    const finalPayment = await prisma.payment.update({
       where: { id: payment.id },
       data: {
         subscriptionId: subscription.id,
       },
     });
 
+    await syncPaystackSubscriptionDetails(
+      subscription.id,
+      (payment.metadata as any)?.paystackCustomerId,
+      (payment.metadata as any)?.paystackPlanCode
+    );
+
     return res.json({
       success: true,
       payment: {
-        id: payment.id,
-        reference: payment.paystackReference,
-        amount: payment.amount,
-        currency: payment.currency,
-        status: payment.status,
-        paidAt: payment.paidAt,
+        id: finalPayment.id,
+        reference: finalPayment.paystackReference,
+        amount: finalPayment.amount,
+        currency: finalPayment.currency,
+        status: finalPayment.status,
+        paidAt: finalPayment.paidAt,
       },
       subscription: {
         id: subscription.id,
@@ -281,6 +319,7 @@ export const verifyPaymentPublic = async (req: Request, res: Response) => {
           amount,
           currency,
           paystackReference: referenceStr,
+          paystackCustomerId: (payment.metadata as any)?.paystackCustomerId,
         });
 
         await prisma.payment.update({
@@ -289,6 +328,12 @@ export const verifyPaymentPublic = async (req: Request, res: Response) => {
             subscriptionId: subscription.id,
           },
         });
+
+        await syncPaystackSubscriptionDetails(
+          subscription.id,
+          (payment.metadata as any)?.paystackCustomerId,
+          (payment.metadata as any)?.paystackPlanCode
+        );
       }
     }
 
@@ -325,11 +370,18 @@ export const verifyPaymentPublic = async (req: Request, res: Response) => {
 export const handleWebhook = async (req: Request, res: Response) => {
   try {
     const signature = req.headers['x-paystack-signature'] as string;
-    const rawBody = JSON.stringify(req.body);
+    if (!signature) {
+      return res.status(400).json({ error: 'Missing signature' });
+    }
+
+    const rawBody: Buffer =
+      (req as any).rawBody instanceof Buffer
+        ? (req as any).rawBody
+        : Buffer.from(JSON.stringify(req.body), 'utf-8');
 
     // Verify webhook signature
     const isValid = paystackService.verifyWebhookSignature(
-      Buffer.from(rawBody, 'utf-8'),
+      rawBody,
       signature
     );
 
@@ -338,10 +390,11 @@ export const handleWebhook = async (req: Request, res: Response) => {
     }
 
     const event = paystackService.parseWebhookEvent(req.body);
+    const eventId = event.id || crypto.createHash('sha256').update(rawBody).digest('hex');
 
     // Check for idempotency
     const existingEvent = await prisma.webhookEvent.findUnique({
-      where: { eventId: event.id },
+      where: { eventId },
     });
 
     if (existingEvent) {
@@ -351,7 +404,7 @@ export const handleWebhook = async (req: Request, res: Response) => {
     // Store webhook event
     await prisma.webhookEvent.create({
       data: {
-        eventId: event.id,
+        eventId,
         eventType: event.event,
         payload: req.body,
       },
@@ -377,7 +430,7 @@ export const handleWebhook = async (req: Request, res: Response) => {
 
     // Mark event as processed
     await prisma.webhookEvent.update({
-      where: { eventId: event.id },
+      where: { eventId },
       data: { processed: true },
     });
 
@@ -415,7 +468,7 @@ async function handleChargeSuccess(data: any) {
   const billingPeriod = metadata.billingPeriod || 'monthly';
   const userCount = metadata.userCount || 100;
 
-  await subscriptionService.createSubscriptionFromPaystack({
+  const subscription = await subscriptionService.createSubscriptionFromPaystack({
     userId: payment.userId,
     organizationId,
     plan,
@@ -424,7 +477,43 @@ async function handleChargeSuccess(data: any) {
     amount: payment.amount,
     currency: payment.currency,
     paystackReference: reference,
+    paystackCustomerId: (payment.metadata as any)?.paystackCustomerId,
   });
+
+  // Link payment to subscription for easier lookup during redirects/admin views.
+  await prisma.payment.update({
+    where: { id: payment.id },
+    data: { subscriptionId: subscription.id },
+  });
+
+  // Best-effort: if this was initialized with a Paystack plan code, sync subscription_code + email_token.
+  const paystackCustomerId = (payment.metadata as any)?.paystackCustomerId as string | undefined;
+  const paystackPlanCode = (payment.metadata as any)?.paystackPlanCode as string | undefined;
+  await syncPaystackSubscriptionDetails(subscription.id, paystackCustomerId, paystackPlanCode);
+}
+
+async function syncPaystackSubscriptionDetails(
+  subscriptionId: string,
+  paystackCustomerId?: string,
+  paystackPlanCode?: string
+) {
+  if (!paystackCustomerId || !paystackPlanCode) return;
+
+  try {
+    const subs = await paystackService.listSubscriptionsByCustomer(paystackCustomerId);
+    const match = subs.find((s: any) => s?.plan?.plan_code === paystackPlanCode);
+    if (!match?.subscription_code || !match?.email_token) return;
+
+    await prisma.subscription.update({
+      where: { id: subscriptionId },
+      data: {
+        paystackSubscriptionId: match.subscription_code,
+        paystackEmailToken: match.email_token,
+      },
+    });
+  } catch (error) {
+    console.error('Failed to sync Paystack subscription details:', error);
+  }
 }
 
 async function handleSubscriptionCreate(data: any) {
@@ -432,8 +521,15 @@ async function handleSubscriptionCreate(data: any) {
   const emailToken = data.email_token;
   const metadata = data.metadata || {};
 
+  const referenceFromMetadata =
+    metadata.reference || metadata.paystackReference || metadata.transactionReference;
+
+  if (!referenceFromMetadata) {
+    return;
+  }
+
   const payment = await prisma.payment.findFirst({
-    where: { paystackReference: metadata.reference },
+    where: { paystackReference: referenceFromMetadata },
   });
 
   if (!payment) {

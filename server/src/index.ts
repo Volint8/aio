@@ -18,7 +18,12 @@ app.use(cors({
     },
     credentials: true
 }));
-app.use(express.json());
+// Capture the raw request body for webhook signature verification.
+app.use(express.json({
+    verify: (req: any, _res, buf) => {
+        req.rawBody = buf;
+    }
+}));
 app.use('/uploads', express.static('uploads'));
 
 // Basic health check
