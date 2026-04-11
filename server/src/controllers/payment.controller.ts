@@ -101,6 +101,7 @@ export const initializePayment = async (req: Request, res: Response) => {
       amount, // Amount is already in kobo (NGN)
       reference,
       plan: paystackPlanCode,
+      channels: ['card'],
       metadata: {
         reference,
         webhookRouterKey,

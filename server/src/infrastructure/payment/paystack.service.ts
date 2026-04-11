@@ -8,6 +8,7 @@ interface InitializePaymentData {
   callback_url?: string;
   reference?: string;
   plan?: string; // Paystack plan code (enables subscription billing)
+  channels?: string[]; // e.g. ['card']
 }
 
 interface InitializePaymentResponse {
