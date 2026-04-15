@@ -1,6 +1,8 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import http from 'http';
+import { Server as IOServer } from 'socket.io';
 
 dotenv.config();
 
@@ -54,7 +56,29 @@ app.use('/appraisals', appraisalRoutes);
 app.use('/payments', paymentRoutes);
 app.use('/subscriptions', subscriptionRoutes);
 
-app.listen(PORT, () => {
+// Create HTTP server and attach Socket.IO
+const server = http.createServer(app);
+const io = new IOServer(server, {
+    cors: {
+        origin: (process.env.CLIENT_URL || 'http://localhost:5173').split(',').map(o => o.trim()),
+        methods: ['GET', 'POST'],
+        credentials: true
+    }
+});
+
+import { Socket } from 'socket.io';
+
+io.on('connection', (socket: Socket) => {
+    // allow clients to join org rooms
+    socket.on('joinOrg', (orgId: string) => {
+        if (orgId) socket.join(`org:${orgId}`);
+    });
+});
+
+// expose io globally so controllers can emit events
+(global as any).io = io;
+
+server.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
     startTaskPurgeJob();
 });

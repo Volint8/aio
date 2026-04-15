@@ -1,7 +1,9 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import api from "../services/api";
 import { useAuth } from "../context/AuthContext";
+import { connectSocket } from "../services/socket";
 import BoardView from "../components/BoardView";
 import TaskTrackerView from "../components/TaskTrackerView";
 import TeamTrackerView from "../components/TeamTrackerView";
@@ -753,6 +755,41 @@ const DashboardPage = () => {
     };
   }, [menuOpenTaskId]);
 
+  // Real-time socket listeners
+  useEffect(() => {
+    if (!organization?.id) return;
+    const orgId = organization.id;
+    const socket = connectSocket(orgId);
+
+    const handleCreated = (task: any) => {
+      setAllTasks((prev) => [task, ...prev]);
+      setTasks((prev) => [task, ...prev]);
+    };
+    const handleUpdated = (task: any) => {
+      setAllTasks((prev) => prev.map((t) => (t.id === task.id ? task : t)));
+      setTasks((prev) => prev.map((t) => (t.id === task.id ? task : t)));
+    };
+    const handleDeleted = ({ id }: { id: string }) => {
+      setAllTasks((prev) => prev.filter((t) => t.id !== id));
+      setTasks((prev) => prev.filter((t) => t.id !== id));
+      if (selectedTaskId === id) setSelectedTaskId(null);
+    };
+
+    socket.on("task:created", handleCreated);
+    socket.on("task:updated", handleUpdated);
+    socket.on("task:deleted", handleDeleted);
+
+    return () => {
+      try {
+        socket.off("task:created", handleCreated);
+        socket.off("task:updated", handleUpdated);
+        socket.off("task:deleted", handleDeleted);
+      } catch (e) {
+        /* ignore */
+      }
+    };
+  }, [organization?.id, selectedTaskId]);
+
   useEffect(() => {
     // Check if we're in a reload loop (max 2 attempts)
     const reloadCount = parseInt(
@@ -938,8 +975,11 @@ const DashboardPage = () => {
       })
       .map((member) => {
         const stats = memberStats.find((m) => m.userId === member.userId);
-        const team = teams.find((t) =>
-          t.members?.some((m) => m.userId === member.userId),
+        const team = teams.find(
+          (t) =>
+            (t.members &&
+              t.members.some((m) => (m.userId || m.id) === member.userId)) ||
+            (t.people && t.people.some((p) => p.userId === member.userId)),
         );
         const roleLabel =
           member.user.initialRole?.trim() || formatRole(member.role);
@@ -1472,7 +1512,7 @@ const DashboardPage = () => {
     }
   };
 
-  // @ts-ignore - Function kept for potential future use
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const handleMakeOkrGlobal = async (okrId: string) => {
     try {
       await api.patch(`/orgs/${orgId}/okrs/${okrId}`, {
@@ -2482,6 +2522,7 @@ const DashboardPage = () => {
     try {
       const res = await api.get(`/tasks/${taskId}/submissions`);
       setSubmissions(res.data);
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
     } catch (error) {
       console.error("Failed to fetch submissions");
     }
@@ -2491,6 +2532,7 @@ const DashboardPage = () => {
     try {
       const res = await api.get(`/tasks/${taskId}/activity`);
       setActivityLogs(res.data);
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
     } catch (error) {
       console.error("Failed to fetch activity");
     }
@@ -5702,45 +5744,29 @@ const DashboardPage = () => {
               <div className="form-group">
                 <label>Supported By (Contributing Teams)</label>
                 {teams.length > 0 ? (
-                  <div
-                    style={{
-                      maxHeight: 150,
-                      overflowY: "auto",
-                      border: "1px solid var(--border-color)",
-                      borderRadius: 8,
-                      padding: 8,
+                  <select
+                    multiple
+                    value={newOkr.supportedByTeamIds}
+                    onChange={(e) => {
+                      const selected = Array.from(e.target.selectedOptions).map(
+                        (o) => o.value,
+                      );
+                      setNewOkr((prev) => ({
+                        ...prev,
+                        supportedByTeamIds: selected,
+                      }));
                     }}
+                    size={Math.min(6, teams.length)}
+                    style={{ width: "100%" }}
                   >
-                    {teams.map((team) => (
-                      <label
-                        key={team.id}
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 8,
-                          padding: "6px 0",
-                          cursor: "pointer",
-                        }}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={newOkr.supportedByTeamIds.includes(team.id)}
-                          onChange={(e) => {
-                            const checked = e.target.checked;
-                            setNewOkr((prev) => ({
-                              ...prev,
-                              supportedByTeamIds: checked
-                                ? [...prev.supportedByTeamIds, team.id]
-                                : prev.supportedByTeamIds.filter(
-                                    (id) => id !== team.id,
-                                  ),
-                            }));
-                          }}
-                        />
-                        <span>{team.name}</span>
-                      </label>
-                    ))}
-                  </div>
+                    {teams
+                      .filter((t) => t.id !== newOkr.assignedToTeamId)
+                      .map((team) => (
+                        <option key={team.id} value={team.id}>
+                          {team.name}
+                        </option>
+                      ))}
+                  </select>
                 ) : (
                   <p
                     style={{
@@ -6042,47 +6068,29 @@ const DashboardPage = () => {
               <div className="form-group">
                 <label>Supported By (Contributing Teams)</label>
                 {teams.length > 0 ? (
-                  <div
-                    style={{
-                      maxHeight: 150,
-                      overflowY: "auto",
-                      border: "1px solid var(--border-color)",
-                      borderRadius: 8,
-                      padding: 8,
+                  <select
+                    multiple
+                    value={editOkrForm.supportedByTeamIds}
+                    onChange={(e) => {
+                      const selected = Array.from(e.target.selectedOptions).map(
+                        (o) => o.value,
+                      );
+                      setEditOkrForm((prev) => ({
+                        ...prev,
+                        supportedByTeamIds: selected,
+                      }));
                     }}
+                    size={Math.min(6, teams.length)}
+                    style={{ width: "100%" }}
                   >
-                    {teams.map((team) => (
-                      <label
-                        key={team.id}
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 8,
-                          padding: "6px 0",
-                          cursor: "pointer",
-                        }}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={editOkrForm.supportedByTeamIds.includes(
-                            team.id,
-                          )}
-                          onChange={(e) => {
-                            const checked = e.target.checked;
-                            setEditOkrForm((prev) => ({
-                              ...prev,
-                              supportedByTeamIds: checked
-                                ? [...prev.supportedByTeamIds, team.id]
-                                : prev.supportedByTeamIds.filter(
-                                    (id) => id !== team.id,
-                                  ),
-                            }));
-                          }}
-                        />
-                        <span>{team.name}</span>
-                      </label>
-                    ))}
-                  </div>
+                    {teams
+                      .filter((t) => t.id !== editOkrForm.assignedToTeamId)
+                      .map((team) => (
+                        <option key={team.id} value={team.id}>
+                          {team.name}
+                        </option>
+                      ))}
+                  </select>
                 ) : (
                   <p
                     style={{

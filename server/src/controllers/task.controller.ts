@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { sendTaskAssignmentEmail, sendTaskAlertEmail } from '../services/email.service';
+import { normalizeOrgName } from '../utils/org.utils';
 
 const prisma = new PrismaClient();
 
@@ -131,6 +132,27 @@ const resolveTaskTeamContext = async (params: {
         supporterMembership,
         teamIds: Array.from(new Set(teamIds))
     };
+};
+
+const ensureMembershipOrAssignment = async (userId: string, organizationId: string, task?: { assigneeId?: string | null; supporterId?: string | null }) => {
+    const membership = await prisma.organizationMember.findUnique({
+        where: {
+            userId_organizationId: {
+                userId,
+                organizationId
+            }
+        }
+    });
+
+    if (!membership) {
+        // Allow access if the user is explicitly the assignee or supporter on the task
+        if (task && (userId === task.assigneeId || userId === task.supporterId)) {
+            return { role: 'MEMBER', teamId: null } as any;
+        }
+        return null;
+    }
+
+    return membership;
 };
 
 const syncTaskTeams = async (taskId: string, teamIds: string[]) => {
@@ -392,6 +414,16 @@ export const createTask = async (req: Request, res: Response) => {
             priority: task?.priority
         });
 
+        // emit socket event for real-time updates
+        try {
+            const io = (global as any).io;
+            if (io && organizationId) {
+                io.to(`org:${organizationId}`).emit('task:created', task);
+            }
+        } catch (e) {
+            console.error('Emit task created failed', e);
+        }
+
         // Send alert to team leads if requested
         if (alertTeamLead && membership.role !== 'TEAM_LEAD' && membership.role !== 'ADMIN') {
             const teamLeads = await prisma.organizationMember.findMany({
@@ -503,15 +535,7 @@ export const getTaskById = async (req: Request, res: Response) => {
             return res.status(404).json({ error: 'Task not found' });
         }
 
-        const membership = await prisma.organizationMember.findUnique({
-            where: {
-                userId_organizationId: {
-                    userId,
-                    organizationId: task.organizationId
-                }
-            }
-        });
-
+        let membership = await ensureMembershipOrAssignment(userId, task.organizationId, task as any);
         if (!membership) {
             return res.status(403).json({ error: 'Access denied' });
         }
@@ -546,15 +570,7 @@ export const updateTask = async (req: Request, res: Response) => {
             return res.status(400).json({ error: 'Task is in Recently Deleted' });
         }
 
-        const membership = await prisma.organizationMember.findUnique({
-            where: {
-                userId_organizationId: {
-                    userId,
-                    organizationId: task.organizationId
-                }
-            }
-        });
-
+        let membership = await ensureMembershipOrAssignment(userId, task.organizationId, task as any);
         if (!membership) {
             return res.status(403).json({ error: 'Access denied' });
         }
@@ -599,7 +615,7 @@ export const updateTask = async (req: Request, res: Response) => {
 
             // Log activity for changes
             const activityEntries: Array<{ action: string; description: string; metadata?: any }> = [];
-            
+
             if (status && status !== task.status) {
                 activityEntries.push({
                     action: 'STATUS_CHANGED',
@@ -607,7 +623,7 @@ export const updateTask = async (req: Request, res: Response) => {
                     metadata: { oldStatus: task.status, newStatus: status }
                 });
             }
-            
+
             if (hasAssigneeUpdate && normalizedAssigneeId !== task.assigneeId) {
                 activityEntries.push({
                     action: 'ASSIGNEE_CHANGED',
@@ -615,7 +631,7 @@ export const updateTask = async (req: Request, res: Response) => {
                     metadata: { oldAssigneeId: task.assigneeId, newAssigneeId: normalizedAssigneeId }
                 });
             }
-            
+
             if (hasSupporterUpdate && normalizedSupporterId !== task.supporterId) {
                 activityEntries.push({
                     action: 'SUPPORTER_CHANGED',
@@ -623,7 +639,7 @@ export const updateTask = async (req: Request, res: Response) => {
                     metadata: { oldSupporterId: task.supporterId, newSupporterId: normalizedSupporterId }
                 });
             }
-            
+
             if (priority && priority !== task.priority) {
                 activityEntries.push({
                     action: 'TASK_UPDATED',
@@ -631,7 +647,7 @@ export const updateTask = async (req: Request, res: Response) => {
                     metadata: { oldPriority: task.priority, newPriority: priority }
                 });
             }
-            
+
             if (dueDate !== undefined) {
                 const oldDue = task.dueDate ? new Date(task.dueDate).toISOString() : null;
                 const newDue = dueDate ? new Date(dueDate).toISOString() : null;
@@ -643,7 +659,7 @@ export const updateTask = async (req: Request, res: Response) => {
                     });
                 }
             }
-            
+
             if (description !== undefined && description !== task.description) {
                 activityEntries.push({
                     action: 'TASK_UPDATED',
@@ -651,7 +667,7 @@ export const updateTask = async (req: Request, res: Response) => {
                     metadata: { field: 'description' }
                 });
             }
-            
+
             if (title && title !== task.title) {
                 activityEntries.push({
                     action: 'TASK_UPDATED',
@@ -659,7 +675,7 @@ export const updateTask = async (req: Request, res: Response) => {
                     metadata: { field: 'title' }
                 });
             }
-            
+
             // Create activity logs
             for (const entry of activityEntries) {
                 await tx.activityLog.create({
@@ -719,6 +735,16 @@ export const updateTask = async (req: Request, res: Response) => {
             });
         }
 
+        // emit socket event for real-time updates
+        try {
+            const io = (global as any).io;
+            if (io && task.organizationId) {
+                io.to(`org:${task.organizationId}`).emit('task:updated', updatedTask);
+            }
+        } catch (e) {
+            console.error('Emit task updated failed', e);
+        }
+
         res.json(updatedTask);
     } catch (error: any) {
         console.error('Update task error:', error);
@@ -757,13 +783,22 @@ export const deleteTask = async (req: Request, res: Response) => {
             return res.status(400).json({ error: 'Task already deleted' });
         }
 
-        await prisma.task.update({
+        const updated = await prisma.task.update({
             where: { id: id },
             data: {
                 deletedAt: new Date(),
                 deletedById: userId
             }
         });
+        // emit socket event for deletion
+        try {
+            const io = (global as any).io;
+            if (io && updated.organizationId) {
+                io.to(`org:${updated.organizationId}`).emit('task:deleted', { id: updated.id });
+            }
+        } catch (e) {
+            console.error('Emit task deleted failed', e);
+        }
 
         res.json({ message: 'Task moved to Recently Deleted' });
     } catch (error) {
@@ -896,15 +931,7 @@ export const addComment = async (req: Request, res: Response) => {
             return res.status(400).json({ error: 'Task is in Recently Deleted' });
         }
 
-        const membership = await prisma.organizationMember.findUnique({
-            where: {
-                userId_organizationId: {
-                    userId,
-                    organizationId: task.organizationId
-                }
-            }
-        });
-
+        let membership = await ensureMembershipOrAssignment(userId, task.organizationId, task as any);
         if (!membership) {
             return res.status(403).json({ error: 'Access denied' });
         }
@@ -967,7 +994,7 @@ export const addComment = async (req: Request, res: Response) => {
                         assignerName: currentUser?.name || 'Someone',
                         dueDate: task.dueDate,
                         priority: task.priority
-                    }).catch(() => {}); // Silent fail for notifications
+                    }).catch(() => { }); // Silent fail for notifications
                 }
             }
         }
@@ -1076,15 +1103,7 @@ export const uploadAttachment = async (req: Request, res: Response) => {
             return res.status(400).json({ error: 'Task is in Recently Deleted' });
         }
 
-        const membership = await prisma.organizationMember.findUnique({
-            where: {
-                userId_organizationId: {
-                    userId,
-                    organizationId: task.organizationId
-                }
-            }
-        });
-
+        let membership = await ensureMembershipOrAssignment(userId, task.organizationId, task as any);
         if (!membership) {
             return res.status(403).json({ error: 'Access denied' });
         }
@@ -1397,14 +1416,7 @@ export const deleteComment = async (req: Request, res: Response) => {
             return res.status(400).json({ error: 'Task is in Recently Deleted' });
         }
 
-        const membership = await prisma.organizationMember.findUnique({
-            where: {
-                userId_organizationId: {
-                    userId,
-                    organizationId: comment.task.organizationId
-                }
-            }
-        });
+        let membership = await ensureMembershipOrAssignment(userId, comment.task.organizationId, comment.task as any);
 
         if (!membership) {
             return res.status(403).json({ error: 'Access denied' });
@@ -1454,14 +1466,7 @@ export const deleteAttachment = async (req: Request, res: Response) => {
             return res.status(400).json({ error: 'Task is in Recently Deleted' });
         }
 
-        const membership = await prisma.organizationMember.findUnique({
-            where: {
-                userId_organizationId: {
-                    userId,
-                    organizationId: attachment.task.organizationId
-                }
-            }
-        });
+        let membership = await ensureMembershipOrAssignment(userId, attachment.task.organizationId, attachment.task as any);
 
         if (!membership || membership.role !== 'ADMIN') {
             return res.status(403).json({ error: 'Only admins can delete attachments' });
@@ -1845,6 +1850,61 @@ export const upsertTaskKrImpacts = async (req: Request, res: Response) => {
                 orderBy: { createdAt: 'desc' }
             });
         });
+
+        // Notify members if any KR impact's metricName references a member (match by normalized name or email)
+        try {
+            const taskWithOrg = await prisma.task.findUnique({ where: { id: taskId }, include: { organization: true, assignee: { select: { id: true, email: true, name: true } } } });
+            if (taskWithOrg) {
+                const members = await prisma.organizationMember.findMany({ where: { organizationId: taskWithOrg.organizationId }, include: { user: { select: { id: true, name: true, email: true } } } });
+                const memberNameMap = new Map<string, any>();
+                members.forEach((m) => {
+                    const nameKey = normalizeOrgName(m.user.name || '');
+                    const emailKey = normalizeOrgName(m.user.email || '');
+                    if (nameKey) memberNameMap.set(nameKey, m);
+                    if (emailKey) memberNameMap.set(emailKey, m);
+                });
+
+                for (const impact of result) {
+                    const metric = impact.okrKeyResult?.metricName || impact.okrKeyResult?.title || '';
+                    if (!metric) continue;
+                    const normalizedMetric = normalizeOrgName(metric);
+                    const matched = memberNameMap.get(normalizedMetric);
+                    if (matched) {
+                        try {
+                            // create in-app notification
+                            await prisma.notification.create({
+                                data: {
+                                    organizationId: taskWithOrg.organizationId,
+                                    senderId: userId,
+                                    targetType: 'INDIVIDUAL',
+                                    targetId: matched.user.id,
+                                    type: 'PRIORITY_ALERT',
+                                    message: `You've been mentioned in task "${taskWithOrg.title}" via metric: ${metric}`
+                                }
+                            });
+
+                            // send email (silent fail)
+                            if (matched.user.email) {
+                                const assigner = await prisma.user.findUnique({ where: { id: userId }, select: { name: true, email: true } });
+                                await sendTaskAssignmentEmail({
+                                    to: matched.user.email,
+                                    assigneeName: matched.user.name,
+                                    taskTitle: taskWithOrg.title,
+                                    organizationName: taskWithOrg.organization?.name || '',
+                                    assignerName: assigner?.name || assigner?.email || 'Someone',
+                                    dueDate: taskWithOrg.dueDate || undefined,
+                                    priority: taskWithOrg.priority || undefined
+                                }).catch(() => { });
+                            }
+                        } catch (notifyErr) {
+                            console.error('Failed to notify member for KR impact metric match:', notifyErr);
+                        }
+                    }
+                }
+            }
+        } catch (err) {
+            console.error('KR impact notify pass failed:', err);
+        }
 
         return res.json(result);
     } catch (error) {
