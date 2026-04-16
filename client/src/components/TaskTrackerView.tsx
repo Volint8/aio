@@ -61,7 +61,7 @@ interface TaskTrackerViewProps {
   }>;
   tags?: Array<{ id: string; name: string; color: string }>;
   hideOwnerFilter?: boolean;
-  userRole?: "ADMIN" | "MEMBER";
+  userRole?: 'ADMIN' | 'TEAM_LEAD' | 'MEMBER';
 }
 
 const TaskTrackerView: React.FC<TaskTrackerViewProps> = ({
