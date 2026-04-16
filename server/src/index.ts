@@ -41,6 +41,7 @@ import appraisalRoutes from './routes/appraisal.routes';
 import paymentRoutes from './routes/payment.routes';
 import subscriptionRoutes from './routes/subscription.routes';
 import { startTaskPurgeJob } from './jobs/taskPurge.job';
+import { startUserPurgeJob } from './jobs/userPurge.job';
 
 // Make prisma available globally for controllers
 import { PrismaClient } from '@prisma/client';
@@ -81,4 +82,5 @@ io.on('connection', (socket: Socket) => {
 server.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
     startTaskPurgeJob();
+    startUserPurgeJob();
 });

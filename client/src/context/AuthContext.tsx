@@ -14,17 +14,8 @@ interface User {
 interface AuthContextType {
   user: User | null;
   login: (email: string, pass: string) => Promise<void>;
-  adminSignupInit: (
-    email: string,
-    pass: string,
-    name?: string,
-  ) => Promise<{ suggestions: string[] }>;
-  adminSignupComplete: (
-    email: string,
-    pass: string,
-    organizationName: string,
-    name?: string,
-  ) => Promise<void>;
+  adminSignupInit: (email: string, pass: string) => Promise<{ suggestions: string[] }>;
+  adminSignupComplete: (email: string, pass: string, organizationName: string) => Promise<void>;
   inviteAcceptInit: (
     token: string,
     pass: string,
@@ -84,29 +75,18 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     localStorage.removeItem("selectedOrgName");
   };
 
-  const adminSignupInit = async (
-    email: string,
-    pass: string,
-    name?: string,
-  ) => {
+  const adminSignupInit = async (email: string, pass: string) => {
     const res = await api.post("/auth/admin-signup/init", {
       email,
       password: pass,
-      name,
     });
     return { suggestions: res.data.suggestions || [] };
   };
 
-  const adminSignupComplete = async (
-    email: string,
-    pass: string,
-    organizationName: string,
-    name?: string,
-  ) => {
+  const adminSignupComplete = async (email: string, pass: string, organizationName: string) => {
     await api.post("/auth/admin-signup/complete", {
       email,
       password: pass,
-      name,
       organizationName,
     });
   };

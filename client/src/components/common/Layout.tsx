@@ -75,7 +75,6 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
 
     const isAdminInCurrentOrg = currentOrgRole === 'ADMIN';
-    const isTeamLeadInCurrentOrg = currentOrgRole === 'TEAM_LEAD';
     const params = new URLSearchParams(location.search);
     const dashboardSection = params.get('section') || 'board';
 
@@ -86,15 +85,6 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         { label: 'Team', section: 'team', icon: 'team' },
         { label: 'Appraisals', section: 'appraisals', icon: 'appraisals' },
         { label: 'Subscription', section: 'subscription', icon: 'subscription' },
-        { label: 'Settings', section: 'settings', icon: 'settings' },
-        { label: 'Contact Support', section: 'support', icon: 'support' }
-    ]), []);
-
-    const teamLeadNavItems = useMemo(() => ([
-        { label: 'Dashboard', section: 'board', icon: 'dashboard' },
-        { label: 'OKRs', section: 'okr', icon: 'okr' },
-        { label: 'Trackers', section: 'task-tracker', icon: 'trackers' },
-        { label: 'Team', section: 'team-tracker', icon: 'team' },
         { label: 'Settings', section: 'settings', icon: 'settings' },
         { label: 'Contact Support', section: 'support', icon: 'support' }
     ]), []);
@@ -190,7 +180,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         }
     };
 
-    const navItems = isAdminInCurrentOrg ? adminNavItems : isTeamLeadInCurrentOrg ? teamLeadNavItems : memberNavItems;
+    const navItems = isAdminInCurrentOrg ? adminNavItems : memberNavItems;
 
     const handleMarkAsRead = async (notificationId: string) => {
         try {
@@ -428,11 +418,13 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                             )}
                         </div>
 
-                        <div className="user-pill" style={{ background: 'none', padding: '0' }}>
-                            <div className="avatar" style={{ width: '36px', height: '36px', background: 'var(--primary-blue)', borderRadius: '50%', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 600 }}>
-                                {getInitials(user?.name || user?.email || 'U')}
+                        {!isAdminInCurrentOrg && (
+                            <div className="user-pill" style={{ background: 'none', padding: '0' }}>
+                                <div className="avatar" style={{ width: '36px', height: '36px', background: 'var(--primary-blue)', borderRadius: '50%', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 600 }}>
+                                    {getInitials(user?.name || user?.email || 'U')}
+                                </div>
                             </div>
-                        </div>
+                        )}
                     </div>
                 </header>
                 <div className="content" style={{ width: '100%', maxWidth: 'none' }}>

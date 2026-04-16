@@ -1,0 +1,7 @@
+-- Add task approval workflow fields
+ALTER TABLE "Task"
+ADD COLUMN IF NOT EXISTS "approvalStatus" TEXT NOT NULL DEFAULT 'NOT_SUBMITTED',
+ADD COLUMN IF NOT EXISTS "approvedById" TEXT,
+ADD COLUMN IF NOT EXISTS "approvedAt" TIMESTAMP(3),
+ADD COLUMN IF NOT EXISTS "approvalNotes" TEXT;
+

@@ -575,6 +575,22 @@ export const updateTask = async (req: Request, res: Response) => {
             return res.status(403).json({ error: 'Access denied' });
         }
 
+        const isReviewer = ['ADMIN', 'TEAM_LEAD'].includes(membership.role);
+        const nextApprovalPatch: any = {};
+        if (status) {
+            if (status === 'COMPLETED') {
+                nextApprovalPatch.approvalStatus = isReviewer ? 'APPROVED' : 'PENDING';
+                nextApprovalPatch.approvedById = isReviewer ? userId : null;
+                nextApprovalPatch.approvedAt = isReviewer ? new Date() : null;
+                nextApprovalPatch.approvalNotes = null;
+            } else {
+                nextApprovalPatch.approvalStatus = 'NOT_SUBMITTED';
+                nextApprovalPatch.approvedById = null;
+                nextApprovalPatch.approvedAt = null;
+                nextApprovalPatch.approvalNotes = null;
+            }
+        }
+
         if (hasTagUpdate) {
             if (!tagId) {
                 return res.status(400).json({ error: 'Task tag is required' });
@@ -605,6 +621,7 @@ export const updateTask = async (req: Request, res: Response) => {
                     ...(title && { title }),
                     ...(description !== undefined && { description }),
                     ...(status && { status }),
+                    ...(status && nextApprovalPatch),
                     ...(hasAssigneeUpdate && { assigneeId: normalizedAssigneeId }),
                     ...(hasSupporterUpdate && { supporterId: normalizedSupporterId }),
                     ...(hasTagUpdate && { tagId }),
@@ -1518,23 +1535,38 @@ export const submitWork = async (req: Request, res: Response) => {
             return res.status(403).json({ error: 'Only assignee or supporter can submit work' });
         }
 
-        const submission = await prisma.workSubmission.create({
-            data: {
-                taskId,
-                userId,
-                description: description || null
-            }
-        });
+        const now = new Date();
+        const submission = await prisma.$transaction(async (tx) => {
+            const created = await tx.workSubmission.create({
+                data: {
+                    taskId,
+                    userId,
+                    description: description || null
+                }
+            });
 
-        // Log activity
-        await prisma.activityLog.create({
-            data: {
-                taskId,
-                userId,
-                action: 'SUBMISSION_CREATED',
-                description: `${task.assigneeId === userId ? 'Assignee' : 'Supporter'} submitted work`,
-                metadata: { submissionId: submission.id }
-            }
+            await tx.task.update({
+                where: { id: taskId },
+                data: {
+                    status: 'COMPLETED',
+                    approvalStatus: 'PENDING',
+                    approvedById: null,
+                    approvedAt: null,
+                    approvalNotes: null
+                }
+            });
+
+            await tx.activityLog.create({
+                data: {
+                    taskId,
+                    userId,
+                    action: 'SUBMISSION_CREATED',
+                    description: `${task.assigneeId === userId ? 'Assignee' : 'Supporter'} submitted work`,
+                    metadata: { submissionId: created.id }
+                }
+            });
+
+            return created;
         });
 
         res.json({ message: 'Work submitted successfully', submission });
@@ -1621,38 +1653,77 @@ export const reviewSubmission = async (req: Request, res: Response) => {
             }
         });
 
-        if (!membership || membership.role !== 'ADMIN') {
-            return res.status(403).json({ error: 'Only admins can review submissions' });
+        if (!membership || !['ADMIN', 'TEAM_LEAD'].includes(membership.role)) {
+            return res.status(403).json({ error: 'Only reviewers can review submissions' });
         }
 
         if (!['PENDING', 'REVIEWED', 'APPROVED', 'REJECTED'].includes(status)) {
             return res.status(400).json({ error: 'Invalid status' });
         }
 
-        const submission = await prisma.workSubmission.update({
-            where: { id: submissionId },
-            data: {
-                status,
-                reviewNotes: reviewNotes || null,
-                reviewedAt: new Date(),
-                reviewedBy: userId
-            },
-            include: {
-                user: {
-                    select: { id: true, name: true, email: true }
+        const reviewedAt = new Date();
+        const submission = await prisma.$transaction(async (tx) => {
+            const updated = await tx.workSubmission.update({
+                where: { id: submissionId },
+                data: {
+                    status,
+                    reviewNotes: reviewNotes || null,
+                    reviewedAt,
+                    reviewedBy: userId
+                },
+                include: {
+                    user: {
+                        select: { id: true, name: true, email: true }
+                    }
                 }
-            }
-        });
+            });
 
-        // Log activity
-        await prisma.activityLog.create({
-            data: {
-                taskId,
-                userId,
-                action: 'SUBMISSION_REVIEWED',
-                description: `Submission ${status.toLowerCase()}`,
-                metadata: { submissionId, status }
+            if (status === 'APPROVED') {
+                await tx.task.update({
+                    where: { id: taskId },
+                    data: {
+                        status: 'COMPLETED',
+                        approvalStatus: 'APPROVED',
+                        approvedById: userId,
+                        approvedAt: reviewedAt,
+                        approvalNotes: reviewNotes || null
+                    }
+                });
+            } else if (status === 'REJECTED') {
+                await tx.task.update({
+                    where: { id: taskId },
+                    data: {
+                        status: 'IN_PROGRESS',
+                        approvalStatus: 'REJECTED',
+                        approvedById: userId,
+                        approvedAt: reviewedAt,
+                        approvalNotes: reviewNotes || null
+                    }
+                });
+            } else if (status === 'PENDING') {
+                await tx.task.update({
+                    where: { id: taskId },
+                    data: {
+                        status: 'COMPLETED',
+                        approvalStatus: 'PENDING',
+                        approvedById: null,
+                        approvedAt: null,
+                        approvalNotes: null
+                    }
+                });
             }
+
+            await tx.activityLog.create({
+                data: {
+                    taskId,
+                    userId,
+                    action: 'SUBMISSION_REVIEWED',
+                    description: `Submission ${status.toLowerCase()}`,
+                    metadata: { submissionId, status }
+                }
+            });
+
+            return updated;
         });
 
         res.json({ message: 'Submission reviewed successfully', submission });

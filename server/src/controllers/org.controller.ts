@@ -36,6 +36,15 @@ const getEditorMembership = async (userId: string, organizationId: string) => {
 
 const buildTeamName = (name: string) => normalizeOrgName(name);
 
+const normalizeInviteRole = (value: unknown): string | null => {
+  if (typeof value !== 'string') return null;
+  const normalized = value
+    .trim()
+    .toUpperCase()
+    .replace(/[\s-]+/g, '_');
+  return normalized ? normalized : null;
+};
+
 const validateTeamParticipants = async (tx: any, organizationId: string, leadUserId: string, memberUserIds: string[]) => {
   const uniqueMemberIds = Array.from(new Set(memberUserIds));
 
@@ -437,7 +446,8 @@ export const getOrgById = async (req: Request, res: Response) => {
 
     return res.json({
       ...organization,
-      userRole: membership.role
+      userRole: membership.role,
+      canReviewSubmissions: ['ADMIN', 'TEAM_LEAD'].includes(membership.role)
     });
   } catch (error) {
     console.error('Get org by ID error:', error);
@@ -461,7 +471,8 @@ export const createInvite = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Email and role are required' });
     }
 
-    if (!['TEAM_LEAD', 'MEMBER'].includes(role)) {
+    const normalizedRole = normalizeInviteRole(role);
+    if (!normalizedRole || !['TEAM_LEAD', 'MEMBER'].includes(normalizedRole)) {
       return res.status(400).json({ error: 'Role must be TEAM_LEAD or MEMBER' });
     }
 
@@ -510,7 +521,7 @@ export const createInvite = async (req: Request, res: Response) => {
       data: {
         organizationId,
         email: normalizedInviteEmail,
-        role,
+        role: normalizedRole,
         tokenHash,
         expiresAt,
         invitedByUserId: requesterUserId,
@@ -533,7 +544,7 @@ export const createInvite = async (req: Request, res: Response) => {
       await sendInviteEmail({
         to: normalizedInviteEmail,
         organizationName: invite.organization.name,
-        role,
+        role: normalizedRole,
         inviteUrl,
         inviterName: invite.invitedBy.name || invite.invitedBy.email,
         inviteeName: name
@@ -614,7 +625,7 @@ export const bulkInviteMembers = async (req: Request, res: Response) => {
 
       try {
         const email = row['Email']?.toString()?.trim();
-        const role = row['Role']?.toString()?.trim()?.toUpperCase();
+        const role = normalizeInviteRole(row['Role']);
         const teamName = row['Team']?.toString()?.trim();
         const category = row['Category']?.toString()?.trim();
         const name = row['Name']?.toString()?.trim();
@@ -989,6 +1000,27 @@ export const removeMember = async (req: Request, res: Response) => {
     await prisma.organizationMember.delete({
       where: { id: memberId }
     });
+
+    const remainingMemberships = await prisma.organizationMember.count({
+      where: { userId: member.userId }
+    });
+
+    if (remainingMemberships === 0) {
+      await prisma.user.update({
+        where: { id: member.userId },
+        data: {
+          deletedAt: new Date(),
+          purgedAt: null,
+          otp: null,
+          otpExpiresAt: null,
+          passwordResetOtp: null,
+          passwordResetOtpExpiresAt: null,
+          pendingInviteId: null
+        }
+      }).catch((error) => {
+        console.error('Failed to soft-delete user after removing last membership:', error);
+      });
+    }
 
     return res.json({ message: 'Member removed successfully' });
   } catch (error) {
@@ -2087,24 +2119,23 @@ export const listOkrs = async (req: Request, res: Response) => {
     const now = new Date();
     const where: any = { organizationId };
 
-    // For non-admin users, only show OPEN okrs that are within their period
+    // For non-admin users, restrict to OKRs they are involved in (team/member/KR assignment).
+    // Keep org-wide OKRs limited to OPEN and within period.
     if (membership.role === 'MEMBER' || membership.role === 'TEAM_LEAD') {
-      // Filter by status: only OPEN okrs
-      where.status = 'OPEN';
-
-      // Filter by date: only okrs where periodStart <= today AND periodEnd >= today
-      where.periodStart = { lte: now };
-      where.periodEnd = { gte: now };
-
-      // Also filter by assignment scope
-      const assignmentScope = [
+      const assignmentScope: any[] = [
         { assignments: { some: { targetType: 'MEMBER', targetId: userId } } },
-        { keyResults: { some: { assignedUserId: userId } } },
-        { assignments: { none: {} } }
+        { keyResults: { some: { assignedUserId: userId } } }
       ];
       if (membership.teamId) {
         assignmentScope.unshift({ assignments: { some: { targetType: 'TEAM', targetId: membership.teamId } } });
       }
+
+      assignmentScope.push({
+        assignments: { none: {} },
+        status: 'OPEN',
+        periodStart: { lte: now },
+        periodEnd: { gte: now }
+      });
 
       where.OR = assignmentScope;
     }

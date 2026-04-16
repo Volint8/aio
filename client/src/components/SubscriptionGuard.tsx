@@ -1,4 +1,5 @@
-import React from 'react';
+import React from "react";
+import DebouncedButton from "./common/DebouncedButton";
 
 interface SubscriptionGuardProps {
   isActive: boolean;
@@ -23,21 +24,23 @@ export const SubscriptionGuard: React.FC<SubscriptionGuardProps> = ({
   }
 
   return (
-    <div style={{ position: 'relative', opacity: 0.5, pointerEvents: 'none' }}>
+    <div style={{ position: "relative", opacity: 0.5, pointerEvents: "none" }}>
       {children}
-      <div style={{
-        position: 'absolute',
-        top: '50%',
-        left: '50%',
-        transform: 'translate(-50%, -50%)',
-        background: 'white',
-        padding: '24px',
-        borderRadius: '12px',
-        boxShadow: '0 8px 32px rgba(0,0,0,0.2)',
-        textAlign: 'center',
-        zIndex: 100,
-        minWidth: '300px',
-      }}>
+      <div
+        style={{
+          position: "absolute",
+          top: "50%",
+          left: "50%",
+          transform: "translate(-50%, -50%)",
+          background: "white",
+          padding: "24px",
+          borderRadius: "12px",
+          boxShadow: "0 8px 32px rgba(0,0,0,0.2)",
+          textAlign: "center",
+          zIndex: 100,
+          minWidth: "300px",
+        }}
+      >
         <svg
           width="48"
           height="48"
@@ -47,16 +50,26 @@ export const SubscriptionGuard: React.FC<SubscriptionGuardProps> = ({
           strokeWidth="2"
           strokeLinecap="round"
           strokeLinejoin="round"
-          style={{ marginBottom: '16px' }}
+          style={{ marginBottom: "16px" }}
         >
           <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
           <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
         </svg>
-        <div style={{ fontSize: '16px', fontWeight: 600, color: '#111827', marginBottom: '8px' }}>
+        <div
+          style={{
+            fontSize: "16px",
+            fontWeight: 600,
+            color: "#111827",
+            marginBottom: "8px",
+          }}
+        >
           Feature Locked
         </div>
-        <div style={{ fontSize: '14px', color: '#6b7280', marginBottom: '16px' }}>
-          {disabledMessage || 'Upgrade your subscription to access this feature'}
+        <div
+          style={{ fontSize: "14px", color: "#6b7280", marginBottom: "16px" }}
+        >
+          {disabledMessage ||
+            "Upgrade your subscription to access this feature"}
         </div>
       </div>
     </div>
@@ -91,30 +104,32 @@ export const SubscriptionButton: React.FC<SubscriptionButtonProps> = ({
       className={className}
       disabled={isDisabled}
       style={{
-        position: 'relative',
-        cursor: isDisabled ? 'not-allowed' : 'pointer',
+        position: "relative",
+        cursor: isDisabled ? "not-allowed" : "pointer",
         opacity: isDisabled ? 0.5 : 1,
       }}
     >
       {children}
       {isDisabled && (
-        <div style={{
-          position: 'absolute',
-          top: '50%',
-          left: '50%',
-          transform: 'translate(-50%, -50%)',
-          background: 'rgba(255,255,255,0.95)',
-          padding: '8px 12px',
-          borderRadius: '8px',
-          boxShadow: '0 4px 16px rgba(0,0,0,0.15)',
-          textAlign: 'center',
-          zIndex: 100,
-          whiteSpace: 'nowrap',
-          fontSize: '12px',
-          fontWeight: 500,
-          color: '#dc2626',
-        }}>
-          {disabledMessage || 'Upgrade required'}
+        <div
+          style={{
+            position: "absolute",
+            top: "50%",
+            left: "50%",
+            transform: "translate(-50%, -50%)",
+            background: "rgba(255,255,255,0.95)",
+            padding: "8px 12px",
+            borderRadius: "8px",
+            boxShadow: "0 4px 16px rgba(0,0,0,0.15)",
+            textAlign: "center",
+            zIndex: 100,
+            whiteSpace: "nowrap",
+            fontSize: "12px",
+            fontWeight: 500,
+            color: "#dc2626",
+          }}
+        >
+          {disabledMessage || "Upgrade required"}
         </div>
       )}
     </button>
@@ -144,26 +159,30 @@ export const SubscriptionOverlay: React.FC<SubscriptionOverlayProps> = ({
   }
 
   return (
-    <div style={{
-      position: 'fixed',
-      top: 0,
-      left: 0,
-      right: 0,
-      bottom: 0,
-      background: 'rgba(0,0,0,0.7)',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      zIndex: 9999,
-    }}>
-      <div style={{
-        background: 'white',
-        padding: '40px',
-        borderRadius: '16px',
-        textAlign: 'center',
-        maxWidth: '400px',
-        width: '90%',
-      }}>
+    <div
+      style={{
+        position: "fixed",
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        background: "rgba(0,0,0,0.7)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 9999,
+      }}
+    >
+      <div
+        style={{
+          background: "white",
+          padding: "40px",
+          borderRadius: "16px",
+          textAlign: "center",
+          maxWidth: "400px",
+          width: "90%",
+        }}
+      >
         <svg
           width="64"
           height="64"
@@ -173,32 +192,41 @@ export const SubscriptionOverlay: React.FC<SubscriptionOverlayProps> = ({
           strokeWidth="2"
           strokeLinecap="round"
           strokeLinejoin="round"
-          style={{ marginBottom: '24px' }}
+          style={{ marginBottom: "24px" }}
         >
           <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
           <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
         </svg>
-        <h2 style={{ fontSize: '20px', fontWeight: 700, color: '#111827', marginBottom: '12px' }}>
+        <h2
+          style={{
+            fontSize: "20px",
+            fontWeight: 700,
+            color: "#111827",
+            marginBottom: "12px",
+          }}
+        >
           Subscription Required
         </h2>
-        <p style={{ fontSize: '14px', color: '#6b7280', marginBottom: '24px' }}>
-          {message || 'Your subscription has expired. Please upgrade to continue accessing this feature.'}
+        <p style={{ fontSize: "14px", color: "#6b7280", marginBottom: "24px" }}>
+          {message ||
+            "Your subscription has expired. Please upgrade to continue accessing this feature."}
         </p>
-        <button
+        <DebouncedButton
           onClick={onUpgrade}
+          debounceMs={1000}
           style={{
-            padding: '12px 32px',
-            borderRadius: '8px',
-            border: 'none',
-            background: '#1e40af',
-            color: 'white',
-            fontSize: '14px',
+            padding: "12px 32px",
+            borderRadius: "8px",
+            border: "none",
+            background: "#1e40af",
+            color: "white",
+            fontSize: "14px",
             fontWeight: 600,
-            cursor: 'pointer',
+            cursor: "pointer",
           }}
         >
           Upgrade Now
-        </button>
+        </DebouncedButton>
       </div>
     </div>
   );

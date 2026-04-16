@@ -15,6 +15,8 @@ model User {
   jobTitle                  String?              // Professional role: Software Engineer, Marketer, etc.
   role                      String               @default("USER") // USER, ADMIN
   isVerified                Boolean              @default(false)
+  deletedAt                 DateTime?
+  purgedAt                  DateTime?
   otp                       String?
   otpExpiresAt              DateTime?
   passwordResetOtp          String?
@@ -92,6 +94,10 @@ model Task {
   title          String
   description    String?
   status         String           @default("CREATED") // CREATED, IN_PROGRESS, COMPLETED
+  approvalStatus String           @default("NOT_SUBMITTED") // NOT_SUBMITTED, PENDING, APPROVED, REJECTED
+  approvedById   String?
+  approvedAt     DateTime?
+  approvalNotes  String?
   priority       String           @default("LOW") // LOW, MEDIUM, HIGH
   dueDate        DateTime?
   organizationId String

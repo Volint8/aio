@@ -130,9 +130,8 @@ export const adminSignupComplete = async (req: Request, res: Response) => {
     const {
       email,
       password,
-      name,
       organizationName
-    } = req.body as { email?: string; password?: string; name?: string; organizationName?: string };
+    } = req.body as { email?: string; password?: string; organizationName?: string };
 
     if (!email || !password || !organizationName) {
       return res.status(400).json({ error: 'Email, password and organizationName are required' });
@@ -181,7 +180,7 @@ export const adminSignupComplete = async (req: Request, res: Response) => {
           data: {
             email: normalizedEmail,
             passwordHash,
-            name: name?.trim() || normalizedEmail.split('@')[0],
+            name: normalizedEmail.split('@')[0],
             role: 'USER',
             signupSource: 'ADMIN',
             initialRole: 'ADMIN',
@@ -254,6 +253,10 @@ export const inviteAcceptInit = async (req: Request, res: Response) => {
 
     const email = normalizeEmail(invite.email);
     const existingUser = await prisma.user.findUnique({ where: { email } });
+
+    if (existingUser?.deletedAt) {
+      return res.status(400).json({ error: 'Account is deactivated' });
+    }
 
     if (existingUser?.isVerified) {
       return res.json({
@@ -331,7 +334,7 @@ export const inviteAcceptComplete = async (req: Request, res: Response) => {
     const email = normalizeEmail(invite.email);
     const user = await prisma.user.findUnique({ where: { email } });
 
-    if (!user || !user.isVerified) {
+    if (!user || !user.isVerified || user.deletedAt) {
       return res.status(400).json({ error: 'Account not ready. Complete invite initialization and OTP verification first.' });
     }
 
@@ -407,7 +410,7 @@ export const verifyOtp = async (req: Request, res: Response) => {
     const normalizedEmail = normalizeEmail(email);
     const user = await prisma.user.findUnique({ where: { email: normalizedEmail } });
 
-    if (!user) {
+    if (!user || user.deletedAt) {
       return res.status(400).json({ error: 'User not found' });
     }
 
@@ -493,7 +496,7 @@ export const resendOtp = async (req: Request, res: Response) => {
     const normalizedEmail = normalizeEmail(email);
     const user = await prisma.user.findUnique({ where: { email: normalizedEmail } });
 
-    if (!user) {
+    if (!user || user.deletedAt) {
       return res.status(400).json({ error: 'User not found' });
     }
 
@@ -531,6 +534,10 @@ export const login = async (req: Request, res: Response) => {
     const user = await prisma.user.findUnique({ where: { email: normalizedEmail } });
     if (!user) {
       return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    if (user.deletedAt) {
+      return res.status(401).json({ error: 'Account is deactivated' });
     }
 
     if (!user.isVerified) {
@@ -607,15 +614,17 @@ export const getMe = async (req: Request, res: Response) => {
         name: true,
         jobTitle: true,
         role: true,
+        deletedAt: true,
         createdAt: true
       }
     });
 
-    if (!user) {
+    if (!user || user.deletedAt) {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    return res.json(user);
+    const { deletedAt: _deletedAt, ...safeUser } = user;
+    return res.json(safeUser);
   } catch (error) {
     console.error('Get me error:', error);
     return res.status(500).json({ error: 'Internal server error' });
@@ -634,7 +643,7 @@ export const forgotPasswordInit = async (req: Request, res: Response) => {
     const user = await prisma.user.findUnique({ where: { email: normalizedEmail } });
 
     // Always return success message to prevent email enumeration
-    if (!user || !user.isVerified) {
+    if (!user || !user.isVerified || user.deletedAt) {
       return res.json({ message: 'If the email exists and is verified, a password reset code has been sent.' });
     }
 
@@ -686,7 +695,7 @@ export const forgotPasswordComplete = async (req: Request, res: Response) => {
     const normalizedEmail = normalizeEmail(email);
     const user = await prisma.user.findUnique({ where: { email: normalizedEmail } });
 
-    if (!user || !user.isVerified) {
+    if (!user || !user.isVerified || user.deletedAt) {
       return res.status(400).json({ error: 'Invalid reset request. Please try again.' });
     }
 

@@ -27,6 +27,8 @@ interface OrganizationMember {
     };
 }
 
+const toUiOrgRole = (role: string | null | undefined) => (role === 'ADMIN' ? 'ADMIN' : 'MEMBER');
+
 const OrgSelectionPage = () => {
     const [organizations, setOrganizations] = useState<Organization[]>([]);
     const [loading, setLoading] = useState(true);
@@ -300,34 +302,41 @@ const OrgSelectionPage = () => {
                             <div className="team-members-list">
                                 {teamMembers.map((member) => (
                                     <div key={member.id} className="team-member-row">
-                                        <div className="team-member-info">
-                                            <strong>{member.user.name || member.user.email}</strong>
-                                            <span>{member.user.email}</span>
-                                            <span style={{ fontSize: '0.8em', color: 'var(--text-muted)', marginTop: '4px' }}>
-                                                {member.user.signupSource === 'ADMIN' ? '🏢 Founder' : 
-                                                 member.user.signupSource === 'INVITE' ? '📧 Invited' : '👤 Member'}
-                                                {' • '}
-                                                Joined {new Date(member.joinedAt).toLocaleDateString()}
-                                            </span>
-                                        </div>
+                                        {(() => {
+                                            const uiRole = toUiOrgRole(member.role);
+                                            const uiInitialRole = toUiOrgRole(member.user.initialRole);
+                                            return (
+                                                <>
+                                                    <div className="team-member-info">
+                                                        <strong>{member.user.name || member.user.email}</strong>
+                                                        <span>{member.user.email}</span>
+                                                        <span style={{ fontSize: '0.8em', color: 'var(--text-muted)', marginTop: '4px' }}>
+                                                            {member.user.signupSource === 'ADMIN' ? '🏢 Founder' :
+                                                             member.user.signupSource === 'INVITE' ? '📧 Invited' : '👤 Member'}
+                                                            {' • '}
+                                                            Joined {new Date(member.joinedAt).toLocaleDateString()}
+                                                        </span>
+                                                    </div>
 
-                                        <div className="team-member-role">
-                                            <span className={`role-badge ${member.role?.toLowerCase() || ''}`}>{member.role}</span>
-                                            {member.user.initialRole && member.role !== member.user.initialRole && (
-                                                <span className="role-badge" style={{ background: '#f0f0f0', color: '#666' }}>
-                                                    Started: {member.user.initialRole}
-                                                </span>
-                                            )}
-                                            <select
-                                                value={member.role}
-                                                disabled={updatingMemberId === member.id}
-                                                onChange={(e) => handleRoleChange(member.id, e.target.value)}
-                                            >
-                                                <option value="MEMBER">MEMBER</option>
-                                                <option value="TEAM_LEAD">TEAM LEAD</option>
-                                                {member.role === 'ADMIN' && <option value="ADMIN">ADMIN</option>}
-                                            </select>
-                                        </div>
+                                                    <div className="team-member-role">
+                                                        <span className={`role-badge ${uiRole.toLowerCase()}`}>{uiRole}</span>
+                                                        {member.user.initialRole && uiRole !== uiInitialRole && (
+                                                            <span className="role-badge" style={{ background: '#f0f0f0', color: '#666' }}>
+                                                                Started: {uiInitialRole}
+                                                            </span>
+                                                        )}
+                                                        <select
+                                                            value={uiRole}
+                                                            disabled={updatingMemberId === member.id}
+                                                            onChange={(e) => handleRoleChange(member.id, e.target.value)}
+                                                        >
+                                                            <option value="MEMBER">MEMBER</option>
+                                                            {uiRole === 'ADMIN' && <option value="ADMIN">ADMIN</option>}
+                                                        </select>
+                                                    </div>
+                                                </>
+                                            );
+                                        })()}
                                     </div>
                                 ))}
                             </div>
@@ -351,7 +360,6 @@ const OrgSelectionPage = () => {
                                     onChange={(e) => setInviteRole(e.target.value)}
                                 >
                                     <option value="MEMBER">MEMBER</option>
-                                    <option value="TEAM_LEAD">TEAM LEAD</option>
                                 </select>
                             </div>
                             <div className="modal-actions">
@@ -372,7 +380,7 @@ const OrgSelectionPage = () => {
                                                 <span>Expires {new Date(invite.expiresAt).toLocaleDateString()}</span>
                                             </div>
                                             <div className="team-member-role">
-                                                <span className={`role-badge ${invite.role?.toLowerCase() || ''}`}>{invite.role}</span>
+                                                <span className={`role-badge ${toUiOrgRole(invite.role).toLowerCase()}`}>{toUiOrgRole(invite.role)}</span>
                                                 <span className={`role-badge ${invite.status?.toLowerCase() || ''}`}>{invite.status}</span>
                                             </div>
                                         </div>

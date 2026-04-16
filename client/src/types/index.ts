@@ -2,7 +2,7 @@ export interface User {
     id: string;
     email: string;
     name: string;
-    role: 'USER' | 'ADMIN' | 'TEAM_LEAD' | 'MEMBER';
+    role: 'USER' | 'ADMIN' | 'MEMBER';
 }
 
 export interface Organization {
@@ -63,4 +63,3 @@ export interface ActivityLog {
     createdAt: string;
     user?: User;
 }
-

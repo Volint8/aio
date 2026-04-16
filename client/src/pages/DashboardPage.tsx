@@ -10,6 +10,7 @@ import TeamTrackerView from "../components/TeamTrackerView";
 import OkrView from "../components/OkrView";
 import SubscriptionPage from "./SubscriptionPage";
 import ErrorDialog from "../components/ErrorDialog";
+import DebouncedButton from "../components/common/DebouncedButton";
 import * as XLSX from "xlsx";
 import "../styles/Dashboard.css";
 
@@ -33,6 +34,9 @@ interface Task {
   title: string;
   description: string | null;
   status: string;
+  approvalStatus?: string | null;
+  approvedAt?: string | null;
+  approvalNotes?: string | null;
   priority: string;
   dueDate: string | null;
   assignee: {
@@ -210,7 +214,11 @@ const TeamMultiDropdown = ({
       </button>
 
       {isOpen && (
-        <div className="team-multi-select-menu" role="listbox" aria-multiselectable="true">
+        <div
+          className="team-multi-select-menu"
+          role="listbox"
+          aria-multiselectable="true"
+        >
           {availableTeams.length > 0 ? (
             availableTeams.map((team) => (
               <label className="team-multi-select-option" key={team.id}>
@@ -227,6 +235,204 @@ const TeamMultiDropdown = ({
           )}
         </div>
       )}
+    </div>
+  );
+};
+
+type MemberOption = {
+  id: string;
+  name: string | null;
+  email: string;
+};
+
+interface MemberMultiSelectProps {
+  options: MemberOption[];
+  value: string[];
+  onChange: (userIds: string[]) => void;
+  lockedIds?: string[];
+  maxVisibleChips?: number;
+}
+
+const MemberMultiSelect = ({
+  options,
+  value,
+  onChange,
+  lockedIds = [],
+  maxVisibleChips = 8,
+}: MemberMultiSelectProps) => {
+  const [query, setQuery] = useState("");
+
+  const locked = useMemo(() => new Set(lockedIds.filter(Boolean)), [lockedIds]);
+  const selected = useMemo(() => new Set(value), [value]);
+
+  const filteredOptions = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+    if (!normalizedQuery) return options;
+    return options.filter((o) => {
+      const haystack = `${o.name || ""} ${o.email}`.toLowerCase();
+      return haystack.includes(normalizedQuery);
+    });
+  }, [options, query]);
+
+  const selectedOptions = useMemo(
+    () => options.filter((o) => selected.has(o.id)),
+    [options, selected],
+  );
+
+  const visibleChips = selectedOptions.slice(0, maxVisibleChips);
+  const hiddenChipCount = Math.max(
+    0,
+    selectedOptions.length - visibleChips.length,
+  );
+
+  const getInitials = (label: string) => {
+    const trimmed = label.trim();
+    if (!trimmed) return "U";
+    const parts = trimmed.split(/\s+/);
+    const initials = parts
+      .slice(0, 2)
+      .map((p) => p[0])
+      .join("");
+    return initials.toUpperCase();
+  };
+
+  const toggle = (userId: string) => {
+    if (locked.has(userId)) return;
+    onChange(
+      selected.has(userId)
+        ? value.filter((id) => id !== userId)
+        : [...value, userId],
+    );
+  };
+
+  const remove = (userId: string) => {
+    if (locked.has(userId)) return;
+    onChange(value.filter((id) => id !== userId));
+  };
+
+  const selectAllFiltered = () => {
+    const addIds = filteredOptions
+      .map((o) => o.id)
+      .filter((id) => !selected.has(id));
+    onChange([...value, ...addIds]);
+  };
+
+  const clearAll = () => {
+    onChange(value.filter((id) => locked.has(id)));
+  };
+
+  return (
+    <div className="member-picker">
+      <div className="member-picker-top">
+        <div className="member-picker-meta">
+          <span className="member-picker-title">
+            Selected: {selectedOptions.length}
+          </span>
+          <div className="member-picker-actions">
+            <DebouncedButton
+              type="button"
+              className="btn-text member-picker-action"
+              onClick={selectAllFiltered}
+              disabled={filteredOptions.length === 0}
+              debounceMs={300}
+            >
+              Select all
+            </DebouncedButton>
+            <DebouncedButton
+              type="button"
+              className="btn-text member-picker-action"
+              onClick={clearAll}
+              disabled={
+                value.length === 0 || value.every((id) => locked.has(id))
+              }
+              debounceMs={300}
+            >
+              Clear
+            </DebouncedButton>
+          </div>
+        </div>
+
+        <input
+          type="text"
+          className="member-picker-search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search members by name or email…"
+        />
+
+        {selectedOptions.length > 0 && (
+          <div className="member-picker-chips" aria-label="Selected members">
+            {visibleChips.map((o) => (
+              <span className="member-chip" key={o.id}>
+                <span className="member-chip-avatar">
+                  {getInitials(o.name || o.email)}
+                </span>
+                <span className="member-chip-label">{o.name || o.email}</span>
+                <button
+                  type="button"
+                  className="member-chip-remove"
+                  aria-label={`Remove ${o.name || o.email}`}
+                  onClick={() => remove(o.id)}
+                  disabled={locked.has(o.id)}
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+            {hiddenChipCount > 0 && (
+              <span className="member-chip member-chip-more">
+                +{hiddenChipCount} more
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div
+        className="member-picker-list"
+        role="listbox"
+        aria-multiselectable="true"
+      >
+        {filteredOptions.length === 0 ? (
+          <div className="member-picker-empty">
+            No members match your search.
+          </div>
+        ) : (
+          filteredOptions.map((o) => {
+            const isLocked = locked.has(o.id);
+            const isChecked = selected.has(o.id);
+            return (
+              <button
+                type="button"
+                key={o.id}
+                className={`member-picker-row ${isChecked ? "selected" : ""} ${isLocked ? "locked" : ""}`}
+                role="option"
+                aria-selected={isChecked}
+                onClick={() => toggle(o.id)}
+                disabled={false}
+              >
+                <span className="member-picker-avatar">
+                  {getInitials(o.name || o.email)}
+                </span>
+                <span className="member-picker-info">
+                  <span className="member-picker-name">
+                    {o.name || o.email}
+                  </span>
+                  <span className="member-picker-email">{o.email}</span>
+                </span>
+                <input
+                  type="checkbox"
+                  checked={isChecked}
+                  onClick={(e) => e.stopPropagation()}
+                  onChange={() => toggle(o.id)}
+                  disabled={isLocked}
+                  aria-label={`Select ${o.name || o.email}`}
+                />
+              </button>
+            );
+          })
+        )}
+      </div>
     </div>
   );
 };
@@ -738,11 +944,10 @@ const DashboardPage = () => {
     organization?.userRole || storedOrgRole
   ).toUpperCase();
   const isAdmin = effectiveOrgRole === "ADMIN";
-  const isTeamLead = effectiveOrgRole === "TEAM_LEAD";
-  const isMember = effectiveOrgRole === "MEMBER";
-  const canTrackTeam =
-    effectiveOrgRole === "ADMIN" || effectiveOrgRole === "TEAM_LEAD";
-  const canUseTrackerCharts = isAdmin || isTeamLead;
+  const canTrackTeam = isAdmin;
+  const canUseTrackerCharts = isAdmin;
+  const canReviewSubmissions =
+    Boolean((organization as any)?.canReviewSubmissions) || isAdmin;
   const trackerView: TrackerView =
     requestedTrackerView === "teams" ? "teams" : "users";
 
@@ -754,13 +959,9 @@ const DashboardPage = () => {
       const team = teamDistribution.find((t) => t.teamId === urlTeamId);
       if (team) return team.teamName;
     }
-    // For team leads, use their assigned team name (first team in distribution)
-    if (isTeamLead && teamDistribution.length > 0) {
-      return teamDistribution[0].teamName;
-    }
     // For admins viewing without specific team, return null to show generic title
     return null;
-  }, [urlTeamId, teamDistribution, isTeamLead]);
+  }, [urlTeamId, teamDistribution]);
 
   const currentSection: DashboardSection = useMemo(() => {
     if (requestedSection === "board") return "board";
@@ -776,54 +977,9 @@ const DashboardPage = () => {
     if (requestedSection === "settings") return "settings";
     if (requestedSection === "support") return "support";
     return "board";
-  }, [requestedSection, canTrackTeam, isAdmin, isTeamLead, isMember]);
+  }, [requestedSection, canTrackTeam, isAdmin]);
 
-  const tagSourceMap = useMemo(() => {
-    const map: Record<
-      string,
-      { okrTitle: string; krTitle: string; periodEnd: string }
-    > = {};
-    const now = new Date();
-    okrs.forEach((okr) => {
-      // Only include tags from OKRs that haven't expired
-      const periodEnd = new Date(okr.periodEnd);
-      const isExpired = periodEnd < now;
-
-      if (!isExpired) {
-        okr.keyResults?.forEach((kr) => {
-          if (kr.tag) {
-            map[kr.tag.id] = {
-              okrTitle: okr.title,
-              krTitle: kr.title,
-              periodEnd: okr.periodEnd,
-            };
-          }
-        });
-      }
-    });
-    return map;
-  }, [okrs]);
-
-  // Filter tags to only show active ones (from non-expired OKRs or tags not linked to any OKR)
-  const availableTags = useMemo(() => {
-    const now = new Date();
-    return tags.filter((tag) => {
-      const okrInfo = tagSourceMap[tag.id];
-      // If tag is not in map, check if it was from an expired OKR
-      if (!okrInfo) {
-        // Find if this tag belongs to any expired OKR
-        const linkedOkr = okrs.find((okr) =>
-          okr.keyResults?.some((kr) => kr.tag?.id === tag.id),
-        );
-        if (linkedOkr) {
-          const periodEnd = new Date(linkedOkr.periodEnd);
-          return periodEnd >= now; // Only include if not expired
-        }
-        return true; // Tag not linked to any OKR, include it
-      }
-      return true; // Tag is in active OKR, include it
-    });
-  }, [tags, tagSourceMap, okrs]);
+  const availableTags = useMemo(() => tags, [tags]);
 
   const createEmptyKrForm = (): OkrKeyResultForm => ({
     title: "",
@@ -893,9 +1049,6 @@ const DashboardPage = () => {
 
   const assignableUsers = (organization?.members || []).filter(
     (member) => member.role !== "ADMIN",
-  );
-  const teamLeadUsers = (organization?.members || []).filter(
-    (member) => member.role === "TEAM_LEAD",
   );
 
   useEffect(() => {
@@ -1071,9 +1224,7 @@ const DashboardPage = () => {
 
   const formatRole = (role: string) => {
     if (role === "ADMIN") return "Admin";
-    if (role === "TEAM_LEAD") return "Team Lead";
-    if (role === "MEMBER") return "Team Member";
-    return role;
+    return "Member";
   };
 
   const formatMemberCategory = (stats?: MemberStatRecord) => {
@@ -1142,13 +1293,15 @@ const DashboardPage = () => {
       })
       .map((member) => {
         const stats = memberStats.find((m) => m.userId === member.userId);
-        const team = member.team || teams.find(
-          (t) =>
-            t.id === member.teamId ||
-            (t.members &&
-              t.members.some((m) => (m.userId || m.id) === member.userId)) ||
-            (t.people && t.people.some((p) => p.userId === member.userId)),
-        );
+        const team =
+          member.team ||
+          teams.find(
+            (t) =>
+              t.id === member.teamId ||
+              (t.members &&
+                t.members.some((m) => (m.userId || m.id) === member.userId)) ||
+              (t.people && t.people.some((p) => p.userId === member.userId)),
+          );
         const roleLabel =
           member.user.initialRole?.trim() || formatRole(member.role);
         const category = formatMemberCategory(stats);
@@ -1281,44 +1434,6 @@ const DashboardPage = () => {
           setTeamDistribution(distributionRes.data || []);
         } catch (error) {
           console.error("Failed to fetch admin data:", error);
-          setTeams([]);
-          setInvites([]);
-          setMemberStats([]);
-          setTeamDistribution([]);
-        }
-      } else if (role === "TEAM_LEAD") {
-        try {
-          const [memberStatsRes, distRes] = await Promise.all([
-            api.get("/tasks/team-stats", { params: { organizationId: orgId } }),
-            api.get("/tasks/team-distribution", {
-              params: { organizationId: orgId },
-            }),
-          ]);
-          const distributionData = distRes.data || [];
-          setTeams(
-            distributionData.map((item: any) => ({
-              id: item.teamId,
-              name: item.teamName,
-              leadUser: item.leadUser,
-              stats: item.stats,
-              members: [],
-              people: item.people || [],
-            })),
-          );
-          setInvites([]);
-          // Filter out ADMIN users from member stats
-          const filteredMemberStats = (memberStatsRes.data || []).filter(
-            (m: any) => {
-              const member = orgMembers.find(
-                (orgMember: any) => orgMember.userId === m.userId,
-              );
-              return member?.role !== "ADMIN";
-            },
-          );
-          setMemberStats(filteredMemberStats);
-          setTeamDistribution(distributionData);
-        } catch (error) {
-          console.error("Failed to fetch team lead data:", error);
           setTeams([]);
           setInvites([]);
           setMemberStats([]);
@@ -1548,7 +1663,10 @@ const DashboardPage = () => {
         ...newOkr,
         assignments,
         keyResults: newOkr.keyResults.filter(
-          (kr) => kr.title.trim() && (kr.tagId || kr.tagName.trim()) && kr.assignedUserId,
+          (kr) =>
+            kr.title.trim() &&
+            (kr.tagId || kr.tagName.trim()) &&
+            kr.assignedUserId,
         ),
       });
       setNewOkr({
@@ -1637,7 +1755,10 @@ const DashboardPage = () => {
         ...editOkrForm,
         assignments,
         keyResults: editOkrForm.keyResults.filter(
-          (kr) => kr.title.trim() && (kr.tagId || kr.tagName.trim()) && kr.assignedUserId,
+          (kr) =>
+            kr.title.trim() &&
+            (kr.tagId || kr.tagName.trim()) &&
+            kr.assignedUserId,
         ),
       });
       setShowEditOkrModal(false);
@@ -1669,9 +1790,12 @@ const DashboardPage = () => {
     status: "APPROVED" | "REJECTED" | "PENDING",
   ) => {
     try {
-      await api.post(`/orgs/${orgId}/okrs/${okrId}/key-results/${keyResultId}/review`, {
-        status,
-      });
+      await api.post(
+        `/orgs/${orgId}/okrs/${okrId}/key-results/${keyResultId}/review`,
+        {
+          status,
+        },
+      );
       await fetchData();
     } catch (error: any) {
       showError(
@@ -1751,16 +1875,6 @@ const DashboardPage = () => {
 
   const resetTeamForm = () => {
     setTeamForm({ name: "", leadUserId: "", memberUserIds: [] });
-  };
-
-  const toggleTeamMember = (userId: string) => {
-    setTeamForm((prev) => {
-      const exists = prev.memberUserIds.includes(userId);
-      const next = exists
-        ? prev.memberUserIds.filter((id) => id !== userId)
-        : [...prev.memberUserIds, userId];
-      return { ...prev, memberUserIds: next };
-    });
   };
 
   const handleCreateTeam = async (e: React.FormEvent) => {
@@ -1892,7 +2006,7 @@ const DashboardPage = () => {
   // Bulk invite handlers
   const handleDownloadSampleSheet = () => {
     const data = [
-      { Email: "john.doe@company.com", Team: "Growth", Role: "TEAM_LEAD" },
+      { Email: "john.doe@company.com", Team: "Growth", Role: "MEMBER" },
       { Email: "jane.smith@company.com", Team: "Operations", Role: "MEMBER" },
       { Email: "bob.wilson@company.com", Team: "Growth", Role: "MEMBER" },
     ];
@@ -1915,7 +2029,7 @@ const DashboardPage = () => {
       [""],
       ["Required Columns:"],
       ["- Email: Work email address (required)"],
-      ["- Role: TEAM_LEAD or MEMBER (required)"],
+      ["- Role: MEMBER (required)"],
       [""],
       ["Optional Columns:"],
       ["- Team: Team name (will be created automatically if it doesn't exist)"],
@@ -1924,7 +2038,6 @@ const DashboardPage = () => {
       ["- Maximum file size: 5MB"],
       ["- Supported formats: .xlsx, .xls, .csv"],
       ["- Teams will be created automatically from the upload"],
-      ["- Team leads are identified by TEAM_LEAD role"],
       ["- Invites expire after 72 hours"],
     ];
     const wsInstructions = XLSX.utils.aoa_to_sheet(instructions);
@@ -2741,12 +2854,11 @@ const DashboardPage = () => {
           <BoardView
             memberStats={memberStats}
             teamDistribution={teamDistribution}
-            userRole={
-              organization?.userRole as "ADMIN" | "TEAM_LEAD" | "MEMBER"
-            }
+            userRole={isAdmin ? "ADMIN" : "MEMBER"}
             onCreateTask={() => setShowCreateTaskModal(true)}
             onNavigate={(path) => navigate(path)}
             organizationName={organization?.name}
+            teamsCount={teams.length}
             organizationMembers={(organization?.members || []).map((m) => ({
               userId: m.userId,
               role: m.role,
@@ -2757,11 +2869,7 @@ const DashboardPage = () => {
 
         {currentSection === "task-tracker" && (
           <TaskTrackerView
-            tasks={
-              isTeamLead
-                ? tasks.filter((t) => t.assignee?.id === user?.id)
-                : tasks
-            }
+            tasks={tasks}
             filter={filter}
             onFilterChange={(f) =>
               setFilter(
@@ -2789,21 +2897,15 @@ const DashboardPage = () => {
               email: m.user.email,
             }))}
             tags={tags}
-            hideOwnerFilter={isTeamLead}
-            userRole={
-              organization?.userRole as "ADMIN" | "TEAM_LEAD" | "MEMBER"
-            }
+            hideOwnerFilter={false}
+            userRole={isAdmin ? "ADMIN" : "MEMBER"}
           />
         )}
 
         {currentSection === "team-tracker" && canTrackTeam && (
           <TeamTrackerView
             teamName={teamTrackerName}
-            tasks={
-              isTeamLead
-                ? tasks.filter((t) => t.assignee?.id !== user?.id)
-                : tasks
-            }
+            tasks={tasks}
             members={(organization?.members || [])
               .filter((m) => m.userId !== user?.id)
               .map((m) => ({
@@ -2834,16 +2936,14 @@ const DashboardPage = () => {
             onCreateTask={() => setShowCreateTaskModal(true)}
             onSendAlert={() => setShowSendAlertModal(true)}
             tags={tags}
-            userRole={
-              organization?.userRole as "ADMIN" | "TEAM_LEAD" | "MEMBER"
-            }
+            userRole={"ADMIN"}
           />
         )}
 
         {currentSection === "okr" && organization && (
           <OkrView
             okrs={okrs}
-            userRole={organization.userRole as "ADMIN" | "TEAM_LEAD" | "MEMBER"}
+            userRole={isAdmin ? "ADMIN" : "MEMBER"}
             onCreateTask={() => setShowCreateTaskModal(true)}
             onCreateOkr={() => setShowCreateOkrModal(true)}
             onEditOkr={handleOpenEditOkr}
@@ -2870,7 +2970,7 @@ const DashboardPage = () => {
                   Show All
                 </button>
               )}
-              {(isAdmin || isTeamLead) && (
+              {isAdmin && (
                 <button
                   onClick={() => setShowSendAlertModal(true)}
                   className="btn-secondary"
@@ -2975,16 +3075,16 @@ const DashboardPage = () => {
                         disabled={!isAdmin || inviting}
                       >
                         <option value="MEMBER">Member</option>
-                        <option value="TEAM_LEAD">Team Lead</option>
                       </select>
                     </div>
-                    <button
+                    <DebouncedButton
                       type="submit"
                       className="btn-primary"
                       disabled={!isAdmin || inviting}
+                      debounceMs={800}
                     >
                       {inviting ? "Sending..." : "Send Invite"}
-                    </button>
+                    </DebouncedButton>
                   </form>
 
                   {invites.length > 0 && (
@@ -3407,8 +3507,6 @@ const DashboardPage = () => {
             </div>
             <div className="tasks-list">
               {tags.map((tag: any) => {
-                const okrInfo = tagSourceMap[tag.id];
-                const hasOkr = !!okrInfo;
                 return (
                   <div
                     key={tag.id}
@@ -3427,16 +3525,8 @@ const DashboardPage = () => {
                           display: "flex",
                           alignItems: "center",
                           gap: "12px",
-                          cursor: hasOkr ? "pointer" : "default",
+                          cursor: "default",
                         }}
-                        onClick={() => {
-                          if (hasOkr) {
-                            navigate("/dashboard?section=okr");
-                          }
-                        }}
-                        title={
-                          hasOkr ? `Click to view OKR: ${okrInfo.okrTitle}` : ""
-                        }
                       >
                         <span
                           style={{
@@ -3452,9 +3542,7 @@ const DashboardPage = () => {
                           <strong
                             style={{
                               fontSize: "1.1em",
-                              color: hasOkr
-                                ? "var(--primary-color)"
-                                : "inherit",
+                              color: "inherit",
                             }}
                           >
                             {tag.name}
@@ -3467,16 +3555,6 @@ const DashboardPage = () => {
                             }}
                           >
                             Used in {tag.taskCount || 0} tasks
-                            {hasOkr && (
-                              <span
-                                style={{
-                                  marginLeft: "8px",
-                                  color: "var(--primary-color)",
-                                }}
-                              >
-                                → {okrInfo.okrTitle}
-                              </span>
-                            )}
                           </div>
                         </div>
                       </div>
@@ -3863,7 +3941,7 @@ const DashboardPage = () => {
 
             {!canUseTrackerCharts && stats && (
               <div className="stats-grid">
-                {(isMember || isTeamLead) && (
+                {!isAdmin && (
                   <div
                     className="stat-card performance-highlight"
                     title="View your performance metrics"
@@ -3935,7 +4013,7 @@ const DashboardPage = () => {
                     ? "Recently Deleted"
                     : "Task Tracker"}
                 </h2>
-                {(isTeamLead || isMember) && (
+                {!isAdmin && (
                   <p className="org-subtitle" style={{ margin: 0 }}>
                     Your tasks + your team-linked tasks
                   </p>
@@ -4045,26 +4123,43 @@ const DashboardPage = () => {
                                 style={{
                                   borderColor: task.tag.color,
                                   color: task.tag.color,
-                                  cursor: tagSourceMap[task.tag.id]
-                                    ? "pointer"
-                                    : "default",
-                                }}
-                                title={
-                                  tagSourceMap[task.tag.id]
-                                    ? `Objective: ${tagSourceMap[task.tag.id].okrTitle} | KR: ${tagSourceMap[task.tag.id].krTitle}`
-                                    : ""
-                                }
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  if (task.tag && tagSourceMap[task.tag.id]) {
-                                    navigate("/dashboard?section=okr");
-                                  }
+                                  cursor: "default",
                                 }}
                               >
                                 {task.tag.name}
-                                {task.tag && tagSourceMap[task.tag.id] && " →"}
                               </span>
                             )}
+                            {task.approvalStatus &&
+                              task.approvalStatus !== "NOT_SUBMITTED" && (
+                                <span
+                                  className="status-badge"
+                                  style={{
+                                    background:
+                                      task.approvalStatus === "APPROVED"
+                                        ? "#dcfce7"
+                                        : task.approvalStatus === "REJECTED"
+                                          ? "#fee2e2"
+                                          : "#fef3c7",
+                                    color:
+                                      task.approvalStatus === "APPROVED"
+                                        ? "#166534"
+                                        : task.approvalStatus === "REJECTED"
+                                          ? "#b91c1c"
+                                          : "#92400e",
+                                    borderColor:
+                                      task.approvalStatus === "APPROVED"
+                                        ? "#86efac"
+                                        : task.approvalStatus === "REJECTED"
+                                          ? "#fecaca"
+                                          : "#fde68a",
+                                  }}
+                                  title="Approval status"
+                                >
+                                  {task.approvalStatus === "PENDING"
+                                    ? "Awaiting approval"
+                                    : task.approvalStatus}
+                                </span>
+                              )}
                           </div>
                         </div>
                         <div className="task-meta">
@@ -4256,30 +4351,47 @@ const DashboardPage = () => {
                                 style={{
                                   borderColor: selectedTask.tag.color,
                                   color: selectedTask.tag.color,
-                                  cursor: tagSourceMap[selectedTask.tag.id]
-                                    ? "pointer"
-                                    : "default",
-                                }}
-                                title={
-                                  tagSourceMap[selectedTask.tag.id]
-                                    ? `Objective: ${tagSourceMap[selectedTask.tag.id].okrTitle} | KR: ${tagSourceMap[selectedTask.tag.id].krTitle}`
-                                    : ""
-                                }
-                                onClick={() => {
-                                  if (
-                                    selectedTask.tag &&
-                                    tagSourceMap[selectedTask.tag.id]
-                                  ) {
-                                    navigate("/dashboard?section=okr");
-                                  }
+                                  cursor: "default",
                                 }}
                               >
                                 {selectedTask.tag.name}
-                                {selectedTask.tag &&
-                                  tagSourceMap[selectedTask.tag.id] &&
-                                  " →"}
                               </span>
                             )}
+                            {selectedTask.approvalStatus &&
+                              selectedTask.approvalStatus !==
+                                "NOT_SUBMITTED" && (
+                                <span
+                                  className="priority-badge"
+                                  style={{
+                                    background:
+                                      selectedTask.approvalStatus === "APPROVED"
+                                        ? "#dcfce7"
+                                        : selectedTask.approvalStatus ===
+                                            "REJECTED"
+                                          ? "#fee2e2"
+                                          : "#fef3c7",
+                                    color:
+                                      selectedTask.approvalStatus === "APPROVED"
+                                        ? "#166534"
+                                        : selectedTask.approvalStatus ===
+                                            "REJECTED"
+                                          ? "#b91c1c"
+                                          : "#92400e",
+                                    borderColor:
+                                      selectedTask.approvalStatus === "APPROVED"
+                                        ? "#86efac"
+                                        : selectedTask.approvalStatus ===
+                                            "REJECTED"
+                                          ? "#fecaca"
+                                          : "#fde68a",
+                                  }}
+                                  title="Approval status"
+                                >
+                                  {selectedTask.approvalStatus === "PENDING"
+                                    ? "Awaiting approval"
+                                    : selectedTask.approvalStatus}
+                                </span>
+                              )}
                           </div>
                         </div>
                         <h3>{selectedTask.title}</h3>
@@ -4682,32 +4794,33 @@ const DashboardPage = () => {
                                     {sub.reviewNotes}
                                   </p>
                                 )}
-                                {isAdmin && sub.status === "PENDING" && (
-                                  <div className="submission-actions">
-                                    <button
-                                      className="btn-action success"
-                                      onClick={() => {
-                                        handleReviewSubmission(
-                                          sub.id,
-                                          "APPROVED",
-                                        );
-                                      }}
-                                    >
-                                      Approve
-                                    </button>
-                                    <button
-                                      className="btn-action danger"
-                                      onClick={() => {
-                                        handleReviewSubmission(
-                                          sub.id,
-                                          "REJECTED",
-                                        );
-                                      }}
-                                    >
-                                      Reject
-                                    </button>
-                                  </div>
-                                )}
+                                {canReviewSubmissions &&
+                                  sub.status === "PENDING" && (
+                                    <div className="submission-actions">
+                                      <button
+                                        className="btn-action success"
+                                        onClick={() => {
+                                          handleReviewSubmission(
+                                            sub.id,
+                                            "APPROVED",
+                                          );
+                                        }}
+                                      >
+                                        Approve
+                                      </button>
+                                      <button
+                                        className="btn-action danger"
+                                        onClick={() => {
+                                          handleReviewSubmission(
+                                            sub.id,
+                                            "REJECTED",
+                                          );
+                                        }}
+                                      >
+                                        Reject
+                                      </button>
+                                    </div>
+                                  )}
                               </div>
                             ))}
                           </div>
@@ -5008,21 +5121,9 @@ const DashboardPage = () => {
                 >
                   <option value="">Select a tag</option>
                   {availableTags.map((tag) => {
-                    const okrInfo = tagSourceMap[tag.id];
-                    const displayText = okrInfo
-                      ? `${tag.name} - ${okrInfo.krTitle}`
-                      : tag.name;
                     return (
-                      <option
-                        key={tag.id}
-                        value={tag.id}
-                        title={
-                          okrInfo
-                            ? `OKR: ${okrInfo.okrTitle} | KR: ${okrInfo.krTitle}`
-                            : ""
-                        }
-                      >
-                        {displayText}
+                      <option key={tag.id} value={tag.id}>
+                        {tag.name}
                       </option>
                     );
                   })}
@@ -5079,44 +5180,6 @@ const DashboardPage = () => {
                             {selectedCreateTaskTag.name}
                           </span>
                         </div>
-                        {tagSourceMap[selectedCreateTaskTag.id] && (
-                          <div
-                            style={{
-                              fontSize: "0.8em",
-                              color: "var(--text-muted)",
-                            }}
-                          >
-                            <div style={{ marginBottom: "2px" }}>
-                              <strong>OKR:</strong>{" "}
-                              <span
-                                title={
-                                  tagSourceMap[selectedCreateTaskTag.id]
-                                    .okrTitle
-                                }
-                              >
-                                {tagSourceMap[selectedCreateTaskTag.id].okrTitle
-                                  .length > 60
-                                  ? `${tagSourceMap[selectedCreateTaskTag.id].okrTitle.substring(0, 60)}...`
-                                  : tagSourceMap[selectedCreateTaskTag.id]
-                                      .okrTitle}
-                              </span>
-                            </div>
-                            <div>
-                              <strong>Key Result:</strong>{" "}
-                              <span
-                                title={
-                                  tagSourceMap[selectedCreateTaskTag.id].krTitle
-                                }
-                              >
-                                {tagSourceMap[selectedCreateTaskTag.id].krTitle
-                                  .length > 60
-                                  ? `${tagSourceMap[selectedCreateTaskTag.id].krTitle.substring(0, 60)}...`
-                                  : tagSourceMap[selectedCreateTaskTag.id]
-                                      .krTitle}
-                              </span>
-                            </div>
-                          </div>
-                        )}
                       </div>
                     </div>
                   </div>
@@ -5200,7 +5263,7 @@ const DashboardPage = () => {
                   </select>
                 </div>
               )}
-              {!isTeamLead && (
+              {!isAdmin && (
                 <div className="form-group">
                   <label
                     style={{
@@ -5221,7 +5284,7 @@ const DashboardPage = () => {
                       }
                       style={{ width: "auto", margin: 0 }}
                     />
-                    <span>Alert Team Lead about this task</span>
+                    <span>Send task alert for review</span>
                   </label>
                   <small
                     style={{
@@ -5230,7 +5293,7 @@ const DashboardPage = () => {
                       marginTop: 4,
                     }}
                   >
-                    Team leads will be notified about this task for review.
+                    Reviewers will be notified about this task.
                   </small>
                 </div>
               )}
@@ -5291,25 +5354,11 @@ const DashboardPage = () => {
                   required
                 >
                   <option value="">Select a tag</option>
-                  {availableTags.map((tag) => {
-                    const okrInfo = tagSourceMap[tag.id];
-                    const displayText = okrInfo
-                      ? `${tag.name} - ${okrInfo.krTitle}`
-                      : tag.name;
-                    return (
-                      <option
-                        key={tag.id}
-                        value={tag.id}
-                        title={
-                          okrInfo
-                            ? `OKR: ${okrInfo.okrTitle} | KR: ${okrInfo.krTitle}`
-                            : ""
-                        }
-                      >
-                        {displayText}
-                      </option>
-                    );
-                  })}
+                  {availableTags.map((tag) => (
+                    <option key={tag.id} value={tag.id}>
+                      {tag.name}
+                    </option>
+                  ))}
                 </select>
                 {selectedEditTaskTag && (
                   <div
@@ -5363,43 +5412,6 @@ const DashboardPage = () => {
                             {selectedEditTaskTag.name}
                           </span>
                         </div>
-                        {tagSourceMap[selectedEditTaskTag.id] && (
-                          <div
-                            style={{
-                              fontSize: "0.8em",
-                              color: "var(--text-muted)",
-                            }}
-                          >
-                            <div style={{ marginBottom: "2px" }}>
-                              <strong>OKR:</strong>{" "}
-                              <span
-                                title={
-                                  tagSourceMap[selectedEditTaskTag.id].okrTitle
-                                }
-                              >
-                                {tagSourceMap[selectedEditTaskTag.id].okrTitle
-                                  .length > 60
-                                  ? `${tagSourceMap[selectedEditTaskTag.id].okrTitle.substring(0, 60)}...`
-                                  : tagSourceMap[selectedEditTaskTag.id]
-                                      .okrTitle}
-                              </span>
-                            </div>
-                            <div>
-                              <strong>Key Result:</strong>{" "}
-                              <span
-                                title={
-                                  tagSourceMap[selectedEditTaskTag.id].krTitle
-                                }
-                              >
-                                {tagSourceMap[selectedEditTaskTag.id].krTitle
-                                  .length > 60
-                                  ? `${tagSourceMap[selectedEditTaskTag.id].krTitle.substring(0, 60)}...`
-                                  : tagSourceMap[selectedEditTaskTag.id]
-                                      .krTitle}
-                              </span>
-                            </div>
-                          </div>
-                        )}
                       </div>
                     </div>
                   </div>
@@ -5479,7 +5491,7 @@ const DashboardPage = () => {
                     ))}
                 </select>
               </div>
-              {!isTeamLead && (
+              {!isAdmin && (
                 <div className="form-group">
                   <label
                     style={{
@@ -5499,7 +5511,7 @@ const DashboardPage = () => {
                         })
                       }
                     />
-                    <span>Alert Team Lead about this task</span>
+                    <span>Send task alert for review</span>
                   </label>
                   <p
                     style={{
@@ -5508,7 +5520,7 @@ const DashboardPage = () => {
                       color: "var(--text-secondary)",
                     }}
                   >
-                    Team leads will be notified about this task for review.
+                    Reviewers will be notified about this task.
                   </p>
                 </div>
               )}
@@ -5647,7 +5659,7 @@ const DashboardPage = () => {
                 />
               </div>
               <div className="form-group">
-                <label>Team Lead - Optional</label>
+                <label>Lead (Optional)</label>
                 <select
                   value={teamForm.leadUserId}
                   onChange={(e) => {
@@ -5663,49 +5675,47 @@ const DashboardPage = () => {
                   style={{ maxHeight: "200px", overflowY: "auto" }}
                 >
                   <option value="">Select lead (optional)</option>
-                  {teamLeadUsers.length > 0 ? (
-                    teamLeadUsers.map((member) => (
+                  {assignableUsers.length > 0 ? (
+                    assignableUsers.map((member) => (
                       <option key={member.user.id} value={member.user.id}>
                         {member.user.name || member.user.email}
                       </option>
                     ))
                   ) : (
                     <option disabled value="">
-                      No team leads available
+                      No members available
                     </option>
                   )}
                 </select>
               </div>
               <div className="form-group">
                 <label>Members</label>
-                <div
-                  className="team-members-list"
-                  style={{ maxHeight: 220, overflowY: "auto" }}
-                >
-                  {assignableUsers
-                    .filter((member) => member.role !== "TEAM_LEAD")
-                    .map((member) => (
-                      <label
-                        key={member.user.id}
-                        className="team-member-row"
-                        style={{ cursor: "pointer" }}
-                      >
-                        <div className="team-member-info">
-                          <strong>
-                            {member.user.name || member.user.email}
-                          </strong>
-                          <span>{formatRole(member.role)}</span>
-                        </div>
-                        <input
-                          type="checkbox"
-                          checked={teamForm.memberUserIds.includes(
-                            member.user.id,
-                          )}
-                          onChange={() => toggleTeamMember(member.user.id)}
-                        />
-                      </label>
-                    ))}
-                </div>
+                <MemberMultiSelect
+                  options={assignableUsers.map((member) => ({
+                    id: member.user.id,
+                    name: member.user.name,
+                    email: member.user.email,
+                  }))}
+                  value={Array.from(
+                    new Set(
+                      [
+                        ...teamForm.memberUserIds,
+                        ...(teamForm.leadUserId ? [teamForm.leadUserId] : []),
+                      ].filter(Boolean),
+                    ),
+                  )}
+                  lockedIds={teamForm.leadUserId ? [teamForm.leadUserId] : []}
+                  onChange={(memberUserIds) =>
+                    setTeamForm((prev) => ({
+                      ...prev,
+                      memberUserIds:
+                        prev.leadUserId &&
+                        !memberUserIds.includes(prev.leadUserId)
+                          ? [...memberUserIds, prev.leadUserId]
+                          : memberUserIds,
+                    }))
+                  }
+                />
               </div>
               <div className="modal-actions">
                 <button
@@ -5745,7 +5755,7 @@ const DashboardPage = () => {
                 />
               </div>
               <div className="form-group">
-                <label>Team Lead - Optional</label>
+                <label>Lead (Optional)</label>
                 <select
                   value={teamForm.leadUserId}
                   onChange={(e) => {
@@ -5760,49 +5770,47 @@ const DashboardPage = () => {
                   }}
                 >
                   <option value="">Select lead (optional)</option>
-                  {teamLeadUsers.length > 0 ? (
-                    teamLeadUsers.map((member) => (
+                  {assignableUsers.length > 0 ? (
+                    assignableUsers.map((member) => (
                       <option key={member.user.id} value={member.user.id}>
                         {member.user.name || member.user.email}
                       </option>
                     ))
                   ) : (
                     <option disabled value="">
-                      No team leads available
+                      No members available
                     </option>
                   )}
                 </select>
               </div>
               <div className="form-group">
                 <label>Members</label>
-                <div
-                  className="team-members-list"
-                  style={{ maxHeight: 220, overflowY: "auto" }}
-                >
-                  {assignableUsers
-                    .filter((member) => member.role !== "TEAM_LEAD")
-                    .map((member) => (
-                      <label
-                        key={member.user.id}
-                        className="team-member-row"
-                        style={{ cursor: "pointer" }}
-                      >
-                        <div className="team-member-info">
-                          <strong>
-                            {member.user.name || member.user.email}
-                          </strong>
-                          <span>{formatRole(member.role)}</span>
-                        </div>
-                        <input
-                          type="checkbox"
-                          checked={teamForm.memberUserIds.includes(
-                            member.user.id,
-                          )}
-                          onChange={() => toggleTeamMember(member.user.id)}
-                        />
-                      </label>
-                    ))}
-                </div>
+                <MemberMultiSelect
+                  options={assignableUsers.map((member) => ({
+                    id: member.user.id,
+                    name: member.user.name,
+                    email: member.user.email,
+                  }))}
+                  value={Array.from(
+                    new Set(
+                      [
+                        ...teamForm.memberUserIds,
+                        ...(teamForm.leadUserId ? [teamForm.leadUserId] : []),
+                      ].filter(Boolean),
+                    ),
+                  )}
+                  lockedIds={teamForm.leadUserId ? [teamForm.leadUserId] : []}
+                  onChange={(memberUserIds) =>
+                    setTeamForm((prev) => ({
+                      ...prev,
+                      memberUserIds:
+                        prev.leadUserId &&
+                        !memberUserIds.includes(prev.leadUserId)
+                          ? [...memberUserIds, prev.leadUserId]
+                          : memberUserIds,
+                    }))
+                  }
+                />
               </div>
               <div className="modal-actions">
                 <button
@@ -6123,7 +6131,8 @@ const DashboardPage = () => {
                       color: "var(--text-muted)",
                     }}
                   >
-                    Parsed contribution is calculated automatically from the first number in the KR title.
+                    Parsed contribution is calculated automatically from the
+                    first number in the KR title.
                   </div>
                 </div>
               ))}
@@ -6459,7 +6468,8 @@ const DashboardPage = () => {
                       color: "var(--text-muted)",
                     }}
                   >
-                    Parsed contribution is calculated automatically from the first number in the KR title.
+                    Parsed contribution is calculated automatically from the
+                    first number in the KR title.
                   </div>
                   <button
                     type="button"
@@ -6489,7 +6499,10 @@ const DashboardPage = () => {
                 onClick={() =>
                   setEditOkrForm({
                     ...editOkrForm,
-                    keyResults: [...editOkrForm.keyResults, createEmptyKrForm()],
+                    keyResults: [
+                      ...editOkrForm.keyResults,
+                      createEmptyKrForm(),
+                    ],
                   })
                 }
               >
@@ -6797,8 +6810,8 @@ const DashboardPage = () => {
                       Upload a spreadsheet (.xlsx or .csv) to invite multiple
                       members at once. The file must contain{" "}
                       <strong>Email</strong>, <strong>Team</strong>, and{" "}
-                      <strong>Role</strong> (TEAM_LEAD or MEMBER) columns. Teams
-                      will be created automatically.
+                      <strong>Role</strong> (MEMBER) columns. Teams will be
+                      created automatically.
                     </p>
                     <button
                       onClick={handleDownloadSampleSheet}

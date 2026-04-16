@@ -10,7 +10,6 @@ const LoginPage = () => {
     const [signupStep, setSignupStep] = useState<1 | 2>(1);
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
-    const [name, setName] = useState('');
     const [orgName, setOrgName] = useState('');
     const [suggestions, setSuggestions] = useState<string[]>([]);
     const [error, setError] = useState('');
@@ -42,14 +41,14 @@ const LoginPage = () => {
     };
 
     const handleAdminSignupStepOne = async () => {
-        const res = await adminSignupInit(email, password, name);
+        const res = await adminSignupInit(email, password);
         setSuggestions(res.suggestions || []);
         setOrgName((res.suggestions && res.suggestions[0]) || '');
         setSignupStep(2);
     };
 
     const handleAdminSignupStepTwo = async () => {
-        await adminSignupComplete(email, password, orgName, name);
+        await adminSignupComplete(email, password, orgName);
         localStorage.setItem('pendingAuthEmail', email);
         navigate('/confirm-otp', { state: { email } });
     };
@@ -121,18 +120,6 @@ const LoginPage = () => {
                 </div>
 
                 <form onSubmit={handleSubmit}>
-                    {mode === 'admin_signup' && (
-                        <div className="form-group">
-                            <label>Name</label>
-                            <input
-                                type="text"
-                                value={name}
-                                onChange={(e) => setName(e.target.value)}
-                                placeholder="Your name"
-                            />
-                        </div>
-                    )}
-
                     <div className="form-group">
                         <label>Email</label>
                         <input
@@ -170,7 +157,7 @@ const LoginPage = () => {
 
                     {mode === 'admin_signup' && signupStep === 2 && (
                         <div className="form-group">
-                            <label>Organization Name</label>
+                            <label>Organisation Name</label>
                             <input
                                 type="text"
                                 value={orgName}

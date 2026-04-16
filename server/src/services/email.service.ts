@@ -140,6 +140,7 @@ export const sendInviteEmail = async (params: {
                 <img src="${(process.env.CLIENT_URL || 'http://localhost:5173').split(',')[0]}/images/image.png" alt="Apraizal Logo" style="height: 40px;" />
             </div>
             <h2 style="color: #333; text-align: center;">You're Invited</h2>
+            <p style="color: #666; font-size: 16px;">Hi ${recipient},</p>
             <p style="color: #666; font-size: 16px;">
                 ${inviter} invited you to join <strong>${organizationName}</strong> as <strong>${role}</strong>.
             </p>
