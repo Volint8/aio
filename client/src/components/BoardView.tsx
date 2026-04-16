@@ -42,7 +42,7 @@ interface BoardViewProps {
       };
     }>;
   }>;
-  userRole: "ADMIN" | "MEMBER";
+  userRole: "ADMIN" | "TEAM_LEAD" | "MEMBER";
   onCreateTask: () => void;
   onNavigate?: (path: string) => void;
   organizationName?: string;
@@ -70,7 +70,7 @@ const BoardView: React.FC<BoardViewProps> = ({
   // Use the latest quote or fall back to default text
   const displayQuote = quotes.length > 0 ? quotes[0] : null;
 
-  // Calculate team totals (for admins)
+  // Calculate team totals (for Team Lead/Admin)
   const teamTotals = memberStats.reduce(
     (acc, member) => ({
       members: acc.members + 1,
@@ -100,7 +100,7 @@ const BoardView: React.FC<BoardViewProps> = ({
       stats: { pending: 0, ongoing: 0, completed: 0, overdue: 0, total: 0 },
     };
 
-  const canViewTeam = userRole === "ADMIN";
+  const canViewTeam = userRole === "ADMIN" || userRole === "TEAM_LEAD";
   const handleCardKeyDown =
     (action?: () => void) => (event: React.KeyboardEvent<HTMLDivElement>) => {
       if (!action) return;
@@ -132,7 +132,9 @@ const BoardView: React.FC<BoardViewProps> = ({
           <p>
             {userRole === "ADMIN"
               ? "Track your organisation's progress"
-              : "Track your progress and stay on top of your tasks."}
+              : userRole === "TEAM_LEAD"
+                ? "Track your team's progress and stay on top of your tasks."
+                : "Track your progress and stay on top of your tasks."}
           </p>
         )}
       </div>
