@@ -276,7 +276,7 @@ export const sendKeyResultNotificationEmail = async (params: {
         periodEnd
     } = params;
 
-    const subject = `You've been tagged in an OKR: ${okrTitle}`;
+    const subject = `You've been assigned a key result: ${okrTitle}`;
     const displayName = recipientName || to;
     const createdBy = creatorName || 'An administrator';
 
@@ -296,10 +296,10 @@ export const sendKeyResultNotificationEmail = async (params: {
             <div style="text-align: center; margin-bottom: 20px;">
                 <img src="${(process.env.CLIENT_URL || 'http://localhost:5173').split(',')[0]}/images/image.png" alt="Apraizal Logo" style="height: 40px;" />
             </div>
-            <h2 style="color: #333; text-align: center;">You've Been Tagged in an OKR</h2>
+            <h2 style="color: #333; text-align: center;">New Key Result Assignment</h2>
             <p style="color: #666; font-size: 16px;">Hi ${displayName},</p>
             <p style="color: #666; font-size: 16px;">
-                ${createdBy} has tagged you in a Key Result for the OKR <strong>${okrTitle}</strong> in <strong>${organizationName}</strong>.
+                ${createdBy} has assigned you a Key Result for the OKR <strong>${okrTitle}</strong> in <strong>${organizationName}</strong>.
             </p>
             <div style="background-color: #f4f4f4; padding: 15px; border-radius: 5px; margin: 20px 0;">
                 <p style="margin: 0 0 8px 0;"><strong>Key Result:</strong> ${keyResultTitle}</p>

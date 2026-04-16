@@ -5,16 +5,34 @@ interface Okr {
     id: string;
     title: string;
     description?: string | null;
+    objectiveTargetValue?: number | null;
+    objectiveMetricUnit?: string | null;
     periodStart: string;
     periodEnd: string;
     status: string;
     keyResults?: Array<{
         id: string;
         title: string;
+        assignedUserId: string;
+        assignedUser: {
+            id: string;
+            name: string | null;
+            email: string;
+        };
         metricName?: string | null;
         metricUnit?: string | null;
         targetValue?: number | null;
         weight?: number;
+        contributionValue?: number | null;
+        contributionPct?: number | null;
+        approvalStatus?: string;
+        approvalNotes?: string | null;
+        approvedAt?: string | null;
+        approver?: {
+            id: string;
+            name: string | null;
+            email: string;
+        } | null;
         tag: {
             id: string;
             name: string;
@@ -39,6 +57,7 @@ interface OkrViewProps {
     onCreateOkr?: () => void;
     onEditOkr?: (okr: Okr) => void;
     onDeleteOkr?: (okrId: string) => void;
+    onReviewKeyResult?: (okrId: string, keyResultId: string, status: 'APPROVED' | 'REJECTED' | 'PENDING') => void;
     onNavigate?: (path: string) => void;
 }
 
@@ -49,6 +68,7 @@ const OkrView: React.FC<OkrViewProps> = ({
     onCreateOkr,
     onEditOkr,
     onDeleteOkr,
+    onReviewKeyResult,
     onNavigate
 }) => {
     const currentYear = new Date().getFullYear();
@@ -98,6 +118,12 @@ const OkrView: React.FC<OkrViewProps> = ({
                                 <strong>{okr.status}</strong>
                                 <span>({new Date(okr.periodStart).toLocaleDateString(undefined, { day: 'numeric', month: 'numeric', year: 'numeric' })} - {new Date(okr.periodEnd).toLocaleDateString(undefined, { day: 'numeric', month: 'numeric', year: 'numeric' })})</span>
                             </span>
+                            {okr.objectiveTargetValue !== null && okr.objectiveTargetValue !== undefined && (
+                                <span className="okr-meta-item">
+                                    <strong>Objective Target</strong>
+                                    <span>{okr.objectiveTargetValue}{okr.objectiveMetricUnit || ''}</span>
+                                </span>
+                            )}
                         </div>
 
                         {okr.keyResults && okr.keyResults.length > 0 && (
@@ -108,20 +134,44 @@ const OkrView: React.FC<OkrViewProps> = ({
                                         <div key={kr.id} className="okr-kr-item">
                                             <span>
                                                 {kr.title}
+                                                <small style={{ display: 'block', color: '#475569', fontWeight: 500 }}>
+                                                    Owner: {kr.assignedUser?.name || kr.assignedUser?.email}
+                                                </small>
+                                                {kr.contributionPct !== null && kr.contributionPct !== undefined && (
+                                                    <small style={{ display: 'block', color: '#475569', fontWeight: 500 }}>
+                                                        Contribution: {Math.round(kr.contributionPct)}%
+                                                        {kr.contributionValue !== null && kr.contributionValue !== undefined ? ` (${kr.contributionValue})` : ''}
+                                                    </small>
+                                                )}
                                                 {kr.targetValue !== null && kr.targetValue !== undefined && (
                                                     <small style={{ display: 'block', color: '#64748b', fontWeight: 500 }}>
                                                         Target: {kr.targetValue}{kr.metricUnit || ''} {kr.metricName ? `(${kr.metricName})` : ''}
                                                     </small>
                                                 )}
+                                                <small style={{ display: 'block', color: kr.approvalStatus === 'APPROVED' ? '#166534' : kr.approvalStatus === 'REJECTED' ? '#b91c1c' : '#92400e', fontWeight: 600 }}>
+                                                    Approval: {kr.approvalStatus || 'PENDING'}
+                                                </small>
                                             </span>
-                                            <span
-                                                className="okr-kr-tag"
-                                                style={{ backgroundColor: `${kr.tag.color}15`, color: kr.tag.color, borderColor: `${kr.tag.color}30`, cursor: 'pointer' }}
-                                                onClick={() => onNavigate?.('/dashboard?section=okr')}
-                                                title="Click to view all OKRs"
-                                            >
-                                                {kr.tag.name}
-                                            </span>
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-end' }}>
+                                                <span
+                                                    className="okr-kr-tag"
+                                                    style={{ backgroundColor: `${kr.tag.color}15`, color: kr.tag.color, borderColor: `${kr.tag.color}30`, cursor: 'pointer' }}
+                                                    onClick={() => onNavigate?.('/dashboard?section=okr')}
+                                                    title="Click to view all OKRs"
+                                                >
+                                                    {kr.tag.name}
+                                                </span>
+                                                {(userRole === 'ADMIN' || userRole === 'TEAM_LEAD') && onReviewKeyResult && (
+                                                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                                                        <button type="button" className="btn-okr-action btn-okr-edit" onClick={() => onReviewKeyResult(okr.id, kr.id, 'APPROVED')}>
+                                                            Approve
+                                                        </button>
+                                                        <button type="button" className="btn-okr-action btn-okr-delete" onClick={() => onReviewKeyResult(okr.id, kr.id, 'REJECTED')}>
+                                                            Reject
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
                                         </div>
                                     ))}
                                 </div>

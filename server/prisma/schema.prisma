@@ -39,6 +39,8 @@ model User {
   workSubmissions           WorkSubmission[]
   notificationsSent         Notification[]       @relation("NotificationSender")
   activityLogs              ActivityLog[]
+  assignedKeyResults        OkrKeyResult[]       @relation("AssignedKeyResults")
+  approvedKeyResults        OkrKeyResult[]       @relation("ApprovedKeyResults")
 }
 
 model Organization {
@@ -211,6 +213,8 @@ model Okr {
   organizationId String
   title          String
   description    String?
+  objectiveTargetValue Float?
+  objectiveMetricUnit  String?
   periodStart    DateTime
   periodEnd      DateTime
   status         String          @default("OPEN") // NOT_YET_OPEN, OPEN, COMPLETED
@@ -233,21 +237,31 @@ model OkrAssignment {
 }
 
 model OkrKeyResult {
-  id        String   @id @default(uuid())
-  okrId     String
-  title     String
-  tagId     String
-  metricName String?
-  metricUnit String?
-  targetValue Float?
-  weight    Float    @default(1)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  okr       Okr      @relation(fields: [okrId], references: [id], onDelete: Cascade)
-  tag       Tag      @relation(fields: [tagId], references: [id])
-  impacts   TaskKrImpact[]
+  id               String    @id @default(uuid())
+  okrId            String
+  title            String
+  tagId            String
+  assignedUserId   String
+  metricName       String?
+  metricUnit       String?
+  targetValue      Float?
+  weight           Float     @default(1)
+  contributionValue Float?
+  contributionPct  Float?
+  approvalStatus   String    @default("PENDING") // PENDING, APPROVED, REJECTED
+  approvedBy       String?
+  approvedAt       DateTime?
+  approvalNotes    String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  okr              Okr       @relation(fields: [okrId], references: [id], onDelete: Cascade)
+  tag              Tag       @relation(fields: [tagId], references: [id])
+  assignedUser     User      @relation("AssignedKeyResults", fields: [assignedUserId], references: [id])
+  approver         User?     @relation("ApprovedKeyResults", fields: [approvedBy], references: [id])
+  impacts          TaskKrImpact[]
 
   @@index([tagId])
+  @@index([assignedUserId])
 }
 
 model Appraisal {

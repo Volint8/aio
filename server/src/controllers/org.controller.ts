@@ -99,18 +99,29 @@ const createOrReuseTag = async (params: {
 type OkrImpactKrSummary = {
   krId: string;
   krTitle: string;
+  assignedUserId: string;
+  assignedUserName: string | null;
+  assignedUserEmail: string | null;
   metricName: string | null;
   metricUnit: string | null;
   targetValue: number | null;
   actualValue: number;
   weight: number;
+  contributionValue: number | null;
+  contributionPct: number | null;
   achievedPct: number | null;
+  approvalStatus: string;
+  approvedByName: string | null;
+  approvedAt: string | null;
+  approvalNotes: string | null;
 };
 
 type OkrImpactSummary = {
   okrs: Array<{
     okrId: string;
     okrTitle: string;
+    objectiveTargetValue: number | null;
+    objectiveMetricUnit: string | null;
     achievedPct: number | null;
     targetValueTotal: number | null;
     actualValueTotal: number;
@@ -132,6 +143,111 @@ const asNumberOrNull = (value: unknown): number | null => {
     return Number.isFinite(parsed) ? parsed : null;
   }
   return null;
+};
+
+const parseFirstNumericValue = (value: string | null | undefined): number | null => {
+  if (!value) return null;
+  const match = value.match(/-?\d+(?:,\d{3})*(?:\.\d+)?/);
+  if (!match) return null;
+  const normalized = match[0].replace(/,/g, '');
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const roundMetric = (value: number | null | undefined, precision = 2): number | null => {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null;
+  const factor = 10 ** precision;
+  return Math.round(value * factor) / factor;
+};
+
+const okrInclude = {
+  assignments: true,
+  keyResults: {
+    include: {
+      tag: true,
+      assignedUser: {
+        select: {
+          id: true,
+          name: true,
+          email: true
+        }
+      },
+      approver: {
+        select: {
+          id: true,
+          name: true,
+          email: true
+        }
+      }
+    }
+  },
+  creator: {
+    select: {
+      name: true,
+      email: true
+    }
+  }
+} as const;
+
+const resolveTagForKr = async (params: {
+  tx: any;
+  organizationId: string;
+  tagId?: string | null;
+  tagName?: string | null;
+  tagColor?: string | null;
+}) => {
+  const { tx, organizationId, tagId, tagName, tagColor } = params;
+
+  if (tagId) {
+    const existing = await tx.tag.findUnique({ where: { id: tagId } });
+    if (!existing || existing.organizationId !== organizationId) {
+      throw new Error('Selected tag is invalid for this organization');
+    }
+    return existing;
+  }
+
+  if (!tagName?.trim()) {
+    throw new Error('Each key result requires a tag');
+  }
+
+  return createOrReuseTag({
+    tx,
+    organizationId,
+    name: tagName,
+    color: tagColor || undefined
+  });
+};
+
+const getAssigneeLeadMembership = async (organizationId: string, assignedUserId: string) => {
+  const assigneeMembership = await prisma.organizationMember.findUnique({
+    where: {
+      userId_organizationId: {
+        userId: assignedUserId,
+        organizationId
+      }
+    }
+  });
+
+  if (!assigneeMembership?.teamId) {
+    return null;
+  }
+
+  return prisma.organizationMember.findFirst({
+    where: {
+      organizationId,
+      teamId: assigneeMembership.teamId,
+      role: 'TEAM_LEAD'
+    },
+    include: {
+      user: {
+        select: {
+          id: true,
+          name: true,
+          email: true
+        }
+      }
+    }
+  });
 };
 
 export const getOrgNameSuggestions = async (req: Request, res: Response) => {
@@ -1657,6 +1773,69 @@ export const deleteTag = async (req: Request, res: Response) => {
   }
 };
 
+const notifyAssignedKeyResults = async (params: {
+  organizationId: string;
+  actorUserId: string;
+  okr: any;
+  periodStart: string;
+  periodEnd: string;
+}) => {
+  const { organizationId, actorUserId, okr, periodStart, periodEnd } = params;
+
+  if (!okr?.keyResults?.length) {
+    return;
+  }
+
+  try {
+    const organization = await prisma.organization.findUnique({
+      where: { id: organizationId },
+      select: { name: true }
+    });
+
+    const creator = await prisma.user.findUnique({
+      where: { id: actorUserId },
+      select: { name: true }
+    });
+
+    const seenUsers = new Set<string>();
+    for (const kr of okr.keyResults) {
+      const assignee = kr.assignedUser;
+      if (!assignee?.id || seenUsers.has(`${kr.id}:${assignee.id}`)) {
+        continue;
+      }
+      seenUsers.add(`${kr.id}:${assignee.id}`);
+
+      try {
+        await prisma.notification.create({
+          data: {
+            organizationId,
+            senderId: actorUserId,
+            targetType: 'INDIVIDUAL',
+            targetId: assignee.id,
+            type: 'PRIORITY_ALERT',
+            message: `You have been assigned a key result: ${kr.title}`
+          }
+        });
+
+        await sendKeyResultNotificationEmail({
+          to: assignee.email,
+          recipientName: assignee.name,
+          okrTitle: okr.title,
+          keyResultTitle: kr.title,
+          organizationName: organization?.name || '',
+          creatorName: creator?.name || null,
+          periodStart,
+          periodEnd
+        });
+      } catch (notifyErr) {
+        console.error(`Failed to notify ${assignee.email} about assigned KR:`, notifyErr);
+      }
+    }
+  } catch (error) {
+    console.error('Failed to send assigned KR notifications:', error);
+  }
+};
+
 export const createOkr = async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.userId as string;
@@ -1678,8 +1857,10 @@ export const createOkr = async (req: Request, res: Response) => {
       assignments?: Array<{ targetType: string; targetId: string }>;
       keyResults?: Array<{
         title: string;
-        tagName: string;
+        tagId?: string;
+        tagName?: string;
         tagColor?: string;
+        assignedUserId?: string;
         metricName?: string;
         metricUnit?: string;
         targetValue?: number | string | null;
@@ -1696,12 +1877,36 @@ export const createOkr = async (req: Request, res: Response) => {
       return res.status(403).json({ error: 'Only admins can create OKRs' });
     }
 
+    const objectiveTargetValue = parseFirstNumericValue(title);
+
+    const assignableUserIds = Array.from(new Set(
+      keyResults
+        .map((kr) => kr?.assignedUserId)
+        .filter((value): value is string => !!value)
+    ));
+    if (assignableUserIds.length !== keyResults.filter((kr) => kr?.title?.trim()).length) {
+      return res.status(400).json({ error: 'Each key result requires an assigned user' });
+    }
+
+    if (assignableUserIds.length > 0) {
+      const memberships = await prisma.organizationMember.findMany({
+        where: {
+          organizationId,
+          userId: { in: assignableUserIds }
+        }
+      });
+      if (memberships.length !== assignableUserIds.length || memberships.some((member) => member.role === 'ADMIN')) {
+        return res.status(400).json({ error: 'Assigned users must be non-admin organization members' });
+      }
+    }
+
     const okr = await prisma.$transaction(async (tx) => {
       const created = await tx.okr.create({
         data: {
           organizationId,
           title,
           description,
+          objectiveTargetValue,
           periodStart: new Date(periodStart),
           periodEnd: new Date(periodEnd),
           status: status || 'NOT_YET_OPEN',
@@ -1714,60 +1919,43 @@ export const createOkr = async (req: Request, res: Response) => {
         }
       });
 
-      // First pass: create or get all unique tags
-      const tagMap = new Map<string, any>();
       for (const kr of keyResults) {
-        if (!kr?.tagName?.trim()) continue;
-        const normalizedName = normalizeOrgName(kr.tagName);
-        if (!tagMap.has(normalizedName)) {
-          const tag = await createOrReuseTag({
-            tx,
-            organizationId,
-            name: kr.tagName,
-            color: kr.tagColor
-          });
-          tagMap.set(normalizedName, tag);
-        }
-      }
-
-      // Second pass: create key results using the tags
-      for (const kr of keyResults) {
-        if (!kr?.title?.trim() || !kr?.tagName?.trim()) {
+        if (!kr?.title?.trim() || !kr?.assignedUserId) {
           continue;
         }
 
-        const normalizedName = normalizeOrgName(kr.tagName);
-        const tag = tagMap.get(normalizedName);
+        const tag = await resolveTagForKr({
+          tx,
+          organizationId,
+          tagId: kr.tagId,
+          tagName: kr.tagName,
+          tagColor: kr.tagColor
+        });
+        const contributionValue = parseFirstNumericValue(kr.title);
+        const contributionPct =
+          contributionValue !== null && objectiveTargetValue !== null && objectiveTargetValue > 0
+            ? roundMetric((contributionValue / objectiveTargetValue) * 100)
+            : null;
 
         await tx.okrKeyResult.create({
           data: {
             okrId: created.id,
             title: kr.title.trim(),
             tagId: tag.id,
+            assignedUserId: kr.assignedUserId,
             metricName: kr.metricName?.trim() || null,
             metricUnit: kr.metricUnit?.trim() || null,
             targetValue: asNumberOrNull(kr.targetValue),
-            weight: asNumberOrNull(kr.weight) ?? 1
+            weight: asNumberOrNull(kr.weight) ?? 1,
+            contributionValue,
+            contributionPct
           }
         });
       }
 
       return tx.okr.findUnique({
         where: { id: created.id },
-        include: {
-          assignments: true,
-          keyResults: {
-            include: {
-              tag: true
-            }
-          },
-          creator: {
-            select: {
-              name: true,
-              email: true
-            }
-          }
-        }
+        include: okrInclude
       });
     });
 
@@ -1845,81 +2033,14 @@ export const createOkr = async (req: Request, res: Response) => {
       }
     }
 
-    // Send notifications to members tagged in key results (by tag name matching member name)
     if (keyResults.length > 0 && okr) {
-      try {
-        const allMembers = await prisma.organizationMember.findMany({
-          where: { organizationId },
-          include: {
-            user: {
-              select: {
-                id: true,
-                email: true,
-                name: true
-              }
-            }
-          }
-        });
-
-        const organization = await prisma.organization.findUnique({
-          where: { id: organizationId },
-          select: { name: true }
-        });
-
-        const creator = await prisma.user.findUnique({
-          where: { id: userId },
-          select: { name: true }
-        });
-
-        // Create a map of member names (normalized) to members
-        const memberNameMap = new Map<string, typeof allMembers[0]>();
-        allMembers.forEach((member) => {
-          if (member.user.name) {
-            memberNameMap.set(normalizeOrgName(member.user.name), member);
-          }
-          memberNameMap.set(normalizeOrgName(member.user.email), member);
-        });
-
-        // Check each key result's tag name for member matches
-        for (const kr of keyResults) {
-          if (!kr?.tagName?.trim()) continue;
-
-          const normalizedTagName = normalizeOrgName(kr.tagName);
-          const matchedMember = memberNameMap.get(normalizedTagName);
-
-          if (matchedMember) {
-            try {
-              // Create in-app notification
-              await prisma.notification.create({
-                data: {
-                  organizationId,
-                  senderId: userId,
-                  targetType: 'INDIVIDUAL',
-                  targetId: matchedMember.user.id,
-                  type: 'PRIORITY_ALERT',
-                  message: `You've been mentioned in OKR "${okr.title}": ${kr.title}`
-                }
-              });
-
-              // Also send email notification
-              await sendKeyResultNotificationEmail({
-                to: matchedMember.user.email,
-                recipientName: matchedMember.user.name,
-                okrTitle: okr.title,
-                keyResultTitle: kr.title,
-                organizationName: organization?.name || '',
-                creatorName: creator?.name || null,
-                periodStart,
-                periodEnd
-              });
-            } catch (memberNotifyErr) {
-              console.error(`Failed to notify ${matchedMember.user.email} about key result tag:`, memberNotifyErr);
-            }
-          }
-        }
-      } catch (notificationErr) {
-        console.error('Failed to send key result notifications:', notificationErr);
-      }
+      await notifyAssignedKeyResults({
+        organizationId,
+        actorUserId: userId,
+        okr,
+        periodStart,
+        periodEnd
+      });
     }
 
     return res.status(201).json(okr);
@@ -1954,6 +2075,7 @@ export const listOkrs = async (req: Request, res: Response) => {
       // Also filter by assignment scope
       const assignmentScope = [
         { assignments: { some: { targetType: 'MEMBER', targetId: userId } } },
+        { keyResults: { some: { assignedUserId: userId } } },
         { assignments: { none: {} } }
       ];
       if (membership.teamId) {
@@ -1965,14 +2087,7 @@ export const listOkrs = async (req: Request, res: Response) => {
 
     const okrs = await prisma.okr.findMany({
       where,
-      include: {
-        assignments: true,
-        keyResults: {
-          include: {
-            tag: true
-          }
-        }
-      },
+      include: okrInclude,
       orderBy: { createdAt: 'desc' }
     });
 
@@ -2019,8 +2134,10 @@ export const updateOkr = async (req: Request, res: Response) => {
       assignments?: Array<{ targetType: string; targetId: string }>;
       keyResults?: Array<{
         title: string;
-        tagName: string;
+        tagId?: string;
+        tagName?: string;
         tagColor?: string;
+        assignedUserId?: string;
         metricName?: string;
         metricUnit?: string;
         targetValue?: number | string | null;
@@ -2039,12 +2156,41 @@ export const updateOkr = async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'OKR not found' });
     }
 
+    const resolvedTitle = title !== undefined ? title : existing.title;
+    const objectiveTargetValue = parseFirstNumericValue(resolvedTitle);
+
+    if (keyResults) {
+      const requiredAssignments = keyResults.filter((kr) => kr?.title?.trim());
+      if (requiredAssignments.some((kr) => !kr.assignedUserId)) {
+        return res.status(400).json({ error: 'Each key result requires an assigned user' });
+      }
+
+      const assignableUserIds = Array.from(new Set(
+        requiredAssignments
+          .map((kr) => kr.assignedUserId)
+          .filter((value): value is string => !!value)
+      ));
+
+      if (assignableUserIds.length > 0) {
+        const memberships = await prisma.organizationMember.findMany({
+          where: {
+            organizationId,
+            userId: { in: assignableUserIds }
+          }
+        });
+        if (memberships.length !== assignableUserIds.length || memberships.some((member) => member.role === 'ADMIN')) {
+          return res.status(400).json({ error: 'Assigned users must be non-admin organization members' });
+        }
+      }
+    }
+
     const updated = await prisma.$transaction(async (tx) => {
       const updatedRecord = await tx.okr.update({
         where: { id: okrId },
         data: {
           ...(title !== undefined ? { title } : {}),
           ...(description !== undefined ? { description } : {}),
+          objectiveTargetValue,
           ...(periodStart !== undefined ? { periodStart: new Date(periodStart) } : {}),
           ...(periodEnd !== undefined ? { periodEnd: new Date(periodEnd) } : {}),
           ...(status !== undefined ? { status } : {})
@@ -2067,24 +2213,34 @@ export const updateOkr = async (req: Request, res: Response) => {
       if (keyResults) {
         await tx.okrKeyResult.deleteMany({ where: { okrId } });
         for (const kr of keyResults) {
-          if (!kr?.title?.trim() || !kr?.tagName?.trim()) {
+          if (!kr?.title?.trim() || !kr?.assignedUserId) {
             continue;
           }
-          const tag = await createOrReuseTag({
+
+          const tag = await resolveTagForKr({
             tx,
             organizationId,
-            name: kr.tagName,
-            color: kr.tagColor
+            tagId: kr.tagId,
+            tagName: kr.tagName,
+            tagColor: kr.tagColor
           });
+          const contributionValue = parseFirstNumericValue(kr.title);
+          const contributionPct =
+            contributionValue !== null && objectiveTargetValue !== null && objectiveTargetValue > 0
+              ? roundMetric((contributionValue / objectiveTargetValue) * 100)
+              : null;
           await tx.okrKeyResult.create({
             data: {
               okrId,
               title: kr.title.trim(),
               tagId: tag.id,
+              assignedUserId: kr.assignedUserId,
               metricName: kr.metricName?.trim() || null,
               metricUnit: kr.metricUnit?.trim() || null,
               targetValue: asNumberOrNull(kr.targetValue),
-              weight: asNumberOrNull(kr.weight) ?? 1
+              weight: asNumberOrNull(kr.weight) ?? 1,
+              contributionValue,
+              contributionPct
             }
           });
         }
@@ -2092,19 +2248,22 @@ export const updateOkr = async (req: Request, res: Response) => {
 
       return tx.okr.findUnique({
         where: { id: updatedRecord.id },
-        include: {
-          assignments: true,
-          keyResults: {
-            include: {
-              tag: true
-            }
-          }
-        }
+        include: okrInclude
       });
     });
 
     if (!updated) {
       return res.status(500).json({ error: 'Internal server error' });
+    }
+
+    if (keyResults) {
+      await notifyAssignedKeyResults({
+        organizationId,
+        actorUserId: userId,
+        okr: updated,
+        periodStart: updated.periodStart.toISOString(),
+        periodEnd: updated.periodEnd.toISOString()
+      });
     }
 
     if (status === 'COMPLETED' && existing.status !== 'COMPLETED') {
@@ -2197,6 +2356,114 @@ export const deleteOkr = async (req: Request, res: Response) => {
   }
 };
 
+export const reviewKeyResult = async (req: Request, res: Response) => {
+  try {
+    const reviewerUserId = (req as any).user.userId as string;
+    const organizationId = req.params.id as string;
+    const okrId = req.params.okrId as string;
+    const keyResultId = req.params.keyResultId as string;
+    const { status, approvalNotes } = req.body as {
+      status?: string;
+      approvalNotes?: string;
+    };
+
+    if (!['APPROVED', 'REJECTED', 'PENDING'].includes(status || '')) {
+      return res.status(400).json({ error: 'status must be APPROVED, REJECTED, or PENDING' });
+    }
+
+    const reviewerMembership = await getMembership(reviewerUserId, organizationId);
+    if (!reviewerMembership) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const keyResult = await prisma.okrKeyResult.findFirst({
+      where: {
+        id: keyResultId,
+        okrId,
+        okr: { organizationId }
+      },
+      include: {
+        okr: true,
+        assignedUser: {
+          select: {
+            id: true,
+            name: true,
+            email: true
+          }
+        },
+        approver: {
+          select: {
+            id: true,
+            name: true,
+            email: true
+          }
+        },
+        tag: true
+      }
+    });
+
+    if (!keyResult) {
+      return res.status(404).json({ error: 'Key result not found' });
+    }
+
+    const assigneeLeadMembership = await getAssigneeLeadMembership(organizationId, keyResult.assignedUserId);
+    const isAssigneeLead = assigneeLeadMembership?.userId === reviewerUserId;
+    const isAdmin = reviewerMembership.role === 'ADMIN';
+
+    if (!isAssigneeLead && !isAdmin) {
+      return res.status(403).json({ error: 'Only the assignee team lead or an admin fallback can review this key result' });
+    }
+
+    const updated = await prisma.okrKeyResult.update({
+      where: { id: keyResultId },
+      data: {
+        approvalStatus: status,
+        approvedBy: status === 'PENDING' ? null : reviewerUserId,
+        approvedAt: status === 'PENDING' ? null : new Date(),
+        approvalNotes: approvalNotes?.trim() || null
+      },
+      include: {
+        tag: true,
+        assignedUser: {
+          select: {
+            id: true,
+            name: true,
+            email: true
+          }
+        },
+        approver: {
+          select: {
+            id: true,
+            name: true,
+            email: true
+          }
+        }
+      }
+    });
+
+    await prisma.notification.create({
+      data: {
+        organizationId,
+        senderId: reviewerUserId,
+        targetType: 'INDIVIDUAL',
+        targetId: keyResult.assignedUserId,
+        type: 'PRIORITY_ALERT',
+        message:
+          status === 'APPROVED'
+            ? `Your key result "${keyResult.title}" was approved`
+            : status === 'REJECTED'
+              ? `Your key result "${keyResult.title}" was rejected and needs revision`
+              : `Your key result "${keyResult.title}" was returned to pending review`
+      }
+    }).catch(() => undefined);
+
+    return res.json(updated);
+  } catch (error) {
+    console.error('Review key result error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
 export const generateAppraisal = async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.userId as string;
@@ -2258,7 +2525,7 @@ export const generateAppraisal = async (req: Request, res: Response) => {
     const tasksCompleted = allTasks > 0 ? (completedTasks / allTasks) * 100 : 0;
     const deadlinesMet = allTasks > 0 ? ((allTasks - overdueTasks) / allTasks) * 100 : 0;
 
-    // Quantitative OKR impact calculations
+    // Assigned-KR appraisal calculations
     const okrScopeWhere: any = { organizationId };
     if (okrIds && okrIds.length > 0) {
       okrScopeWhere.id = { in: okrIds };
@@ -2268,13 +2535,22 @@ export const generateAppraisal = async (req: Request, res: Response) => {
       where: okrScopeWhere,
       include: {
         keyResults: {
-          select: {
-            id: true,
-            title: true,
-            metricName: true,
-            metricUnit: true,
-            targetValue: true,
-            weight: true
+          where: { assignedUserId: subjectUserId },
+          include: {
+            assignedUser: {
+              select: {
+                id: true,
+                name: true,
+                email: true
+              }
+            },
+            approver: {
+              select: {
+                id: true,
+                name: true,
+                email: true
+              }
+            }
           }
         }
       },
@@ -2301,6 +2577,12 @@ export const generateAppraisal = async (req: Request, res: Response) => {
       actualByKr.set(row.okrKeyResultId, prev + row.actualValue);
     }
 
+    const assignedKeyResults = scopedOkrs.flatMap((okr) => okr.keyResults);
+    const contributionWeightTotal = assignedKeyResults.reduce((acc, kr) => {
+      const effectiveWeight = kr.contributionPct && kr.contributionPct > 0 ? kr.contributionPct : (kr.weight || 1);
+      return acc + effectiveWeight;
+    }, 0);
+
     const okrSummaries: OkrImpactSummary['okrs'] = scopedOkrs.map((okr) => {
       const keyResults: OkrImpactKrSummary[] = okr.keyResults.map((kr) => {
         const actualValue = actualByKr.get(kr.id) || 0;
@@ -2313,20 +2595,36 @@ export const generateAppraisal = async (req: Request, res: Response) => {
         return {
           krId: kr.id,
           krTitle: kr.title,
+          assignedUserId: kr.assignedUserId,
+          assignedUserName: kr.assignedUser?.name || null,
+          assignedUserEmail: kr.assignedUser?.email || null,
           metricName: kr.metricName || null,
           metricUnit: kr.metricUnit || null,
           targetValue,
           actualValue,
           weight: kr.weight || 1,
-          achievedPct
+          contributionValue: kr.contributionValue ?? null,
+          contributionPct: kr.contributionPct ?? null,
+          achievedPct,
+          approvalStatus: kr.approvalStatus,
+          approvedByName: kr.approver?.name || kr.approver?.email || null,
+          approvedAt: kr.approvedAt ? kr.approvedAt.toISOString() : null,
+          approvalNotes: kr.approvalNotes || null
         };
       });
 
       const quantitativeKrs = keyResults.filter((kr) => kr.achievedPct !== null);
       const excludedKrCount = keyResults.length - quantitativeKrs.length;
-      const weightTotal = quantitativeKrs.reduce((acc, kr) => acc + (kr.weight || 1), 0);
+      const weightTotal = quantitativeKrs.reduce((acc, kr) => {
+        const effectiveWeight = kr.contributionPct && kr.contributionPct > 0 ? kr.contributionPct : (kr.weight || 1);
+        return acc + effectiveWeight;
+      }, 0);
       const achievedPct = weightTotal > 0
-        ? quantitativeKrs.reduce((acc, kr) => acc + ((kr.achievedPct || 0) * (kr.weight || 1)), 0) / weightTotal
+        ? quantitativeKrs.reduce((acc, kr) => {
+          const effectiveWeight = kr.contributionPct && kr.contributionPct > 0 ? kr.contributionPct : (kr.weight || 1);
+          const approvalFactor = kr.approvalStatus === 'APPROVED' ? 1 : 0;
+          return acc + ((kr.achievedPct || 0) * effectiveWeight * approvalFactor);
+        }, 0) / weightTotal
         : null;
 
       const hasAnyTarget = quantitativeKrs.length > 0;
@@ -2338,6 +2636,8 @@ export const generateAppraisal = async (req: Request, res: Response) => {
       return {
         okrId: okr.id,
         okrTitle: okr.title,
+        objectiveTargetValue: okr.objectiveTargetValue ?? null,
+        objectiveMetricUnit: okr.objectiveMetricUnit ?? null,
         achievedPct,
         targetValueTotal,
         actualValueTotal,
@@ -2347,16 +2647,29 @@ export const generateAppraisal = async (req: Request, res: Response) => {
       };
     });
 
-    const quantitativeOkrs = okrSummaries.filter((okr) => okr.achievedPct !== null);
-    const okrImpactScore = quantitativeOkrs.length > 0
-      ? quantitativeOkrs.reduce((acc, okr) => acc + (okr.achievedPct || 0), 0) / quantitativeOkrs.length
+    const approvedKeyResultCount = assignedKeyResults.filter((kr) => kr.approvalStatus === 'APPROVED').length;
+    const rejectedKeyResultCount = assignedKeyResults.filter((kr) => kr.approvalStatus === 'REJECTED').length;
+    const pendingKeyResultCount = assignedKeyResults.filter((kr) => kr.approvalStatus === 'PENDING').length;
+    const krScore = contributionWeightTotal > 0
+      ? assignedKeyResults.reduce((acc, kr) => {
+        const actualValue = actualByKr.get(kr.id) || 0;
+        const targetValue = kr.targetValue ?? null;
+        const achievedPct =
+          targetValue && targetValue > 0
+            ? Math.min((actualValue / targetValue) * 100, 100)
+            : 0;
+        const effectiveWeight = kr.contributionPct && kr.contributionPct > 0 ? kr.contributionPct : (kr.weight || 1);
+        const approvalFactor = kr.approvalStatus === 'APPROVED' ? 1 : 0;
+        return acc + (achievedPct * effectiveWeight * approvalFactor);
+      }, 0) / contributionWeightTotal
       : 0;
+    const okrImpactScore = krScore;
     const okrImpactSummary: OkrImpactSummary = {
       okrs: okrSummaries,
       totals: {
-        achievedPct: quantitativeOkrs.length > 0 ? okrImpactScore : null,
-        quantitativeOkrCount: quantitativeOkrs.length,
-        excludedOkrCount: okrSummaries.length - quantitativeOkrs.length
+        achievedPct: assignedKeyResults.length > 0 ? okrImpactScore : null,
+        quantitativeOkrCount: assignedKeyResults.length,
+        excludedOkrCount: okrSummaries.reduce((acc, okr) => acc + okr.excludedKrCount, 0)
       }
     };
 
@@ -2366,7 +2679,7 @@ export const generateAppraisal = async (req: Request, res: Response) => {
 
     // Rating logic
     let overallRating = 'AVERAGE';
-    const performanceScore = (tasksCompleted * 0.4) + (deadlinesMet * 0.3) + (okrImpactScore * 0.3);
+    const performanceScore = (tasksCompleted * 0.25) + (deadlinesMet * 0.2) + (okrImpactScore * 0.55);
     if (performanceScore >= 85) overallRating = 'EXCELLENT';
     else if (performanceScore >= 70) overallRating = 'GOOD';
     else if (performanceScore < 40) overallRating = 'POOR';
@@ -2376,13 +2689,15 @@ export const generateAppraisal = async (req: Request, res: Response) => {
 
     const renderedOkrLines = okrSummaries.slice(0, 3).map((okr) => {
       if (okr.targetValueTotal && okr.targetValueTotal > 0 && okr.achievedPct !== null) {
-        return `For OKR "${okr.okrTitle}", delivered ${Math.round(okr.actualValueTotal * 100) / 100} against target ${Math.round(okr.targetValueTotal * 100) / 100}, achieving ${Math.round(okr.achievedPct)}%.`;
+        const approved = okr.keyResults.filter((kr) => kr.approvalStatus === 'APPROVED').length;
+        return `For OKR "${okr.okrTitle}", approved delivery was ${Math.round(okr.actualValueTotal * 100) / 100} against target ${Math.round(okr.targetValueTotal * 100) / 100}, weighted achievement ${Math.round(okr.achievedPct)}%, with ${approved}/${okr.keyResults.length} key results approved.`;
       }
-      return `For OKR "${okr.okrTitle}", quantitative target data is not configured (N/A).`;
+      return `For OKR "${okr.okrTitle}", assigned ownership is tracked but quantitative target data is incomplete.`;
     });
 
     const summary = `${name} logged ${allTasks} tasks during ${cycle}.
 ${name} completed ${completedTasks} tasks (${Math.round(tasksCompleted)}%) and met deadlines on ${Math.round(deadlinesMet)}% of tasks.
+Assigned key results approved: ${approvedKeyResultCount}/${assignedKeyResults.length}. Pending: ${pendingKeyResultCount}. Rejected: ${rejectedKeyResultCount}.
 ${renderedOkrLines.length > 0 ? renderedOkrLines.join('\n') : 'No scoped OKRs were included for this appraisal.'}
 Overall Rating: ${overallRating}`;
 
@@ -2399,12 +2714,15 @@ Overall Rating: ${overallRating}`;
         okrImpactScore,
         okrImpactSummary: okrImpactSummary as any,
         scoreBreakdown: {
-          tasksCompletedWeight: 0.4,
-          deadlinesMetWeight: 0.3,
-          okrImpactWeight: 0.3,
+          tasksCompletedWeight: 0.25,
+          deadlinesMetWeight: 0.2,
+          okrImpactWeight: 0.55,
           tasksCompleted,
           deadlinesMet,
           okrImpactScore,
+          approvedKeyResultCount,
+          pendingKeyResultCount,
+          rejectedKeyResultCount,
           performanceScore
         } as any,
         overallRating,

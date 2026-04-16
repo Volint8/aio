@@ -29,6 +29,7 @@ import {
     listOkrs,
     updateOkr,
     deleteOkr,
+    reviewKeyResult,
     generateAppraisal,
     listAppraisals,
     getAudit,
@@ -94,6 +95,7 @@ router.delete('/:id/tags/:tagId', authenticateToken, deleteTag);
 router.post('/:id/okrs', authenticateToken, createOkr);
 router.get('/:id/okrs', authenticateToken, listOkrs);
 router.patch('/:id/okrs/:okrId', authenticateToken, updateOkr);
+router.post('/:id/okrs/:okrId/key-results/:keyResultId/review', authenticateToken, reviewKeyResult);
 router.delete('/:id/okrs/:okrId', authenticateToken, deleteOkr);
 
 router.post('/:id/appraisals/generate', authenticateToken, generateAppraisal);

@@ -132,6 +132,8 @@ interface Okr {
   id: string;
   title: string;
   description?: string | null;
+  objectiveTargetValue?: number | null;
+  objectiveMetricUnit?: string | null;
   periodStart: string;
   periodEnd: string;
   status: string;
@@ -148,27 +150,54 @@ interface Okr {
     id: string;
     title: string;
     tag: Tag;
+    assignedUserId: string;
+    assignedUser: {
+      id: string;
+      name: string | null;
+      email: string;
+    };
     metricName?: string | null;
     metricUnit?: string | null;
     targetValue?: number | null;
     weight?: number;
+    contributionValue?: number | null;
+    contributionPct?: number | null;
+    approvalStatus?: string;
+    approvalNotes?: string | null;
+    approvedAt?: string | null;
+    approver?: {
+      id: string;
+      name: string | null;
+      email: string;
+    } | null;
   }>;
 }
 
 interface AppraisalOkrImpactKr {
   krId: string;
   krTitle: string;
+  assignedUserId: string;
+  assignedUserName?: string | null;
+  assignedUserEmail?: string | null;
   metricName?: string | null;
   metricUnit?: string | null;
   targetValue?: number | null;
   actualValue: number;
+  contributionValue?: number | null;
+  contributionPct?: number | null;
   achievedPct?: number | null;
+  approvalStatus?: string;
+  approvedByName?: string | null;
+  approvedAt?: string | null;
+  approvalNotes?: string | null;
 }
 
 interface AppraisalOkrImpactSummary {
   okrs: Array<{
     okrId: string;
     okrTitle: string;
+    objectiveTargetValue?: number | null;
+    objectiveMetricUnit?: string | null;
     achievedPct?: number | null;
     targetValueTotal?: number | null;
     actualValueTotal: number;
@@ -179,6 +208,18 @@ interface AppraisalOkrImpactSummary {
     quantitativeOkrCount?: number;
     excludedOkrCount?: number;
   };
+}
+
+interface OkrKeyResultForm {
+  title: string;
+  tagId: string;
+  tagName: string;
+  tagColor: string;
+  assignedUserId: string;
+  metricName: string;
+  metricUnit: string;
+  targetValue: string;
+  weight: string;
 }
 
 interface Appraisal {
@@ -465,14 +506,16 @@ const DashboardPage = () => {
     keyResults: [
       {
         title: "",
+        tagId: "",
         tagName: "",
         tagColor: "#2563eb",
+        assignedUserId: "",
         metricName: "",
         metricUnit: "",
         targetValue: "",
         weight: "1",
       },
-    ],
+    ] as OkrKeyResultForm[],
   });
 
   const [editOkrForm, setEditOkrForm] = useState({
@@ -485,14 +528,16 @@ const DashboardPage = () => {
     keyResults: [
       {
         title: "",
+        tagId: "",
         tagName: "",
         tagColor: "#2563eb",
+        assignedUserId: "",
         metricName: "",
         metricUnit: "",
         targetValue: "",
         weight: "1",
       },
-    ],
+    ] as OkrKeyResultForm[],
     status: "OPEN",
   });
   const [newAppraisal, setNewAppraisal] = useState({
@@ -669,6 +714,18 @@ const DashboardPage = () => {
       return true; // Tag is in active OKR, include it
     });
   }, [tags, tagSourceMap, okrs]);
+
+  const createEmptyKrForm = (): OkrKeyResultForm => ({
+    title: "",
+    tagId: "",
+    tagName: "",
+    tagColor: "#2563eb",
+    assignedUserId: "",
+    metricName: "",
+    metricUnit: "",
+    targetValue: "",
+    weight: "1",
+  });
 
   const userChartData = memberStats.map((item) => ({
     id: item.userId,
@@ -1380,7 +1437,7 @@ const DashboardPage = () => {
         ...newOkr,
         assignments,
         keyResults: newOkr.keyResults.filter(
-          (kr) => kr.title.trim() && kr.tagName.trim(),
+          (kr) => kr.title.trim() && (kr.tagId || kr.tagName.trim()) && kr.assignedUserId,
         ),
       });
       setNewOkr({
@@ -1391,17 +1448,7 @@ const DashboardPage = () => {
         status: "NOT_YET_OPEN",
         assignedToTeamId: "",
         supportedByTeamIds: [],
-        keyResults: [
-          {
-            title: "",
-            tagName: "",
-            tagColor: "#2563eb",
-            metricName: "",
-            metricUnit: "",
-            targetValue: "",
-            weight: "1",
-          },
-        ],
+        keyResults: [createEmptyKrForm()],
       });
       setShowCreateOkrModal(false);
       await fetchData();
@@ -1437,8 +1484,10 @@ const DashboardPage = () => {
       supportedByTeamIds: supportedByTeamIds,
       keyResults: okr.keyResults?.map((kr) => ({
         title: kr.title,
+        tagId: kr.tag.id,
         tagName: kr.tag.name,
         tagColor: kr.tag.color,
+        assignedUserId: kr.assignedUserId,
         metricName: kr.metricName || "",
         metricUnit: kr.metricUnit || "",
         targetValue:
@@ -1449,17 +1498,7 @@ const DashboardPage = () => {
           kr.weight !== null && kr.weight !== undefined
             ? String(kr.weight)
             : "1",
-      })) || [
-        {
-          title: "",
-          tagName: "",
-          tagColor: "#2563eb",
-          metricName: "",
-          metricUnit: "",
-          targetValue: "",
-          weight: "1",
-        },
-      ],
+      })) || [createEmptyKrForm()],
       status: okr.status || "OPEN",
     });
     setShowEditOkrModal(true);
@@ -1486,7 +1525,7 @@ const DashboardPage = () => {
         ...editOkrForm,
         assignments,
         keyResults: editOkrForm.keyResults.filter(
-          (kr) => kr.title.trim() && kr.tagName.trim(),
+          (kr) => kr.title.trim() && (kr.tagId || kr.tagName.trim()) && kr.assignedUserId,
         ),
       });
       setShowEditOkrModal(false);
@@ -1512,17 +1551,20 @@ const DashboardPage = () => {
     }
   };
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const handleMakeOkrGlobal = async (okrId: string) => {
+  const handleReviewKeyResult = async (
+    okrId: string,
+    keyResultId: string,
+    status: "APPROVED" | "REJECTED" | "PENDING",
+  ) => {
     try {
-      await api.patch(`/orgs/${orgId}/okrs/${okrId}`, {
-        assignments: [],
+      await api.post(`/orgs/${orgId}/okrs/${okrId}/key-results/${keyResultId}/review`, {
+        status,
       });
       await fetchData();
     } catch (error: any) {
       showError(
         "Error",
-        error.response?.data?.error || "Failed to make OKR global",
+        error.response?.data?.error || "Failed to review key result",
       );
     }
   };
@@ -2694,6 +2736,7 @@ const DashboardPage = () => {
             onCreateOkr={() => setShowCreateOkrModal(true)}
             onEditOkr={handleOpenEditOkr}
             onDeleteOkr={handleDeleteOkr}
+            onReviewKeyResult={handleReviewKeyResult}
             onNavigate={(path) => navigate(path)}
           />
         )}
@@ -3534,7 +3577,7 @@ const DashboardPage = () => {
                             textTransform: "uppercase",
                           }}
                         >
-                          OKR Target vs Actual
+                          Assigned KR Performance
                         </div>
                         {appraisal.okrImpactSummary.okrs
                           .slice(0, 3)
@@ -3552,6 +3595,26 @@ const DashboardPage = () => {
                                 okr.targetValueTotal > 0
                                   ? `${Math.round((okr.actualValueTotal || 0) * 100) / 100} / ${Math.round((okr.targetValueTotal || 0) * 100) / 100} (${Math.round(okr.achievedPct || 0)}%)`
                                   : "N/A (no quantitative target configured)"}
+                              </div>
+                              <div style={{ marginTop: 6 }}>
+                                {okr.keyResults.slice(0, 2).map((kr) => (
+                                  <div
+                                    key={kr.krId}
+                                    style={{
+                                      fontSize: "0.8em",
+                                      color: "#475569",
+                                      marginBottom: 4,
+                                    }}
+                                  >
+                                    {kr.krTitle}{" "}
+                                    {kr.contributionPct !== null &&
+                                    kr.contributionPct !== undefined
+                                      ? `(${Math.round(kr.contributionPct)}%)`
+                                      : ""}
+                                    {" • "}
+                                    {kr.approvalStatus || "PENDING"}
+                                  </div>
+                                ))}
                               </div>
                             </div>
                           ))}
@@ -5822,7 +5885,10 @@ const DashboardPage = () => {
                               e.target.value.toLowerCase().trim(),
                           );
                           if (matched?.color) {
+                            next[index].tagId = matched.id;
                             next[index].tagColor = matched.color;
+                          } else {
+                            next[index].tagId = "";
                           }
                           setNewOkr({ ...newOkr, keyResults: next });
                         }}
@@ -5865,6 +5931,25 @@ const DashboardPage = () => {
                         }}
                       />
                     </div>
+                  </div>
+                  <div className="form-group">
+                    <label>Assigned User</label>
+                    <select
+                      value={kr.assignedUserId}
+                      onChange={(e) => {
+                        const next = [...newOkr.keyResults];
+                        next[index].assignedUserId = e.target.value;
+                        setNewOkr({ ...newOkr, keyResults: next });
+                      }}
+                      required
+                    >
+                      <option value="">Select team member</option>
+                      {assignableUsers.map((member) => (
+                        <option key={member.user.id} value={member.user.id}>
+                          {member.user.name || member.user.email}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                   <div className="form-row">
                     <div className="form-group">
@@ -5924,6 +6009,14 @@ const DashboardPage = () => {
                       />
                     </div>
                   </div>
+                  <div
+                    style={{
+                      fontSize: "0.85em",
+                      color: "var(--text-muted)",
+                    }}
+                  >
+                    Parsed contribution is calculated automatically from the first number in the KR title.
+                  </div>
                 </div>
               ))}
               <button
@@ -5932,18 +6025,7 @@ const DashboardPage = () => {
                 onClick={() =>
                   setNewOkr({
                     ...newOkr,
-                    keyResults: [
-                      ...newOkr.keyResults,
-                      {
-                        title: "",
-                        tagName: "",
-                        tagColor: "#2563eb",
-                        metricName: "",
-                        metricUnit: "",
-                        targetValue: "",
-                        weight: "1",
-                      },
-                    ],
+                    keyResults: [...newOkr.keyResults, createEmptyKrForm()],
                   })
                 }
               >
@@ -6146,7 +6228,10 @@ const DashboardPage = () => {
                               e.target.value.toLowerCase().trim(),
                           );
                           if (matched?.color) {
+                            next[index].tagId = matched.id;
                             next[index].tagColor = matched.color;
+                          } else {
+                            next[index].tagId = "";
                           }
                           setEditOkrForm({ ...editOkrForm, keyResults: next });
                         }}
@@ -6189,6 +6274,25 @@ const DashboardPage = () => {
                         }}
                       />
                     </div>
+                  </div>
+                  <div className="form-group">
+                    <label>Assigned User</label>
+                    <select
+                      value={kr.assignedUserId}
+                      onChange={(e) => {
+                        const next = [...editOkrForm.keyResults];
+                        next[index].assignedUserId = e.target.value;
+                        setEditOkrForm({ ...editOkrForm, keyResults: next });
+                      }}
+                      required
+                    >
+                      <option value="">Select team member</option>
+                      {assignableUsers.map((member) => (
+                        <option key={member.user.id} value={member.user.id}>
+                          {member.user.name || member.user.email}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                   <div className="form-row">
                     <div className="form-group">
@@ -6248,6 +6352,14 @@ const DashboardPage = () => {
                       />
                     </div>
                   </div>
+                  <div
+                    style={{
+                      fontSize: "0.85em",
+                      color: "var(--text-muted)",
+                    }}
+                  >
+                    Parsed contribution is calculated automatically from the first number in the KR title.
+                  </div>
                   <button
                     type="button"
                     className="btn-logout"
@@ -6262,19 +6374,7 @@ const DashboardPage = () => {
                       );
                       setEditOkrForm({
                         ...editOkrForm,
-                        keyResults: next.length
-                          ? next
-                          : [
-                              {
-                                title: "",
-                                tagName: "",
-                                tagColor: "#2563eb",
-                                metricName: "",
-                                metricUnit: "",
-                                targetValue: "",
-                                weight: "1",
-                              },
-                            ],
+                        keyResults: next.length ? next : [createEmptyKrForm()],
                       });
                     }}
                   >
@@ -6288,18 +6388,7 @@ const DashboardPage = () => {
                 onClick={() =>
                   setEditOkrForm({
                     ...editOkrForm,
-                    keyResults: [
-                      ...editOkrForm.keyResults,
-                      {
-                        title: "",
-                        tagName: "",
-                        tagColor: "#2563eb",
-                        metricName: "",
-                        metricUnit: "",
-                        targetValue: "",
-                        weight: "1",
-                      },
-                    ],
+                    keyResults: [...editOkrForm.keyResults, createEmptyKrForm()],
                   })
                 }
               >
