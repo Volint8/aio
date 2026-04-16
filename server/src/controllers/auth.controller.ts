@@ -53,7 +53,8 @@ const attachInviteMembershipIfPending = async (userId: string) => {
         data: {
           userId,
           organizationId: invite.organizationId,
-          role: invite.role
+          role: invite.role,
+          teamId: invite.teamId
         }
       });
     }
@@ -354,7 +355,8 @@ export const inviteAcceptComplete = async (req: Request, res: Response) => {
           data: {
             userId: user.id,
             organizationId: invite.organizationId,
-            role: invite.role
+            role: invite.role,
+            teamId: invite.teamId
           }
         });
       }

@@ -408,6 +408,12 @@ export const getOrgById = async (req: Request, res: Response) => {
       include: {
         members: {
           include: {
+            team: {
+              select: {
+                id: true,
+                name: true
+              }
+            },
             user: {
               select: {
                 id: true,
@@ -1353,12 +1359,30 @@ export const updateTeam = async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Team not found' });
     }
 
-    if (!leadUserId) {
-      return res.status(400).json({ error: 'leadUserId is required' });
-    }
-
     await prisma.$transaction(async (tx) => {
-      const participantIds = await validateTeamParticipants(tx, organizationId, leadUserId, memberUserIds);
+      let participantIds: string[] = [];
+
+      if (leadUserId) {
+        participantIds = await validateTeamParticipants(tx, organizationId, leadUserId, memberUserIds);
+      } else if (memberUserIds.length > 0) {
+        const memberships = await tx.organizationMember.findMany({
+          where: {
+            organizationId,
+            userId: { in: memberUserIds }
+          }
+        });
+
+        if (memberships.length !== memberUserIds.length) {
+          throw new Error('All team members must be members of this organization');
+        }
+
+        const hasAdmin = memberships.some((m: any) => m.role === 'ADMIN');
+        if (hasAdmin) {
+          throw new Error('Admins cannot be assigned to teams');
+        }
+
+        participantIds = memberUserIds;
+      }
 
       await tx.organizationMember.updateMany({
         where: { organizationId, teamId },
@@ -1377,7 +1401,7 @@ export const updateTeam = async (req: Request, res: Response) => {
         where: { id: teamId },
         data: {
           ...(name?.trim() ? { name: name.trim(), normalizedName: buildTeamName(name) } : {}),
-          leadUserId
+          leadUserId: leadUserId || null
         }
       });
     });

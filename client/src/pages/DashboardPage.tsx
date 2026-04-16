@@ -74,6 +74,10 @@ interface OrganizationMember {
   userId: string;
   role: string;
   teamId?: string | null;
+  team?: {
+    id: string;
+    name: string;
+  } | null;
   joinedAt?: string | null;
   user: {
     id: string;
@@ -120,6 +124,112 @@ interface Team {
     };
   }>;
 }
+
+interface TeamMultiDropdownProps {
+  teams: Team[];
+  value: string[];
+  onChange: (teamIds: string[]) => void;
+  disabledTeamId?: string;
+  emptyMessage: string;
+}
+
+const TeamMultiDropdown = ({
+  teams,
+  value,
+  onChange,
+  disabledTeamId,
+  emptyMessage,
+}: TeamMultiDropdownProps) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const availableTeams = teams.filter((team) => team.id !== disabledTeamId);
+  const selectedTeams = teams.filter(
+    (team) => team.id !== disabledTeamId && value.includes(team.id),
+  );
+
+  const toggleTeam = (teamId: string) => {
+    onChange(
+      value.includes(teamId)
+        ? value.filter((id) => id !== teamId)
+        : [...value, teamId],
+    );
+  };
+
+  const removeTeam = (teamId: string) => {
+    onChange(value.filter((id) => id !== teamId));
+  };
+
+  return (
+    <div
+      className="team-multi-select"
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget)) {
+          setIsOpen(false);
+        }
+      }}
+    >
+      <button
+        type="button"
+        className={`team-multi-select-trigger ${isOpen ? "open" : ""}`}
+        onClick={() => setIsOpen((open) => !open)}
+        aria-haspopup="listbox"
+        aria-expanded={isOpen}
+      >
+        <span className="team-multi-select-values">
+          {selectedTeams.length > 0 ? (
+            selectedTeams.map((team) => (
+              <span className="team-selection-chip" key={team.id}>
+                {team.name}
+                <span
+                  role="button"
+                  tabIndex={0}
+                  className="team-selection-remove"
+                  aria-label={`Remove ${team.name}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    removeTeam(team.id);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      removeTeam(team.id);
+                    }
+                  }}
+                >
+                  x
+                </span>
+              </span>
+            ))
+          ) : (
+            <span className="team-multi-select-placeholder">
+              Select contributing teams
+            </span>
+          )}
+        </span>
+        <span className="team-multi-select-caret">v</span>
+      </button>
+
+      {isOpen && (
+        <div className="team-multi-select-menu" role="listbox" aria-multiselectable="true">
+          {availableTeams.length > 0 ? (
+            availableTeams.map((team) => (
+              <label className="team-multi-select-option" key={team.id}>
+                <input
+                  type="checkbox"
+                  checked={value.includes(team.id)}
+                  onChange={() => toggleTeam(team.id)}
+                />
+                <span>{team.name}</span>
+              </label>
+            ))
+          ) : (
+            <div className="team-multi-select-empty">{emptyMessage}</div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
 
 interface Organization {
   id: string;
@@ -1032,8 +1142,9 @@ const DashboardPage = () => {
       })
       .map((member) => {
         const stats = memberStats.find((m) => m.userId === member.userId);
-        const team = teams.find(
+        const team = member.team || teams.find(
           (t) =>
+            t.id === member.teamId ||
             (t.members &&
               t.members.some((m) => (m.userId || m.id) === member.userId)) ||
             (t.people && t.people.some((p) => p.userId === member.userId)),
@@ -1469,7 +1580,8 @@ const DashboardPage = () => {
     const supportedByTeamIds =
       okr.assignments
         ?.filter((a) => a.targetType === "TEAM")
-        .map((a) => a.targetId) || [];
+        .map((a) => a.targetId)
+        .filter((teamId) => teamId !== assignedToTeamId) || [];
 
     setEditOkrForm({
       title: okr.title,
@@ -5791,9 +5903,16 @@ const DashboardPage = () => {
                 <label>Assigned To (Primary Team)</label>
                 <select
                   value={newOkr.assignedToTeamId}
-                  onChange={(e) =>
-                    setNewOkr({ ...newOkr, assignedToTeamId: e.target.value })
-                  }
+                  onChange={(e) => {
+                    const assignedToTeamId = e.target.value;
+                    setNewOkr((prev) => ({
+                      ...prev,
+                      assignedToTeamId,
+                      supportedByTeamIds: prev.supportedByTeamIds.filter(
+                        (teamId) => teamId !== assignedToTeamId,
+                      ),
+                    }));
+                  }}
                 >
                   <option value="">Select a team</option>
                   {teams.map((team) => (
@@ -5807,29 +5926,18 @@ const DashboardPage = () => {
               <div className="form-group">
                 <label>Supported By (Contributing Teams)</label>
                 {teams.length > 0 ? (
-                  <select
-                    multiple
+                  <TeamMultiDropdown
+                    teams={teams}
                     value={newOkr.supportedByTeamIds}
-                    onChange={(e) => {
-                      const selected = Array.from(e.target.selectedOptions).map(
-                        (o) => o.value,
-                      );
+                    disabledTeamId={newOkr.assignedToTeamId}
+                    onChange={(supportedByTeamIds) =>
                       setNewOkr((prev) => ({
                         ...prev,
-                        supportedByTeamIds: selected,
-                      }));
-                    }}
-                    size={Math.min(6, teams.length)}
-                    style={{ width: "100%" }}
-                  >
-                    {teams
-                      .filter((t) => t.id !== newOkr.assignedToTeamId)
-                      .map((team) => (
-                        <option key={team.id} value={team.id}>
-                          {team.name}
-                        </option>
-                      ))}
-                  </select>
+                        supportedByTeamIds,
+                      }))
+                    }
+                    emptyMessage="No other teams available."
+                  />
                 ) : (
                   <p
                     style={{
@@ -6131,12 +6239,16 @@ const DashboardPage = () => {
                 <label>Assigned To (Primary Team)</label>
                 <select
                   value={editOkrForm.assignedToTeamId}
-                  onChange={(e) =>
-                    setEditOkrForm({
-                      ...editOkrForm,
-                      assignedToTeamId: e.target.value,
-                    })
-                  }
+                  onChange={(e) => {
+                    const assignedToTeamId = e.target.value;
+                    setEditOkrForm((prev) => ({
+                      ...prev,
+                      assignedToTeamId,
+                      supportedByTeamIds: prev.supportedByTeamIds.filter(
+                        (teamId) => teamId !== assignedToTeamId,
+                      ),
+                    }));
+                  }}
                 >
                   <option value="">Select a team</option>
                   {teams.map((team) => (
@@ -6150,29 +6262,18 @@ const DashboardPage = () => {
               <div className="form-group">
                 <label>Supported By (Contributing Teams)</label>
                 {teams.length > 0 ? (
-                  <select
-                    multiple
+                  <TeamMultiDropdown
+                    teams={teams}
                     value={editOkrForm.supportedByTeamIds}
-                    onChange={(e) => {
-                      const selected = Array.from(e.target.selectedOptions).map(
-                        (o) => o.value,
-                      );
+                    disabledTeamId={editOkrForm.assignedToTeamId}
+                    onChange={(supportedByTeamIds) =>
                       setEditOkrForm((prev) => ({
                         ...prev,
-                        supportedByTeamIds: selected,
-                      }));
-                    }}
-                    size={Math.min(6, teams.length)}
-                    style={{ width: "100%" }}
-                  >
-                    {teams
-                      .filter((t) => t.id !== editOkrForm.assignedToTeamId)
-                      .map((team) => (
-                        <option key={team.id} value={team.id}>
-                          {team.name}
-                        </option>
-                      ))}
-                  </select>
+                        supportedByTeamIds,
+                      }))
+                    }
+                    emptyMessage="No other teams available."
+                  />
                 ) : (
                   <p
                     style={{
