@@ -64,7 +64,7 @@ interface TeamTrackerViewProps {
   onCreateTask: () => void;
   onSendAlert: () => void;
   tags?: Array<{ id: string; name: string; color: string }>;
-  userRole?: "ADMIN" | "MEMBER";
+  userRole?: 'ADMIN' | 'TEAM_LEAD' | 'MEMBER';
 }
 
 const TeamTrackerView: React.FC<TeamTrackerViewProps> = ({
