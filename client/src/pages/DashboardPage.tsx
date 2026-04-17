@@ -944,10 +944,13 @@ const DashboardPage = () => {
     organization?.userRole || storedOrgRole
   ).toUpperCase();
   const isAdmin = effectiveOrgRole === "ADMIN";
-  const canTrackTeam = isAdmin;
-  const canUseTrackerCharts = isAdmin;
+  const isTeamLead = effectiveOrgRole === "TEAM_LEAD";
+  const isMember = effectiveOrgRole === "MEMBER";
+  const canTrackTeam =
+    effectiveOrgRole === "ADMIN" || effectiveOrgRole === "TEAM_LEAD";
   const canReviewSubmissions =
     Boolean((organization as any)?.canReviewSubmissions) || isAdmin;
+  const canUseTrackerCharts = isAdmin || isTeamLead;
   const trackerView: TrackerView =
     requestedTrackerView === "teams" ? "teams" : "users";
 
@@ -1051,6 +1054,10 @@ const DashboardPage = () => {
     (member) => member.role !== "ADMIN",
   );
 
+  const teamLeadUsers = (organization?.members || []).filter(
+    (member) => member.role === "TEAM_LEAD",
+  );
+
   useEffect(() => {
     if (selectedTaskId) {
       fetchSubmissions(selectedTaskId);
@@ -1104,6 +1111,7 @@ const DashboardPage = () => {
         socket.off("task:created", handleCreated);
         socket.off("task:updated", handleUpdated);
         socket.off("task:deleted", handleDeleted);
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
       } catch (e) {
         /* ignore */
       }
@@ -1224,7 +1232,9 @@ const DashboardPage = () => {
 
   const formatRole = (role: string) => {
     if (role === "ADMIN") return "Admin";
-    return "Member";
+    if (role === "TEAM_LEAD") return "Team Lead";
+    if (role === "MEMBER") return "Team Member";
+    return role;
   };
 
   const formatMemberCategory = (stats?: MemberStatRecord) => {
@@ -1434,6 +1444,44 @@ const DashboardPage = () => {
           setTeamDistribution(distributionRes.data || []);
         } catch (error) {
           console.error("Failed to fetch admin data:", error);
+          setTeams([]);
+          setInvites([]);
+          setMemberStats([]);
+          setTeamDistribution([]);
+        }
+      } else if (role === "TEAM_LEAD") {
+        try {
+          const [memberStatsRes, distRes] = await Promise.all([
+            api.get("/tasks/team-stats", { params: { organizationId: orgId } }),
+            api.get("/tasks/team-distribution", {
+              params: { organizationId: orgId },
+            }),
+          ]);
+          const distributionData = distRes.data || [];
+          setTeams(
+            distributionData.map((item: any) => ({
+              id: item.teamId,
+              name: item.teamName,
+              leadUser: item.leadUser,
+              stats: item.stats,
+              members: [],
+              people: item.people || [],
+            })),
+          );
+          setInvites([]);
+          // Filter out ADMIN users from member stats
+          const filteredMemberStats = (memberStatsRes.data || []).filter(
+            (m: any) => {
+              const member = orgMembers.find(
+                (orgMember: any) => orgMember.userId === m.userId,
+              );
+              return member?.role !== "ADMIN";
+            },
+          );
+          setMemberStats(filteredMemberStats);
+          setTeamDistribution(distributionData);
+        } catch (error) {
+          console.error("Failed to fetch team lead data:", error);
           setTeams([]);
           setInvites([]);
           setMemberStats([]);
@@ -2006,7 +2054,7 @@ const DashboardPage = () => {
   // Bulk invite handlers
   const handleDownloadSampleSheet = () => {
     const data = [
-      { Email: "john.doe@company.com", Team: "Growth", Role: "MEMBER" },
+      { Email: "john.doe@company.com", Team: "Growth", Role: "TEAM_LEAD" },
       { Email: "jane.smith@company.com", Team: "Operations", Role: "MEMBER" },
       { Email: "bob.wilson@company.com", Team: "Growth", Role: "MEMBER" },
     ];
@@ -2029,7 +2077,7 @@ const DashboardPage = () => {
       [""],
       ["Required Columns:"],
       ["- Email: Work email address (required)"],
-      ["- Role: MEMBER (required)"],
+      ["- Role: TEAM_LEAD or MEMBER (required)"],
       [""],
       ["Optional Columns:"],
       ["- Team: Team name (will be created automatically if it doesn't exist)"],
@@ -2038,6 +2086,7 @@ const DashboardPage = () => {
       ["- Maximum file size: 5MB"],
       ["- Supported formats: .xlsx, .xls, .csv"],
       ["- Teams will be created automatically from the upload"],
+      ["- Team leads are identified by TEAM_LEAD role"],
       ["- Invites expire after 72 hours"],
     ];
     const wsInstructions = XLSX.utils.aoa_to_sheet(instructions);
@@ -2854,7 +2903,9 @@ const DashboardPage = () => {
           <BoardView
             memberStats={memberStats}
             teamDistribution={teamDistribution}
-            userRole={isAdmin ? "ADMIN" : "MEMBER"}
+            userRole={
+              organization?.userRole as "ADMIN" | "TEAM_LEAD" | "MEMBER"
+            }
             onCreateTask={() => setShowCreateTaskModal(true)}
             onNavigate={(path) => navigate(path)}
             organizationName={organization?.name}
@@ -2869,7 +2920,11 @@ const DashboardPage = () => {
 
         {currentSection === "task-tracker" && (
           <TaskTrackerView
-            tasks={tasks}
+            tasks={
+              isTeamLead
+                ? tasks.filter((t) => t.assignee?.id === user?.id)
+                : tasks
+            }
             filter={filter}
             onFilterChange={(f) =>
               setFilter(
@@ -2897,15 +2952,21 @@ const DashboardPage = () => {
               email: m.user.email,
             }))}
             tags={tags}
-            hideOwnerFilter={false}
-            userRole={isAdmin ? "ADMIN" : "MEMBER"}
+            hideOwnerFilter={isTeamLead}
+            userRole={
+              organization?.userRole as "ADMIN" | "TEAM_LEAD" | "MEMBER"
+            }
           />
         )}
 
         {currentSection === "team-tracker" && canTrackTeam && (
           <TeamTrackerView
             teamName={teamTrackerName}
-            tasks={tasks}
+            tasks={
+              isTeamLead
+                ? tasks.filter((t) => t.assignee?.id !== user?.id)
+                : tasks
+            }
             members={(organization?.members || [])
               .filter((m) => m.userId !== user?.id)
               .map((m) => ({
@@ -2936,14 +2997,16 @@ const DashboardPage = () => {
             onCreateTask={() => setShowCreateTaskModal(true)}
             onSendAlert={() => setShowSendAlertModal(true)}
             tags={tags}
-            userRole={"ADMIN"}
+            userRole={
+              organization?.userRole as "ADMIN" | "TEAM_LEAD" | "MEMBER"
+            }
           />
         )}
 
         {currentSection === "okr" && organization && (
           <OkrView
             okrs={okrs}
-            userRole={isAdmin ? "ADMIN" : "MEMBER"}
+            userRole={organization.userRole as "ADMIN" | "TEAM_LEAD" | "MEMBER"}
             onCreateTask={() => setShowCreateTaskModal(true)}
             onCreateOkr={() => setShowCreateOkrModal(true)}
             onEditOkr={handleOpenEditOkr}
@@ -2970,7 +3033,7 @@ const DashboardPage = () => {
                   Show All
                 </button>
               )}
-              {isAdmin && (
+              {(isAdmin || isTeamLead) && (
                 <button
                   onClick={() => setShowSendAlertModal(true)}
                   className="btn-secondary"
@@ -3075,6 +3138,7 @@ const DashboardPage = () => {
                         disabled={!isAdmin || inviting}
                       >
                         <option value="MEMBER">Member</option>
+                        <option value="TEAM_LEAD">Team Lead</option>
                       </select>
                     </div>
                     <DebouncedButton
@@ -3941,7 +4005,7 @@ const DashboardPage = () => {
 
             {!canUseTrackerCharts && stats && (
               <div className="stats-grid">
-                {!isAdmin && (
+                {(isMember || isTeamLead) && (
                   <div
                     className="stat-card performance-highlight"
                     title="View your performance metrics"
@@ -4013,7 +4077,7 @@ const DashboardPage = () => {
                     ? "Recently Deleted"
                     : "Task Tracker"}
                 </h2>
-                {!isAdmin && (
+                {(isMember || isTeamLead) && (
                   <p className="org-subtitle" style={{ margin: 0 }}>
                     Your tasks + your team-linked tasks
                   </p>
@@ -5263,7 +5327,7 @@ const DashboardPage = () => {
                   </select>
                 </div>
               )}
-              {!isAdmin && (
+              {!isTeamLead && (
                 <div className="form-group">
                   <label
                     style={{
@@ -5284,7 +5348,7 @@ const DashboardPage = () => {
                       }
                       style={{ width: "auto", margin: 0 }}
                     />
-                    <span>Send task alert for review</span>
+                    <span>Alert Team Lead about this task</span>
                   </label>
                   <small
                     style={{
@@ -5491,7 +5555,7 @@ const DashboardPage = () => {
                     ))}
                 </select>
               </div>
-              {!isAdmin && (
+              {!isTeamLead && (
                 <div className="form-group">
                   <label
                     style={{
@@ -5659,7 +5723,7 @@ const DashboardPage = () => {
                 />
               </div>
               <div className="form-group">
-                <label>Lead (Optional)</label>
+                <label>Team Lead - Optional</label>
                 <select
                   value={teamForm.leadUserId}
                   onChange={(e) => {
@@ -5675,15 +5739,15 @@ const DashboardPage = () => {
                   style={{ maxHeight: "200px", overflowY: "auto" }}
                 >
                   <option value="">Select lead (optional)</option>
-                  {assignableUsers.length > 0 ? (
-                    assignableUsers.map((member) => (
+                  {teamLeadUsers.length > 0 ? (
+                    teamLeadUsers.map((member) => (
                       <option key={member.user.id} value={member.user.id}>
                         {member.user.name || member.user.email}
                       </option>
                     ))
                   ) : (
                     <option disabled value="">
-                      No members available
+                      No team leads available
                     </option>
                   )}
                 </select>
@@ -5770,15 +5834,15 @@ const DashboardPage = () => {
                   }}
                 >
                   <option value="">Select lead (optional)</option>
-                  {assignableUsers.length > 0 ? (
-                    assignableUsers.map((member) => (
+                  {teamLeadUsers.length > 0 ? (
+                    teamLeadUsers.map((member) => (
                       <option key={member.user.id} value={member.user.id}>
                         {member.user.name || member.user.email}
                       </option>
                     ))
                   ) : (
                     <option disabled value="">
-                      No members available
+                      No team leads available
                     </option>
                   )}
                 </select>
@@ -6810,8 +6874,8 @@ const DashboardPage = () => {
                       Upload a spreadsheet (.xlsx or .csv) to invite multiple
                       members at once. The file must contain{" "}
                       <strong>Email</strong>, <strong>Team</strong>, and{" "}
-                      <strong>Role</strong> (MEMBER) columns. Teams will be
-                      created automatically.
+                      <strong>Role</strong> (TEAM_LEAD or MEMBER) columns. Teams
+                      will be created automatically.
                     </p>
                     <button
                       onClick={handleDownloadSampleSheet}

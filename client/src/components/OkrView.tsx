@@ -53,7 +53,7 @@ interface Okr {
 
 interface OkrViewProps {
   okrs: Okr[];
-  userRole: 'ADMIN' | 'TEAM_LEAD' | 'MEMBER';
+  userRole: "ADMIN" | "TEAM_LEAD" | "MEMBER";
   onCreateTask: () => void;
   onCreateOkr?: () => void;
   onEditOkr?: (okr: Okr) => void;
