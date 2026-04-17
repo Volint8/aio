@@ -529,13 +529,7 @@ interface AppraisalOkrImpactSummary {
 interface OkrKeyResultForm {
   title: string;
   tagId: string;
-  tagName: string;
-  tagColor: string;
   assignedUserId: string;
-  metricName: string;
-  metricUnit: string;
-  targetValue: string;
-  weight: string;
 }
 
 interface Appraisal {
@@ -734,6 +728,7 @@ const DashboardPage = () => {
 
   const [showCreateTaskModal, setShowCreateTaskModal] = useState(false);
   const [showCreateOkrModal, setShowCreateOkrModal] = useState(false);
+  const [creatingOkr, setCreatingOkr] = useState(false);
   const [showCreateAppraisalModal, setShowCreateAppraisalModal] =
     useState(false);
   const [showAddLinkModal, setShowAddLinkModal] = useState(false);
@@ -823,13 +818,7 @@ const DashboardPage = () => {
       {
         title: "",
         tagId: "",
-        tagName: "",
-        tagColor: "#2563eb",
         assignedUserId: "",
-        metricName: "",
-        metricUnit: "",
-        targetValue: "",
-        weight: "1",
       },
     ] as OkrKeyResultForm[],
   });
@@ -845,13 +834,7 @@ const DashboardPage = () => {
       {
         title: "",
         tagId: "",
-        tagName: "",
-        tagColor: "#2563eb",
         assignedUserId: "",
-        metricName: "",
-        metricUnit: "",
-        targetValue: "",
-        weight: "1",
       },
     ] as OkrKeyResultForm[],
     status: "OPEN",
@@ -951,6 +934,12 @@ const DashboardPage = () => {
   const canReviewSubmissions =
     Boolean((organization as any)?.canReviewSubmissions) || isAdmin;
   const canUseTrackerCharts = isAdmin || isTeamLead;
+  const ledTeamMemberIds = useMemo(() => {
+    if (!isTeamLead || !teamDistribution || !user?.id) return [] as string[];
+    return teamDistribution
+      .filter((d) => d.leadUser?.id === user.id)
+      .flatMap((d) => (d.people || []).map((p) => p.userId));
+  }, [teamDistribution, user?.id, isTeamLead]);
   const trackerView: TrackerView =
     requestedTrackerView === "teams" ? "teams" : "users";
 
@@ -987,13 +976,7 @@ const DashboardPage = () => {
   const createEmptyKrForm = (): OkrKeyResultForm => ({
     title: "",
     tagId: "",
-    tagName: "",
-    tagColor: "#2563eb",
     assignedUserId: "",
-    metricName: "",
-    metricUnit: "",
-    targetValue: "",
-    weight: "1",
   });
 
   const userChartData = memberStats.map((item) => ({
@@ -1695,7 +1678,9 @@ const DashboardPage = () => {
 
   const handleCreateOkr = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (creatingOkr) return;
     try {
+      setCreatingOkr(true);
       const assignments = [];
       if (newOkr.assignedToTeamId) {
         assignments.push({
@@ -1711,10 +1696,7 @@ const DashboardPage = () => {
         ...newOkr,
         assignments,
         keyResults: newOkr.keyResults.filter(
-          (kr) =>
-            kr.title.trim() &&
-            (kr.tagId || kr.tagName.trim()) &&
-            kr.assignedUserId,
+          (kr) => kr.title.trim() && kr.tagId && kr.assignedUserId,
         ),
       });
       setNewOkr({
@@ -1728,6 +1710,7 @@ const DashboardPage = () => {
         keyResults: [createEmptyKrForm()],
       });
       setShowCreateOkrModal(false);
+      setCreatingOkr(false);
       await fetchData();
     } catch (error: any) {
       const errorData = error.response?.data?.error;
@@ -1736,6 +1719,7 @@ const DashboardPage = () => {
         (typeof errorData === "object" ? errorData.message : errorData) ||
           "Failed to create OKR",
       );
+      setCreatingOkr(false);
     }
   };
 
@@ -1763,19 +1747,7 @@ const DashboardPage = () => {
       keyResults: okr.keyResults?.map((kr) => ({
         title: kr.title,
         tagId: kr.tag.id,
-        tagName: kr.tag.name,
-        tagColor: kr.tag.color,
         assignedUserId: kr.assignedUserId,
-        metricName: kr.metricName || "",
-        metricUnit: kr.metricUnit || "",
-        targetValue:
-          kr.targetValue !== null && kr.targetValue !== undefined
-            ? String(kr.targetValue)
-            : "",
-        weight:
-          kr.weight !== null && kr.weight !== undefined
-            ? String(kr.weight)
-            : "1",
       })) || [createEmptyKrForm()],
       status: okr.status || "OPEN",
     });
@@ -1803,10 +1775,7 @@ const DashboardPage = () => {
         ...editOkrForm,
         assignments,
         keyResults: editOkrForm.keyResults.filter(
-          (kr) =>
-            kr.title.trim() &&
-            (kr.tagId || kr.tagName.trim()) &&
-            kr.assignedUserId,
+          (kr) => kr.title.trim() && kr.tagId && kr.assignedUserId,
         ),
       });
       setShowEditOkrModal(false);
@@ -1829,27 +1798,6 @@ const DashboardPage = () => {
       await fetchData();
     } catch (error: any) {
       showError("Error", error.response?.data?.error || "Failed to delete OKR");
-    }
-  };
-
-  const handleReviewKeyResult = async (
-    okrId: string,
-    keyResultId: string,
-    status: "APPROVED" | "REJECTED" | "PENDING",
-  ) => {
-    try {
-      await api.post(
-        `/orgs/${orgId}/okrs/${okrId}/key-results/${keyResultId}/review`,
-        {
-          status,
-        },
-      );
-      await fetchData();
-    } catch (error: any) {
-      showError(
-        "Error",
-        error.response?.data?.error || "Failed to review key result",
-      );
     }
   };
 
@@ -2964,7 +2912,10 @@ const DashboardPage = () => {
             teamName={teamTrackerName}
             tasks={
               isTeamLead
-                ? tasks.filter((t) => t.assignee?.id !== user?.id)
+                ? tasks.filter((t) => {
+                    const assigneeId = t.assignee?.id || "";
+                    return ledTeamMemberIds.includes(assigneeId);
+                  })
                 : tasks
             }
             members={(organization?.members || [])
@@ -3011,7 +2962,6 @@ const DashboardPage = () => {
             onCreateOkr={() => setShowCreateOkrModal(true)}
             onEditOkr={handleOpenEditOkr}
             onDeleteOkr={handleDeleteOkr}
-            onReviewKeyResult={handleReviewKeyResult}
             onNavigate={(path) => navigate(path)}
           />
         )}
@@ -5899,7 +5849,9 @@ const DashboardPage = () => {
       {showCreateOkrModal && (
         <div
           className="modal-overlay"
-          onClick={() => setShowCreateOkrModal(false)}
+          onClick={() => {
+            if (!creatingOkr) setShowCreateOkrModal(false);
+          }}
         >
           <div className="modal large" onClick={(e) => e.stopPropagation()}>
             <h2>Create OKR</h2>
@@ -6050,70 +6002,27 @@ const DashboardPage = () => {
                   </div>
                   <div className="form-row">
                     <div className="form-group">
-                      <label>Tag Name</label>
-                      <input
-                        type="text"
-                        list="okr-tag-options"
-                        placeholder="Start typing to select existing tag or create new"
-                        value={kr.tagName}
+                      <label>Tag</label>
+                      <select
+                        value={kr.tagId}
                         onChange={(e) => {
                           const next = [...newOkr.keyResults];
-                          next[index].tagName = e.target.value;
-                          const matched = availableTags.find(
-                            (tag) =>
-                              tag.name?.toLowerCase() ===
-                              e.target.value.toLowerCase().trim(),
-                          );
-                          if (matched?.color) {
-                            next[index].tagId = matched.id;
-                            next[index].tagColor = matched.color;
-                          } else {
-                            next[index].tagId = "";
-                          }
+                          next[index].tagId = e.target.value;
                           setNewOkr({ ...newOkr, keyResults: next });
                         }}
                         required
-                      />
-                      {kr.tagName && (
-                        <small
-                          style={{
-                            display: "block",
-                            marginTop: "4px",
-                            fontSize: "0.8em",
-                            color: availableTags.some(
-                              (tag) =>
-                                tag.name?.toLowerCase() ===
-                                kr.tagName.toLowerCase().trim(),
-                            )
-                              ? "#16a34a"
-                              : "#dc2626",
-                          }}
-                        >
-                          {availableTags.some(
-                            (tag) =>
-                              tag.name?.toLowerCase() ===
-                              kr.tagName.toLowerCase().trim(),
-                          )
-                            ? "✓ Reusing existing tag"
-                            : "⚠ Will create new tag"}
-                        </small>
-                      )}
-                    </div>
-                    <div className="form-group">
-                      <label>Tag Color</label>
-                      <input
-                        type="color"
-                        value={kr.tagColor}
-                        onChange={(e) => {
-                          const next = [...newOkr.keyResults];
-                          next[index].tagColor = e.target.value;
-                          setNewOkr({ ...newOkr, keyResults: next });
-                        }}
-                      />
+                      >
+                        <option value="">Select tag</option>
+                        {tags.map((t) => (
+                          <option key={t.id} value={t.id}>
+                            {t.name}
+                          </option>
+                        ))}
+                      </select>
                     </div>
                   </div>
                   <div className="form-group">
-                    <label>Assigned User</label>
+                    <label>Owner</label>
                     <select
                       value={kr.assignedUserId}
                       onChange={(e) => {
@@ -6131,64 +6040,7 @@ const DashboardPage = () => {
                       ))}
                     </select>
                   </div>
-                  <div className="form-row">
-                    <div className="form-group">
-                      <label>Metric Name</label>
-                      <input
-                        type="text"
-                        placeholder="e.g. Users"
-                        value={kr.metricName || ""}
-                        onChange={(e) => {
-                          const next = [...newOkr.keyResults];
-                          next[index].metricName = e.target.value;
-                          setNewOkr({ ...newOkr, keyResults: next });
-                        }}
-                      />
-                    </div>
-                    <div className="form-group">
-                      <label>Unit</label>
-                      <input
-                        type="text"
-                        placeholder="e.g. M"
-                        value={kr.metricUnit || ""}
-                        onChange={(e) => {
-                          const next = [...newOkr.keyResults];
-                          next[index].metricUnit = e.target.value;
-                          setNewOkr({ ...newOkr, keyResults: next });
-                        }}
-                      />
-                    </div>
-                  </div>
-                  <div className="form-row">
-                    <div className="form-group">
-                      <label>Target Value</label>
-                      <input
-                        type="number"
-                        min="0"
-                        step="any"
-                        value={kr.targetValue || ""}
-                        onChange={(e) => {
-                          const next = [...newOkr.keyResults];
-                          next[index].targetValue = e.target.value;
-                          setNewOkr({ ...newOkr, keyResults: next });
-                        }}
-                      />
-                    </div>
-                    <div className="form-group">
-                      <label>Weight</label>
-                      <input
-                        type="number"
-                        min="0.1"
-                        step="0.1"
-                        value={kr.weight || "1"}
-                        onChange={(e) => {
-                          const next = [...newOkr.keyResults];
-                          next[index].weight = e.target.value;
-                          setNewOkr({ ...newOkr, keyResults: next });
-                        }}
-                      />
-                    </div>
-                  </div>
+
                   <div
                     style={{
                       fontSize: "0.85em",
@@ -6206,7 +6058,10 @@ const DashboardPage = () => {
                 onClick={() =>
                   setNewOkr({
                     ...newOkr,
-                    keyResults: [...newOkr.keyResults, createEmptyKrForm()],
+                    keyResults: [
+                      ...newOkr.keyResults,
+                      { ...createEmptyKrForm(), tagId: tags[0]?.id || "" },
+                    ],
                   })
                 }
               >
@@ -6218,11 +6073,16 @@ const DashboardPage = () => {
                   type="button"
                   onClick={() => setShowCreateOkrModal(false)}
                   className="btn-secondary"
+                  disabled={creatingOkr}
                 >
                   Cancel
                 </button>
-                <button type="submit" className="btn-primary">
-                  Create OKR
+                <button
+                  type="submit"
+                  className="btn-primary"
+                  disabled={creatingOkr}
+                >
+                  {creatingOkr ? "Creating…" : "Create OKR"}
                 </button>
               </div>
             </form>
@@ -6387,70 +6247,27 @@ const DashboardPage = () => {
                   </div>
                   <div className="form-row">
                     <div className="form-group">
-                      <label>Tag Name</label>
-                      <input
-                        type="text"
-                        list="okr-tag-options"
-                        placeholder="Start typing to select existing tag or create new"
-                        value={kr.tagName}
+                      <label>Tag</label>
+                      <select
+                        value={kr.tagId}
                         onChange={(e) => {
                           const next = [...editOkrForm.keyResults];
-                          next[index].tagName = e.target.value;
-                          const matched = availableTags.find(
-                            (tag) =>
-                              tag.name?.toLowerCase() ===
-                              e.target.value.toLowerCase().trim(),
-                          );
-                          if (matched?.color) {
-                            next[index].tagId = matched.id;
-                            next[index].tagColor = matched.color;
-                          } else {
-                            next[index].tagId = "";
-                          }
+                          next[index].tagId = e.target.value;
                           setEditOkrForm({ ...editOkrForm, keyResults: next });
                         }}
                         required
-                      />
-                      {kr.tagName && (
-                        <small
-                          style={{
-                            display: "block",
-                            marginTop: "4px",
-                            fontSize: "0.8em",
-                            color: availableTags.some(
-                              (tag) =>
-                                tag.name?.toLowerCase() ===
-                                kr.tagName.toLowerCase().trim(),
-                            )
-                              ? "#16a34a"
-                              : "#dc2626",
-                          }}
-                        >
-                          {availableTags.some(
-                            (tag) =>
-                              tag.name?.toLowerCase() ===
-                              kr.tagName.toLowerCase().trim(),
-                          )
-                            ? "✓ Reusing existing tag"
-                            : "⚠ Will create new tag"}
-                        </small>
-                      )}
-                    </div>
-                    <div className="form-group">
-                      <label>Tag Color</label>
-                      <input
-                        type="color"
-                        value={kr.tagColor}
-                        onChange={(e) => {
-                          const next = [...editOkrForm.keyResults];
-                          next[index].tagColor = e.target.value;
-                          setEditOkrForm({ ...editOkrForm, keyResults: next });
-                        }}
-                      />
+                      >
+                        <option value="">Select tag</option>
+                        {tags.map((t) => (
+                          <option key={t.id} value={t.id}>
+                            {t.name}
+                          </option>
+                        ))}
+                      </select>
                     </div>
                   </div>
                   <div className="form-group">
-                    <label>Assigned User</label>
+                    <label>Owner</label>
                     <select
                       value={kr.assignedUserId}
                       onChange={(e) => {
@@ -6468,64 +6285,7 @@ const DashboardPage = () => {
                       ))}
                     </select>
                   </div>
-                  <div className="form-row">
-                    <div className="form-group">
-                      <label>Metric Name</label>
-                      <input
-                        type="text"
-                        placeholder="e.g. Users"
-                        value={kr.metricName || ""}
-                        onChange={(e) => {
-                          const next = [...editOkrForm.keyResults];
-                          next[index].metricName = e.target.value;
-                          setEditOkrForm({ ...editOkrForm, keyResults: next });
-                        }}
-                      />
-                    </div>
-                    <div className="form-group">
-                      <label>Unit</label>
-                      <input
-                        type="text"
-                        placeholder="e.g. M"
-                        value={kr.metricUnit || ""}
-                        onChange={(e) => {
-                          const next = [...editOkrForm.keyResults];
-                          next[index].metricUnit = e.target.value;
-                          setEditOkrForm({ ...editOkrForm, keyResults: next });
-                        }}
-                      />
-                    </div>
-                  </div>
-                  <div className="form-row">
-                    <div className="form-group">
-                      <label>Target Value</label>
-                      <input
-                        type="number"
-                        min="0"
-                        step="any"
-                        value={kr.targetValue || ""}
-                        onChange={(e) => {
-                          const next = [...editOkrForm.keyResults];
-                          next[index].targetValue = e.target.value;
-                          setEditOkrForm({ ...editOkrForm, keyResults: next });
-                        }}
-                      />
-                    </div>
-                    <div className="form-group">
-                      <label>Weight</label>
-                      <input
-                        type="number"
-                        min="0.1"
-                        step="0.1"
-                        value={kr.weight || "1"}
-                        onChange={(e) => {
-                          const next = [...editOkrForm.keyResults];
-                          next[index].weight = e.target.value;
-                          setEditOkrForm({ ...editOkrForm, keyResults: next });
-                        }}
-                      />
-                    </div>
-                  </div>
+
                   <div
                     style={{
                       fontSize: "0.85em",
@@ -6565,7 +6325,7 @@ const DashboardPage = () => {
                     ...editOkrForm,
                     keyResults: [
                       ...editOkrForm.keyResults,
-                      createEmptyKrForm(),
+                      { ...createEmptyKrForm(), tagId: tags[0]?.id || "" },
                     ],
                   })
                 }

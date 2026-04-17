@@ -73,7 +73,7 @@ const OkrView: React.FC<OkrViewProps> = ({
   onCreateOkr,
   onEditOkr,
   onDeleteOkr,
-  onReviewKeyResult,
+
   onNavigate,
 }) => {
   const currentYear = new Date().getFullYear();
@@ -225,20 +225,7 @@ const OkrView: React.FC<OkrViewProps> = ({
                               {kr.metricName ? `(${kr.metricName})` : ""}
                             </small>
                           )}
-                        <small
-                          style={{
-                            display: "block",
-                            color:
-                              kr.approvalStatus === "APPROVED"
-                                ? "#166534"
-                                : kr.approvalStatus === "REJECTED"
-                                  ? "#b91c1c"
-                                  : "#92400e",
-                            fontWeight: 600,
-                          }}
-                        >
-                          Approval: {kr.approvalStatus || "PENDING"}
-                        </small>
+                        {/* approval status removed - approvals handled outside creation flow */}
                       </span>
                       <div
                         style={{
@@ -261,35 +248,7 @@ const OkrView: React.FC<OkrViewProps> = ({
                         >
                           {kr.tag.name}
                         </span>
-                        {userRole === "ADMIN" && onReviewKeyResult && (
-                          <div
-                            style={{
-                              display: "flex",
-                              gap: 6,
-                              flexWrap: "wrap",
-                              justifyContent: "flex-end",
-                            }}
-                          >
-                            <button
-                              type="button"
-                              className="btn-okr-action btn-okr-edit"
-                              onClick={() =>
-                                onReviewKeyResult(okr.id, kr.id, "APPROVED")
-                              }
-                            >
-                              Approve
-                            </button>
-                            <button
-                              type="button"
-                              className="btn-okr-action btn-okr-delete"
-                              onClick={() =>
-                                onReviewKeyResult(okr.id, kr.id, "REJECTED")
-                              }
-                            >
-                              Reject
-                            </button>
-                          </div>
-                        )}
+                        {/* approve/reject removed */}
                       </div>
                     </div>
                   ))}
