@@ -108,7 +108,7 @@ const createOrReuseTag = async (params: {
 type OkrImpactKrSummary = {
   krId: string;
   krTitle: string;
-  assignedUserId: string;
+  assignedUserId: string | null;
   assignedUserName: string | null;
   assignedUserEmail: string | null;
   metricName: string | null;
@@ -1917,6 +1917,7 @@ export const createOkr = async (req: Request, res: Response) => {
         tagName?: string;
         tagColor?: string;
         assignedUserId?: string;
+        isGeneral?: boolean;
         metricName?: string;
         metricUnit?: string;
         targetValue?: number | string | null;
@@ -1935,13 +1936,14 @@ export const createOkr = async (req: Request, res: Response) => {
 
     const objectiveTargetValue = parseFirstNumericValue(title);
 
+    const nonGeneralKeyResults = keyResults.filter((kr) => kr?.title?.trim() && !kr.isGeneral);
     const assignableUserIds = Array.from(new Set(
-      keyResults
+      nonGeneralKeyResults
         .map((kr) => kr?.assignedUserId)
         .filter((value): value is string => !!value)
     ));
-    if (assignableUserIds.length !== keyResults.filter((kr) => kr?.title?.trim()).length) {
-      return res.status(400).json({ error: 'Each key result requires an assigned user' });
+    if (assignableUserIds.length !== nonGeneralKeyResults.length) {
+      return res.status(400).json({ error: 'Each non-general key result requires an assigned user' });
     }
 
     if (assignableUserIds.length > 0) {
@@ -1976,7 +1978,7 @@ export const createOkr = async (req: Request, res: Response) => {
       });
 
       for (const kr of keyResults) {
-        if (!kr?.title?.trim() || !kr?.assignedUserId) {
+        if (!kr?.title?.trim()) {
           continue;
         }
 
@@ -1998,7 +2000,8 @@ export const createOkr = async (req: Request, res: Response) => {
             okrId: created.id,
             title: kr.title.trim(),
             tagId: tag.id,
-            assignedUserId: kr.assignedUserId,
+            assignedUserId: kr.isGeneral ? null : kr.assignedUserId,
+            isGeneral: kr.isGeneral || false,
             metricName: kr.metricName?.trim() || null,
             metricUnit: kr.metricUnit?.trim() || null,
             targetValue: asNumberOrNull(kr.targetValue),
@@ -2193,6 +2196,7 @@ export const updateOkr = async (req: Request, res: Response) => {
         tagName?: string;
         tagColor?: string;
         assignedUserId?: string;
+        isGeneral?: boolean;
         metricName?: string;
         metricUnit?: string;
         targetValue?: number | string | null;
@@ -2215,9 +2219,10 @@ export const updateOkr = async (req: Request, res: Response) => {
     const objectiveTargetValue = parseFirstNumericValue(resolvedTitle);
 
     if (keyResults) {
-      const requiredAssignments = keyResults.filter((kr) => kr?.title?.trim());
+      const nonGeneralKeyResults = keyResults.filter((kr) => kr?.title?.trim() && !kr.isGeneral);
+      const requiredAssignments = nonGeneralKeyResults;
       if (requiredAssignments.some((kr) => !kr.assignedUserId)) {
-        return res.status(400).json({ error: 'Each key result requires an assigned user' });
+        return res.status(400).json({ error: 'Each non-general key result requires an assigned user' });
       }
 
       const assignableUserIds = Array.from(new Set(
@@ -2268,7 +2273,7 @@ export const updateOkr = async (req: Request, res: Response) => {
       if (keyResults) {
         await tx.okrKeyResult.deleteMany({ where: { okrId } });
         for (const kr of keyResults) {
-          if (!kr?.title?.trim() || !kr?.assignedUserId) {
+          if (!kr?.title?.trim()) {
             continue;
           }
 
@@ -2289,7 +2294,8 @@ export const updateOkr = async (req: Request, res: Response) => {
               okrId,
               title: kr.title.trim(),
               tagId: tag.id,
-              assignedUserId: kr.assignedUserId,
+              assignedUserId: kr.isGeneral ? null : kr.assignedUserId,
+              isGeneral: kr.isGeneral || false,
               metricName: kr.metricName?.trim() || null,
               metricUnit: kr.metricUnit?.trim() || null,
               targetValue: asNumberOrNull(kr.targetValue),
@@ -2461,7 +2467,10 @@ export const reviewKeyResult = async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Key result not found' });
     }
 
-    const assigneeLeadMembership = await getAssigneeLeadMembership(organizationId, keyResult.assignedUserId);
+    let assigneeLeadMembership = null;
+    if (keyResult.assignedUserId) {
+      assigneeLeadMembership = await getAssigneeLeadMembership(organizationId, keyResult.assignedUserId);
+    }
     const isAssigneeLead = assigneeLeadMembership?.userId === reviewerUserId;
     const isAdmin = reviewerMembership.role === 'ADMIN';
 
@@ -2496,21 +2505,23 @@ export const reviewKeyResult = async (req: Request, res: Response) => {
       }
     });
 
-    await prisma.notification.create({
-      data: {
-        organizationId,
-        senderId: reviewerUserId,
-        targetType: 'INDIVIDUAL',
-        targetId: keyResult.assignedUserId,
-        type: 'PRIORITY_ALERT',
-        message:
-          status === 'APPROVED'
-            ? `Your key result "${keyResult.title}" was approved`
-            : status === 'REJECTED'
-              ? `Your key result "${keyResult.title}" was rejected and needs revision`
-              : `Your key result "${keyResult.title}" was returned to pending review`
-      }
-    }).catch(() => undefined);
+    if (keyResult.assignedUserId) {
+      await prisma.notification.create({
+        data: {
+          organizationId,
+          senderId: reviewerUserId,
+          targetType: 'INDIVIDUAL',
+          targetId: keyResult.assignedUserId,
+          type: 'PRIORITY_ALERT',
+          message:
+            status === 'APPROVED'
+              ? `Your key result "${keyResult.title}" was approved`
+              : status === 'REJECTED'
+                ? `Your key result "${keyResult.title}" was rejected and needs revision`
+                : `Your key result "${keyResult.title}" was returned to pending review`
+        }
+      }).catch(() => undefined);
+    }
 
     return res.json(updated);
   } catch (error) {
@@ -2974,6 +2985,99 @@ export const deleteQuote = async (req: Request, res: Response) => {
     return res.status(204).send();
   } catch (error) {
     console.error('Delete quote error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+export const listUserOkrs = async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user.userId as string;
+    const organizationId = req.params.id as string;
+    const targetUserId = req.params.userId as string;
+
+    const membership = await getMembership(userId, organizationId);
+    if (!membership) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const now = new Date();
+    const where: any = { organizationId };
+
+    if (membership.role === 'MEMBER' || membership.role === 'TEAM_LEAD') {
+      const assignmentScope: any[] = [
+        { assignments: { some: { targetType: 'MEMBER', targetId: targetUserId } } },
+        { keyResults: { some: { assignedUserId: targetUserId } } }
+      ];
+      if (membership.teamId) {
+        assignmentScope.unshift({ assignments: { some: { targetType: 'TEAM', targetId: membership.teamId } } });
+      }
+
+      assignmentScope.push({
+        assignments: { none: {} },
+        status: 'OPEN',
+        periodStart: { lte: now },
+        periodEnd: { gte: now }
+      });
+
+      where.OR = assignmentScope;
+    }
+
+    const okrs = await prisma.okr.findMany({
+      where,
+      include: {
+        assignments: true,
+        keyResults: {
+          where: {
+            OR: [
+              { assignedUserId: targetUserId },
+              { isGeneral: true }
+            ]
+          },
+          include: {
+            tag: true,
+            assignedUser: {
+              select: {
+                id: true,
+                name: true,
+                email: true
+              }
+            },
+            approver: {
+              select: {
+                id: true,
+                name: true,
+                email: true
+              }
+            }
+          }
+        },
+        creator: {
+          select: {
+            name: true,
+            email: true
+          }
+        }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    const enrichedOkrs = await Promise.all(okrs.map(async (okr) => {
+      const enrichedAssignments = await Promise.all(okr.assignments.map(async (assignment) => {
+        if (assignment.targetType === 'TEAM') {
+          const team = await prisma.team.findUnique({
+            where: { id: assignment.targetId },
+            select: { id: true, name: true }
+          });
+          return { ...assignment, team };
+        }
+        return assignment;
+      }));
+      return { ...okr, assignments: enrichedAssignments };
+    }));
+
+    return res.json(enrichedOkrs);
+  } catch (error) {
+    console.error('List user OKRs error:', error);
     return res.status(500).json({ error: 'Internal server error' });
   }
 };

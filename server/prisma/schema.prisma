@@ -247,7 +247,8 @@ model OkrKeyResult {
   okrId            String
   title            String
   tagId            String
-  assignedUserId   String
+  assignedUserId   String?
+  isGeneral        Boolean   @default(false)
   metricName       String?
   metricUnit       String?
   targetValue      Float?
@@ -262,12 +263,13 @@ model OkrKeyResult {
   updatedAt        DateTime  @updatedAt
   okr              Okr       @relation(fields: [okrId], references: [id], onDelete: Cascade)
   tag              Tag       @relation(fields: [tagId], references: [id])
-  assignedUser     User      @relation("AssignedKeyResults", fields: [assignedUserId], references: [id])
+  assignedUser     User?     @relation("AssignedKeyResults", fields: [assignedUserId], references: [id])
   approver         User?     @relation("ApprovedKeyResults", fields: [approvedBy], references: [id])
   impacts          TaskKrImpact[]
 
   @@index([tagId])
   @@index([assignedUserId])
+  @@index([isGeneral])
 }
 
 model Appraisal {

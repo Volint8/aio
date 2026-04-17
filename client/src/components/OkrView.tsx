@@ -14,12 +14,12 @@ interface Okr {
   keyResults?: Array<{
     id: string;
     title: string;
-    assignedUserId: string;
-    assignedUser: {
+    assignedUserId: string | null;
+    assignedUser?: {
       id: string;
       name: string | null;
       email: string;
-    };
+    } | null;
     metricName?: string | null;
     metricUnit?: string | null;
     targetValue?: number | null;

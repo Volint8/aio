@@ -321,7 +321,7 @@ export const getTasks = async (req: Request, res: Response) => {
 export const createTask = async (req: Request, res: Response) => {
     try {
         const userId = (req as any).user.userId;
-        const { title, description, organizationId, assigneeId, supporterId, dueDate, priority, tagId, alertTeamLead } = req.body;
+        const { title, description, organizationId, assigneeId, supporterId, dueDate, priority, tagId, alertTeamLead, keyResultId } = req.body;
         const normalizedAssigneeId = assigneeId === '' ? null : assigneeId;
         const normalizedSupporterId = supporterId === '' ? null : supporterId;
 
@@ -375,6 +375,21 @@ export const createTask = async (req: Request, res: Response) => {
                 await tx.taskTeam.createMany({
                     data: teamIds.map((teamId) => ({ taskId: created.id, teamId }))
                 });
+            }
+
+            if (keyResultId) {
+                const keyResult = await tx.okrKeyResult.findUnique({
+                    where: { id: keyResultId }
+                });
+                if (keyResult && keyResult.okrId) {
+                    await tx.taskKrImpact.create({
+                        data: {
+                            taskId: created.id,
+                            okrKeyResultId: keyResultId,
+                            actualValue: 0
+                        }
+                    });
+                }
             }
 
             return tx.task.findUnique({

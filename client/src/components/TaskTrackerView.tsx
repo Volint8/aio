@@ -8,6 +8,7 @@ interface Task {
   title: string;
   description: string | null;
   status: string;
+  approvalStatus?: string | null;
   priority: string;
   dueDate: string | null;
   assignee: {
@@ -54,6 +55,14 @@ interface TaskTrackerViewProps {
   onTaskClick: (task: Task) => void;
   onCreateTask: () => void;
   onSendAlert: () => void;
+  onEdit?: (task: Task) => void;
+  onDelete?: (taskId: string) => void;
+  onChangeStatus?: (taskId: string, status: string) => void;
+  onApprovalAction?: (
+    taskId: string,
+    action: "APPROVE" | "REJECT",
+    notes?: string,
+  ) => void;
   assignableUsers?: Array<{
     userId: string;
     name: string | null;
@@ -71,6 +80,10 @@ const TaskTrackerView: React.FC<TaskTrackerViewProps> = ({
   onTaskClick,
   onCreateTask,
   onSendAlert,
+  onEdit,
+  onDelete,
+  onChangeStatus,
+  onApprovalAction,
   assignableUsers = [],
   tags = [],
   hideOwnerFilter = false,
@@ -178,6 +191,12 @@ const TaskTrackerView: React.FC<TaskTrackerViewProps> = ({
     if (status === "COMPLETED") return "Completed";
     return status.replace("_", " ").toLowerCase();
   };
+
+  const [openMenuTaskId, setOpenMenuTaskId] = React.useState<string | null>(
+    null,
+  );
+
+  const closeMenu = () => setOpenMenuTaskId(null);
 
   return (
     <div className="tracker-view">
@@ -332,6 +351,7 @@ const TaskTrackerView: React.FC<TaskTrackerViewProps> = ({
               <th>Status</th>
               <th>Priority</th>
               <th>Timeline</th>
+              <th style={{ width: 80 }}>Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -394,6 +414,154 @@ const TaskTrackerView: React.FC<TaskTrackerViewProps> = ({
                           day: "numeric",
                         })
                       : "-"}
+                  </td>
+                  <td>
+                    <div
+                      className="task-actions"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setOpenMenuTaskId(
+                          openMenuTaskId === task.id ? null : task.id,
+                        );
+                      }}
+                      style={{ position: "relative" }}
+                    >
+                      <button
+                        aria-label="Actions"
+                        className="btn-icon"
+                        style={{ padding: 6, borderRadius: 6 }}
+                      >
+                        ⋯
+                      </button>
+                      {openMenuTaskId === task.id && (
+                        <div
+                          className="task-actions-menu"
+                          style={{
+                            position: "absolute",
+                            right: 0,
+                            top: 28,
+                            background: "#fff",
+                            border: "1px solid var(--border-color)",
+                            borderRadius: 6,
+                            boxShadow: "0 6px 18px rgba(0,0,0,0.08)",
+                            zIndex: 40,
+                            minWidth: 160,
+                          }}
+                          onMouseLeave={closeMenu}
+                        >
+                          <button
+                            className="task-action-item"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              closeMenu();
+                              onEdit && onEdit(task);
+                            }}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            className="task-action-item"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              closeMenu();
+                              if (
+                                onDelete &&
+                                window.confirm(
+                                  "Move this task to Recently Deleted?",
+                                )
+                              ) {
+                                onDelete(task.id);
+                              }
+                            }}
+                          >
+                            Delete
+                          </button>
+                          <div
+                            style={{
+                              borderTop: "1px solid var(--border-color)",
+                              marginTop: 6,
+                            }}
+                          />
+                          <button
+                            className="task-action-item"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              closeMenu();
+                              onChangeStatus &&
+                                onChangeStatus(task.id, "CREATED");
+                            }}
+                          >
+                            Mark Not Started
+                          </button>
+                          <button
+                            className="task-action-item"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              closeMenu();
+                              onChangeStatus &&
+                                onChangeStatus(task.id, "IN_PROGRESS");
+                            }}
+                          >
+                            Mark In Progress
+                          </button>
+                          <button
+                            className="task-action-item"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              closeMenu();
+                              onChangeStatus &&
+                                onChangeStatus(task.id, "COMPLETED");
+                            }}
+                          >
+                            Mark Completed
+                          </button>
+                          {task.status === "COMPLETED" &&
+                            task.approvalStatus === "PENDING" &&
+                            userRole &&
+                            (userRole === "ADMIN" ||
+                              userRole === "TEAM_LEAD") && (
+                              <>
+                                <div
+                                  style={{
+                                    borderTop: "1px solid var(--border-color)",
+                                    marginTop: 6,
+                                  }}
+                                />
+                                <button
+                                  className="task-action-item"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    closeMenu();
+                                    onApprovalAction &&
+                                      onApprovalAction(task.id, "APPROVE");
+                                  }}
+                                >
+                                  Approve
+                                </button>
+                                <button
+                                  className="task-action-item"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    const notes =
+                                      window.prompt(
+                                        "Rejection notes (optional)",
+                                      ) || undefined;
+                                    closeMenu();
+                                    onApprovalAction &&
+                                      onApprovalAction(
+                                        task.id,
+                                        "REJECT",
+                                        notes,
+                                      );
+                                  }}
+                                >
+                                  Reject
+                                </button>
+                              </>
+                            )}
+                        </div>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))

@@ -466,7 +466,8 @@ interface Okr {
     id: string;
     title: string;
     tag: Tag;
-    assignedUserId: string;
+    assignedUserId: string | null;
+    isGeneral?: boolean;
     assignedUser: {
       id: string;
       name: string | null;
@@ -486,6 +487,7 @@ interface Okr {
       name: string | null;
       email: string;
     } | null;
+    okrId?: string;
   }>;
 }
 
@@ -529,7 +531,7 @@ interface AppraisalOkrImpactSummary {
 interface OkrKeyResultForm {
   title: string;
   tagId: string;
-  assignedUserId: string;
+  assignedUserId: string | null;
 }
 
 interface Appraisal {
@@ -671,6 +673,7 @@ const DashboardPage = () => {
   const [organization, setOrganization] = useState<Organization | null>(null);
   const [tags, setTags] = useState<Tag[]>([]);
   const [okrs, setOkrs] = useState<Okr[]>([]);
+  const [userOkrs, setUserOkrs] = useState<Okr[]>([]);
   const [appraisals, setAppraisals] = useState<Appraisal[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
   const [invites, setInvites] = useState<InviteRecord[]>([]);
@@ -792,6 +795,8 @@ const DashboardPage = () => {
     supporterId: "",
     tagId: "",
     alertTeamLead: false,
+    okrId: "",
+    keyResultId: "",
   });
 
   const [editTask, setEditTask] = useState({
@@ -804,6 +809,8 @@ const DashboardPage = () => {
     supporterId: "",
     tagId: "",
     alertTeamLead: false,
+    okrId: "",
+    keyResultId: "",
   });
 
   const [newOkr, setNewOkr] = useState({
@@ -976,7 +983,7 @@ const DashboardPage = () => {
   const createEmptyKrForm = (): OkrKeyResultForm => ({
     title: "",
     tagId: "",
-    assignedUserId: "",
+    assignedUserId: null,
   });
 
   const userChartData = memberStats.map((item) => ({
@@ -1529,6 +1536,20 @@ const DashboardPage = () => {
 
       setTags(tagsRes.data || []);
       setOkrs(okrRes.data || []);
+
+      // Fetch user's OKRs for task linking
+      if (user?.id) {
+        try {
+          const userOkrRes = await api.get(
+            `/orgs/${orgId}/okrs/user/${user.id}`,
+          );
+          setUserOkrs(userOkrRes.data || []);
+        } catch (error) {
+          console.error("Failed to fetch user OKRs:", error);
+          setUserOkrs([]);
+        }
+      }
+
       setAppraisals(appraisalRes.data || []);
       setClients(clientsRes.data || []);
 
@@ -1602,6 +1623,7 @@ const DashboardPage = () => {
       await api.post("/tasks", {
         ...newTask,
         organizationId: orgId,
+        keyResultId: newTask.keyResultId || null,
       });
       setNewTask({
         title: "",
@@ -1612,6 +1634,8 @@ const DashboardPage = () => {
         supporterId: "",
         tagId: tags[0]?.id || "",
         alertTeamLead: false,
+        okrId: "",
+        keyResultId: "",
       });
       setShowCreateTaskModal(false);
       await fetchData();
@@ -1636,6 +1660,8 @@ const DashboardPage = () => {
       supporterId: task.supporter?.id || "",
       tagId: task.tag?.id || tags[0]?.id || "",
       alertTeamLead: task.alertTeamLead || false,
+      okrId: (task as any).okrId || "",
+      keyResultId: (task as any).keyResultId || "",
     });
     setShowEditTaskModal(true);
   };
@@ -2743,6 +2769,22 @@ const DashboardPage = () => {
     }
   };
 
+  const handleApprovalAction = async (
+    taskId: string,
+    action: "APPROVE" | "REJECT",
+    notes?: string,
+  ) => {
+    try {
+      await api.put(`/tasks/${taskId}`, {
+        approvalAction: action,
+        approvalNotes: notes || null,
+      });
+      await fetchData();
+    } catch (err) {
+      showError("Error", "Failed to perform approval action");
+    }
+  };
+
   const handleDeleteTask = async (taskId: string) => {
     if (!window.confirm("Move this task to Recently Deleted?")) return;
     try {
@@ -2904,6 +2946,10 @@ const DashboardPage = () => {
             userRole={
               organization?.userRole as "ADMIN" | "TEAM_LEAD" | "MEMBER"
             }
+            onEdit={handleOpenEditTask}
+            onDelete={(id) => handleDeleteTask(id)}
+            onChangeStatus={handleUpdateTaskStatus}
+            onApprovalAction={handleApprovalAction}
           />
         )}
 
@@ -2951,6 +2997,10 @@ const DashboardPage = () => {
             userRole={
               organization?.userRole as "ADMIN" | "TEAM_LEAD" | "MEMBER"
             }
+            onEdit={handleOpenEditTask}
+            onDelete={(id) => handleDeleteTask(id)}
+            onChangeStatus={handleUpdateTaskStatus}
+            onApprovalAction={handleApprovalAction}
           />
         )}
 
@@ -2960,7 +3010,7 @@ const DashboardPage = () => {
             userRole={organization.userRole as "ADMIN" | "TEAM_LEAD" | "MEMBER"}
             onCreateTask={() => setShowCreateTaskModal(true)}
             onCreateOkr={() => setShowCreateOkrModal(true)}
-            onEditOkr={handleOpenEditOkr}
+            onEditOkr={handleOpenEditOkr as any}
             onDeleteOkr={handleDeleteOkr}
             onNavigate={(path) => navigate(path)}
           />
@@ -5311,6 +5361,45 @@ const DashboardPage = () => {
                   </small>
                 </div>
               )}
+              <div className="form-group">
+                <label>OKR (Key Result)</label>
+                <select
+                  value={newTask.keyResultId}
+                  onChange={(e) => {
+                    const selectedId = e.target.value;
+                    const selectedKr = userOkrs
+                      .flatMap((okr) => okr.keyResults || [])
+                      .find((kr) => kr.id === selectedId);
+                    setNewTask({
+                      ...newTask,
+                      keyResultId: selectedId,
+                      okrId: selectedKr?.okrId || "",
+                    });
+                  }}
+                >
+                  <option value="">Select an OKR (optional)</option>
+                  {userOkrs.map((okr) => (
+                    <optgroup key={okr.id} label={okr.title}>
+                      {(okr.keyResults || []).map((kr) => (
+                        <option key={kr.id} value={kr.id}>
+                          {kr.isGeneral ? "General" : kr.title}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ))}
+                </select>
+                <small
+                  style={{
+                    color: "var(--text-muted)",
+                    display: "block",
+                    marginTop: 4,
+                  }}
+                >
+                  {newTask.keyResultId
+                    ? "This task will contribute to the selected key result"
+                    : "Link this task to one of your OKRs or mark as General"}
+                </small>
+              </div>
               <div className="modal-actions">
                 <button
                   type="button"
@@ -6024,10 +6113,10 @@ const DashboardPage = () => {
                   <div className="form-group">
                     <label>Owner</label>
                     <select
-                      value={kr.assignedUserId}
+                      value={kr.assignedUserId || ""}
                       onChange={(e) => {
                         const next = [...newOkr.keyResults];
-                        next[index].assignedUserId = e.target.value;
+                        next[index].assignedUserId = e.target.value || null;
                         setNewOkr({ ...newOkr, keyResults: next });
                       }}
                       required
@@ -6269,10 +6358,10 @@ const DashboardPage = () => {
                   <div className="form-group">
                     <label>Owner</label>
                     <select
-                      value={kr.assignedUserId}
+                      value={kr.assignedUserId || ""}
                       onChange={(e) => {
                         const next = [...editOkrForm.keyResults];
-                        next[index].assignedUserId = e.target.value;
+                        next[index].assignedUserId = e.target.value || null;
                         setEditOkrForm({ ...editOkrForm, keyResults: next });
                       }}
                       required
