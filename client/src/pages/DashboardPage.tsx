@@ -62,6 +62,18 @@ interface Task {
   comments?: any[];
   attachments?: Attachment[];
   alertTeamLead?: boolean;
+  krImpacts?: Array<{
+    id: string;
+    okrKeyResult: {
+      id: string;
+      title: string;
+      isGeneral?: boolean;
+      okr: {
+        id: string;
+        title: string;
+      };
+    };
+  }>;
 }
 
 interface Stats {
@@ -673,7 +685,9 @@ const DashboardPage = () => {
   const [organization, setOrganization] = useState<Organization | null>(null);
   const [tags, setTags] = useState<Tag[]>([]);
   const [okrs, setOkrs] = useState<Okr[]>([]);
-  const [userOkrs, setUserOkrs] = useState<Okr[]>([]);
+  const [linkableOkrsByUserId, setLinkableOkrsByUserId] = useState<
+    Record<string, Okr[]>
+  >({});
   const [appraisals, setAppraisals] = useState<Appraisal[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
   const [invites, setInvites] = useState<InviteRecord[]>([]);
@@ -794,7 +808,7 @@ const DashboardPage = () => {
     supporterId: "",
     alertTeamLead: false,
     okrId: "",
-    keyResultId: "",
+    keyResultIds: [] as string[],
   });
 
   const [editTask, setEditTask] = useState({
@@ -808,7 +822,7 @@ const DashboardPage = () => {
     tagId: "",
     alertTeamLead: false,
     okrId: "",
-    keyResultId: "",
+    keyResultIds: [] as string[],
   });
 
   const [newOkr, setNewOkr] = useState({
@@ -975,6 +989,47 @@ const DashboardPage = () => {
   }, [requestedSection, canTrackTeam, isAdmin]);
 
   const availableTags = useMemo(() => tags, [tags]);
+
+  const loadLinkableOkrs = async (targetUserId: string) => {
+    if (!orgId || !targetUserId) {
+      return [] as Okr[];
+    }
+
+    if (linkableOkrsByUserId[targetUserId]) {
+      return linkableOkrsByUserId[targetUserId];
+    }
+
+    try {
+      const response = await api.get(
+        `/orgs/${orgId}/okrs/user/${targetUserId}`,
+      );
+      const nextOkrs = response.data || [];
+      setLinkableOkrsByUserId((prev) => ({
+        ...prev,
+        [targetUserId]: nextOkrs,
+      }));
+      return nextOkrs;
+    } catch (error) {
+      console.error("Failed to fetch linkable OKRs:", error);
+      setLinkableOkrsByUserId((prev) => ({
+        ...prev,
+        [targetUserId]: [],
+      }));
+      return [] as Okr[];
+    }
+  };
+
+  const newTaskLinkableOkrs = newTask.assigneeId
+    ? linkableOkrsByUserId[newTask.assigneeId] || []
+    : [];
+  const editTaskLinkableOkrs = editTask.assigneeId
+    ? linkableOkrsByUserId[editTask.assigneeId] || []
+    : [];
+
+  const toggleTaskKeyResult = (selectedIds: string[], keyResultId: string) =>
+    selectedIds.includes(keyResultId)
+      ? selectedIds.filter((id) => id !== keyResultId)
+      : [...selectedIds, keyResultId];
 
   const createEmptyKrForm = (): OkrKeyResultForm => ({
     title: "",
@@ -1535,19 +1590,6 @@ const DashboardPage = () => {
       setTags(tagsRes.data || []);
       setOkrs(okrRes.data || []);
 
-      // Fetch user's OKRs for task linking
-      if (user?.id) {
-        try {
-          const userOkrRes = await api.get(
-            `/orgs/${orgId}/okrs/user/${user.id}`,
-          );
-          setUserOkrs(userOkrRes.data || []);
-        } catch (error) {
-          console.error("Failed to fetch user OKRs:", error);
-          setUserOkrs([]);
-        }
-      }
-
       setAppraisals(appraisalRes.data || []);
       setClients(clientsRes.data || []);
 
@@ -1607,7 +1649,7 @@ const DashboardPage = () => {
         );
         return;
       }
-      await api.post("/tasks", {
+      const createResponse = await api.post("/tasks", {
         // send only createable fields (tag is intentionally omitted)
         title: newTask.title,
         description: newTask.description,
@@ -1616,10 +1658,18 @@ const DashboardPage = () => {
         assigneeId: newTask.assigneeId,
         supporterId: newTask.supporterId,
         alertTeamLead: newTask.alertTeamLead,
-        okrId: newTask.okrId || null,
-        keyResultId: newTask.keyResultId || null,
         organizationId: orgId,
       });
+
+      if (newTask.keyResultIds.length > 0 && createResponse.data?.id) {
+        await api.put(`/tasks/${createResponse.data.id}/kr-impacts`, {
+          impacts: newTask.keyResultIds.map((okrKeyResultId) => ({
+            okrKeyResultId,
+            actualValue: 0,
+          })),
+        });
+      }
+
       setNewTask({
         title: "",
         description: "",
@@ -1629,7 +1679,7 @@ const DashboardPage = () => {
         supporterId: "",
         alertTeamLead: false,
         okrId: "",
-        keyResultId: "",
+        keyResultIds: [],
       });
       setShowCreateTaskModal(false);
       await fetchData();
@@ -1655,8 +1705,13 @@ const DashboardPage = () => {
       tagId: task.tag?.id || tags[0]?.id || "",
       alertTeamLead: task.alertTeamLead || false,
       okrId: (task as any).okrId || "",
-      keyResultId: (task as any).keyResultId || "",
+      keyResultIds: (task.krImpacts || []).map(
+        (impact) => impact.okrKeyResult.id,
+      ),
     });
+    if (task.assignee?.id) {
+      void loadLinkableOkrs(task.assignee.id);
+    }
     setShowEditTaskModal(true);
   };
 
@@ -1684,6 +1739,14 @@ const DashboardPage = () => {
         tagId: editTask.tagId,
         alertTeamLead: editTask.alertTeamLead,
       });
+
+      await api.put(`/tasks/${editTask.id}/kr-impacts`, {
+        impacts: editTask.keyResultIds.map((okrKeyResultId) => ({
+          okrKeyResultId,
+          actualValue: 0,
+        })),
+      });
+
       setShowEditTaskModal(false);
       await fetchData();
     } catch (error: any) {
@@ -5196,19 +5259,25 @@ const DashboardPage = () => {
                   <label>Primary Assignee *</label>
                   <select
                     value={newTask.assigneeId}
-                    onChange={(e) =>
+                    onChange={(e) => {
+                      const assigneeId = e.target.value;
                       setNewTask({
                         ...newTask,
-                        assigneeId: e.target.value,
+                        assigneeId,
                         supporterId:
-                          newTask.supporterId === e.target.value
+                          newTask.supporterId === assigneeId
                             ? ""
                             : newTask.supporterId,
-                        alertTeamLead: e.target.value
+                        alertTeamLead: assigneeId
                           ? true
                           : newTask.alertTeamLead,
-                      })
-                    }
+                        okrId: "",
+                        keyResultIds: [],
+                      });
+                      if (assigneeId) {
+                        void loadLinkableOkrs(assigneeId);
+                      }
+                    }}
                     required
                   >
                     <option value="">Select assignee</option>
@@ -5279,32 +5348,84 @@ const DashboardPage = () => {
                 </div>
               )}
               <div className="form-group">
-                <label>OKR (Key Result)</label>
-                <select
-                  value={newTask.keyResultId}
-                  onChange={(e) => {
-                    const selectedId = e.target.value;
-                    const selectedKr = userOkrs
-                      .flatMap((okr) => okr.keyResults || [])
-                      .find((kr) => kr.id === selectedId);
-                    setNewTask({
-                      ...newTask,
-                      keyResultId: selectedId,
-                      okrId: selectedKr?.okrId || "",
-                    });
-                  }}
-                >
-                  <option value="">Select an OKR (optional)</option>
-                  {userOkrs.map((okr) => (
-                    <optgroup key={okr.id} label={okr.title}>
-                      {(okr.keyResults || []).map((kr) => (
-                        <option key={kr.id} value={kr.id}>
-                          {kr.isGeneral ? "General" : kr.title}
-                        </option>
+                <label>OKR Key Results</label>
+                {newTask.assigneeId ? (
+                  newTaskLinkableOkrs.length > 0 ? (
+                    <div
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 12,
+                        maxHeight: 220,
+                        overflowY: "auto",
+                        padding: 12,
+                        border: "1px solid var(--border-color)",
+                        borderRadius: 12,
+                        background: "#fff",
+                      }}
+                    >
+                      {newTaskLinkableOkrs.map((okr) => (
+                        <div key={okr.id}>
+                          <div
+                            style={{
+                              fontWeight: 600,
+                              marginBottom: 6,
+                              color: "var(--text-main)",
+                            }}
+                          >
+                            {okr.title}
+                          </div>
+                          <div
+                            style={{
+                              display: "flex",
+                              flexDirection: "column",
+                              gap: 8,
+                            }}
+                          >
+                            {(okr.keyResults || []).map((kr) => (
+                              <label
+                                key={kr.id}
+                                style={{
+                                  display: "flex",
+                                  alignItems: "flex-start",
+                                  gap: 8,
+                                  cursor: "pointer",
+                                }}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={newTask.keyResultIds.includes(kr.id)}
+                                  onChange={() =>
+                                    setNewTask({
+                                      ...newTask,
+                                      okrId: okr.id,
+                                      keyResultIds: toggleTaskKeyResult(
+                                        newTask.keyResultIds,
+                                        kr.id,
+                                      ),
+                                    })
+                                  }
+                                  style={{ marginTop: 2 }}
+                                />
+                                <span>
+                                  {kr.isGeneral ? "General" : kr.title}
+                                </span>
+                              </label>
+                            ))}
+                          </div>
+                        </div>
                       ))}
-                    </optgroup>
-                  ))}
-                </select>
+                    </div>
+                  ) : (
+                    <div className="helper-text">
+                      No key results found for this assignee.
+                    </div>
+                  )
+                ) : (
+                  <div className="helper-text">
+                    Select an assignee first to load their key results.
+                  </div>
+                )}
                 <small
                   style={{
                     color: "var(--text-muted)",
@@ -5312,9 +5433,9 @@ const DashboardPage = () => {
                     marginTop: 4,
                   }}
                 >
-                  {newTask.keyResultId
-                    ? "This task will contribute to the selected key result"
-                    : "Link this task to one of your OKRs or mark as General"}
+                  {newTask.keyResultIds.length > 0
+                    ? `This task will contribute to ${newTask.keyResultIds.length} selected key result${newTask.keyResultIds.length > 1 ? "s" : ""}`
+                    : "Select one or more key results to link this task"}
                 </small>
               </div>
               <div className="modal-actions">
@@ -5469,19 +5590,23 @@ const DashboardPage = () => {
                 <label>Primary Assignee *</label>
                 <select
                   value={editTask.assigneeId}
-                  onChange={(e) =>
+                  onChange={(e) => {
+                    const assigneeId = e.target.value;
                     setEditTask({
                       ...editTask,
-                      assigneeId: e.target.value,
+                      assigneeId,
                       supporterId:
-                        editTask.supporterId === e.target.value
+                        editTask.supporterId === assigneeId
                           ? ""
                           : editTask.supporterId,
-                      alertTeamLead: e.target.value
-                        ? true
-                        : editTask.alertTeamLead,
-                    })
-                  }
+                      alertTeamLead: assigneeId ? true : editTask.alertTeamLead,
+                      okrId: "",
+                      keyResultIds: [],
+                    });
+                    if (assigneeId) {
+                      void loadLinkableOkrs(assigneeId);
+                    }
+                  }}
                   required
                 >
                   <option value="">Select assignee</option>
@@ -5493,6 +5618,99 @@ const DashboardPage = () => {
                     </option>
                   ))}
                 </select>
+              </div>
+              <div className="form-group">
+                <label>OKR Key Results</label>
+                {editTask.assigneeId ? (
+                  editTaskLinkableOkrs.length > 0 ? (
+                    <div
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 12,
+                        maxHeight: 220,
+                        overflowY: "auto",
+                        padding: 12,
+                        border: "1px solid var(--border-color)",
+                        borderRadius: 12,
+                        background: "#fff",
+                      }}
+                    >
+                      {editTaskLinkableOkrs.map((okr) => (
+                        <div key={okr.id}>
+                          <div
+                            style={{
+                              fontWeight: 600,
+                              marginBottom: 6,
+                              color: "var(--text-main)",
+                            }}
+                          >
+                            {okr.title}
+                          </div>
+                          <div
+                            style={{
+                              display: "flex",
+                              flexDirection: "column",
+                              gap: 8,
+                            }}
+                          >
+                            {(okr.keyResults || []).map((kr) => (
+                              <label
+                                key={kr.id}
+                                style={{
+                                  display: "flex",
+                                  alignItems: "flex-start",
+                                  gap: 8,
+                                  cursor: "pointer",
+                                }}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={editTask.keyResultIds.includes(
+                                    kr.id,
+                                  )}
+                                  onChange={() =>
+                                    setEditTask({
+                                      ...editTask,
+                                      okrId: okr.id,
+                                      keyResultIds: toggleTaskKeyResult(
+                                        editTask.keyResultIds,
+                                        kr.id,
+                                      ),
+                                    })
+                                  }
+                                  style={{ marginTop: 2 }}
+                                />
+                                <span>
+                                  {kr.isGeneral ? "General" : kr.title}
+                                </span>
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="helper-text">
+                      No key results found for this assignee.
+                    </div>
+                  )
+                ) : (
+                  <div className="helper-text">
+                    Select an assignee first to load their key results.
+                  </div>
+                )}
+                <small
+                  style={{
+                    color: "var(--text-muted)",
+                    display: "block",
+                    marginTop: 4,
+                  }}
+                >
+                  {editTask.keyResultIds.length > 0
+                    ? `This task is linked to ${editTask.keyResultIds.length} key result${editTask.keyResultIds.length > 1 ? "s" : ""}`
+                    : "Select one or more key results to link this task"}
+                </small>
               </div>
               <div className="form-group">
                 <label>Supported By (Optional)</label>
