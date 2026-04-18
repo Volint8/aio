@@ -2200,6 +2200,72 @@
     font-weight: 500;
 }
 
+/* Quotes Management improvements */
+.quotes-list h4 {
+    margin: 0 0 12px 0;
+    font-size: 1.1em;
+    color: var(--text-main);
+}
+
+.quotes-container {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.quote-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 14px 16px;
+    border-radius: 12px;
+    background: linear-gradient(180deg, var(--card-bg) 0%, rgba(0,0,0,0.01) 100%);
+    border: 1px solid var(--border-color);
+}
+
+.quote-item-content {
+    flex: 1 1 auto;
+}
+
+.quote-text {
+    margin: 0 0 8px 0;
+    font-style: italic;
+    line-height: 1.5;
+    color: var(--text-main);
+    font-size: 1.02em;
+}
+
+.quote-author {
+    display: block;
+    margin-top: 4px;
+    color: var(--text-muted);
+    font-size: 0.92em;
+}
+
+.delete-quote-btn {
+    background: transparent;
+    border: 1px solid var(--border-color);
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: var(--text-muted);
+}
+
+.delete-quote-btn:hover {
+    background: rgba(220, 38, 38, 0.06);
+    color: #b91c1c;
+    border-color: rgba(185, 28, 28, 0.15);
+}
+
+.settings-card.quotes-management .settings-form textarea,
+.settings-card.quotes-management .settings-form input {
+    border-radius: 8px;
+}
+
 .status-active {
     color: #16a34a;
     font-weight: 700;

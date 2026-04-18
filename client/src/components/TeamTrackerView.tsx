@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-expressions */
 import React from "react";
 import { useAuth } from "../context/AuthContext";
 import "../styles/TrackerView.css";
@@ -107,25 +108,31 @@ const TeamTrackerView: React.FC<TeamTrackerViewProps> = ({
       | "completed"
       | "overdue";
     label: string;
-  }> =
-    userRole === "ADMIN"
-      ? [
-          { key: "all", label: "All Tasks" },
-          { key: "my", label: "My Tasks" },
-          { key: "pending", label: "Pending" },
-          { key: "ongoing", label: "In Progress" },
-          { key: "completed", label: "Completed" },
-          { key: "overdue", label: "Overdue" },
-        ]
-      : [
-          { key: "all", label: "All Tasks" },
-          { key: "my", label: "My Tasks" },
-          { key: "supporting", label: "Supporting" },
-          { key: "pending", label: "Pending" },
-          { key: "ongoing", label: "In Progress" },
-          { key: "completed", label: "Completed" },
-          { key: "overdue", label: "Overdue" },
-        ];
+  }> = (() => {
+    const arr: Array<{
+      key:
+        | "all"
+        | "my"
+        | "supporting"
+        | "pending"
+        | "ongoing"
+        | "completed"
+        | "overdue";
+      label: string;
+    }> = [{ key: "all", label: "All Tasks" }];
+
+    if (userRole !== "ADMIN") {
+      arr.push({ key: "my", label: "My Tasks" });
+      arr.push({ key: "supporting", label: "Supporting" });
+    }
+
+    arr.push({ key: "pending", label: "Pending" });
+    arr.push({ key: "ongoing", label: "In Progress" });
+    arr.push({ key: "completed", label: "Completed" });
+    arr.push({ key: "overdue", label: "Overdue" });
+
+    return arr;
+  })();
 
   const isFilterActive = (key: (typeof filters)[number]["key"]) => {
     if (filter === "created" && key === "pending") return true;
@@ -428,29 +435,19 @@ const TeamTrackerView: React.FC<TeamTrackerViewProps> = ({
                       style={{ position: "relative" }}
                     >
                       <button
+                        type="button"
                         aria-label="Actions"
                         className="btn-icon"
-                        style={{ padding: 6, borderRadius: 6 }}
                       >
                         ⋯
                       </button>
                       {openMenuTaskId === task.id && (
                         <div
                           className="task-actions-menu"
-                          style={{
-                            position: "absolute",
-                            right: 0,
-                            top: 28,
-                            background: "#fff",
-                            border: "1px solid var(--border-color)",
-                            borderRadius: 6,
-                            boxShadow: "0 6px 18px rgba(0,0,0,0.08)",
-                            zIndex: 40,
-                            minWidth: 160,
-                          }}
                           onMouseLeave={closeMenu}
                         >
                           <button
+                            type="button"
                             className="task-action-item"
                             onClick={(e) => {
                               e.stopPropagation();
@@ -461,6 +458,7 @@ const TeamTrackerView: React.FC<TeamTrackerViewProps> = ({
                             Edit
                           </button>
                           <button
+                            type="button"
                             className="task-action-item"
                             onClick={(e) => {
                               e.stopPropagation();
@@ -477,13 +475,9 @@ const TeamTrackerView: React.FC<TeamTrackerViewProps> = ({
                           >
                             Delete
                           </button>
-                          <div
-                            style={{
-                              borderTop: "1px solid var(--border-color)",
-                              marginTop: 6,
-                            }}
-                          />
+                          <div className="task-actions-divider" />
                           <button
+                            type="button"
                             className="task-action-item"
                             onClick={(e) => {
                               e.stopPropagation();
@@ -495,6 +489,7 @@ const TeamTrackerView: React.FC<TeamTrackerViewProps> = ({
                             Mark In Progress
                           </button>
                           <button
+                            type="button"
                             className="task-action-item"
                             onClick={(e) => {
                               e.stopPropagation();

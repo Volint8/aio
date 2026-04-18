@@ -532,6 +532,7 @@ interface OkrKeyResultForm {
   title: string;
   tagId: string;
   assignedUserId: string | null;
+  id?: string;
 }
 
 interface Appraisal {
@@ -687,7 +688,6 @@ const DashboardPage = () => {
   const [filter, setFilter] = useState<TaskFilter>(requestedFilter);
   const [assigneeFilterId, setAssigneeFilterId] = useState<string | null>(null);
   const [ownerFilter, setOwnerFilter] = useState<string>("all");
-  const [supporterFilter, setSupporterFilter] = useState<string>("all");
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [menuOpenTaskId, setMenuOpenTaskId] = useState<string | null>(null);
   const [expandedCommentThreads, setExpandedCommentThreads] = useState<
@@ -984,6 +984,7 @@ const DashboardPage = () => {
     title: "",
     tagId: "",
     assignedUserId: null,
+    id: undefined,
   });
 
   const userChartData = memberStats.map((item) => ({
@@ -1043,6 +1044,26 @@ const DashboardPage = () => {
   const assignableUsers = (organization?.members || []).filter(
     (member) => member.role !== "ADMIN",
   );
+
+  const getMembersForTeamIds = (teamIds: string[] | undefined | null) => {
+    if (!teamIds || teamIds.length === 0) return assignableUsers;
+    const ids = new Set(teamIds.filter(Boolean));
+    return assignableUsers.filter((member) => {
+      if (member.team?.id && ids.has(member.team.id)) return true;
+      if (member.teamId && ids.has(member.teamId)) return true;
+      // check teams data
+      return teams.some((t) => {
+        if (!ids.has(t.id)) return false;
+        const inMembers = (t.members || []).some(
+          (tm) => (tm.userId || tm.id) === member.userId,
+        );
+        const inPeople = (t.people || []).some(
+          (p) => p.userId === member.userId,
+        );
+        return inMembers || inPeople;
+      });
+    });
+  };
 
   const teamLeadUsers = (organization?.members || []).filter(
     (member) => member.role === "TEAM_LEAD",
@@ -1241,16 +1262,7 @@ const DashboardPage = () => {
     return new Date(date).toLocaleDateString();
   };
 
-  const getCategoryStyles = (category: string) => {
-    if (category === "High Performer")
-      return { background: "#DCFCE7", color: "#166534" };
-    if (category === "Active")
-      return { background: "#E0F2FE", color: "#0369A1" };
-    if (category === "Moderate")
-      return { background: "#FEF3C7", color: "#92400E" };
-    if (category === "New") return { background: "#F1F5F9", color: "#475569" };
-    return { background: "#F1F5F9", color: "#475569" };
-  };
+  // removed unused getCategoryStyles helper to fix TS6133 unused variable error
 
   const handleStatClick = (filterValue: TaskFilter) => {
     const params = new URLSearchParams(location.search);
@@ -1287,8 +1299,6 @@ const DashboardPage = () => {
         if (member.role === "ADMIN" || member.userId === user?.id) return false;
         if (ownerFilter !== "all" && member.userId !== ownerFilter)
           return false;
-        if (supporterFilter !== "all" && member.userId !== supporterFilter)
-          return false;
         return true;
       })
       .map((member) => {
@@ -1308,14 +1318,7 @@ const DashboardPage = () => {
         const teamName = team?.name || "No team";
         return { member, stats, teamName, category, roleLabel };
       });
-  }, [
-    organization,
-    ownerFilter,
-    supporterFilter,
-    memberStats,
-    teams,
-    user?.id,
-  ]);
+  }, [organization, ownerFilter, memberStats, teams, user?.id]);
 
   const fetchQuotes = async () => {
     if (!orgId) return;
@@ -1771,6 +1774,7 @@ const DashboardPage = () => {
       assignedToTeamId: assignedToTeamId,
       supportedByTeamIds: supportedByTeamIds,
       keyResults: okr.keyResults?.map((kr) => ({
+        id: (kr as any).id,
         title: kr.title,
         tagId: kr.tag.id,
         assignedUserId: kr.assignedUserId,
@@ -2525,13 +2529,19 @@ const DashboardPage = () => {
                       {quotes.map((q) => (
                         <div key={q.id} className="quote-item">
                           <div className="quote-item-content">
-                            <p>"{q.text}"</p>
-                            {q.author && <small>— {q.author}</small>}
+                            <p className="quote-text">"{q.text}"</p>
+                            {q.author && (
+                              <small className="quote-author">
+                                — {q.author}
+                              </small>
+                            )}
                           </div>
                           <button
+                            type="button"
                             className="delete-quote-btn"
                             onClick={() => handleDeleteQuote(q.id)}
                             title="Delete Quote"
+                            aria-label="Delete quote"
                           >
                             <svg
                               width="14"
@@ -2956,16 +2966,37 @@ const DashboardPage = () => {
         {currentSection === "team-tracker" && canTrackTeam && (
           <TeamTrackerView
             teamName={teamTrackerName}
-            tasks={
-              isTeamLead
+            tasks={(() => {
+              let base = isTeamLead
                 ? tasks.filter((t) => {
                     const assigneeId = t.assignee?.id || "";
                     return ledTeamMemberIds.includes(assigneeId);
                   })
-                : tasks
-            }
+                : tasks;
+              if (urlTeamId) {
+                base = base.filter((t) =>
+                  (t.taskTeams || []).some((tt) => tt?.team?.id === urlTeamId),
+                );
+              }
+              return base;
+            })()}
             members={(organization?.members || [])
               .filter((m) => m.userId !== user?.id)
+              .filter((m) => {
+                if (!urlTeamId) return true;
+                // match by explicit team relation or by searching teams data
+                if (m.team?.id === urlTeamId || m.teamId === urlTeamId)
+                  return true;
+                const teamObj = teams.find((t) => t.id === urlTeamId);
+                if (!teamObj) return false;
+                const inMembers = (teamObj.members || []).some(
+                  (tm) => (tm.userId || tm.id) === m.userId,
+                );
+                const inPeople = (teamObj.people || []).some(
+                  (p) => p.userId === m.userId,
+                );
+                return inMembers || inPeople;
+              })
               .map((m) => ({
                 userId: m.userId,
                 name: m.user.name || m.user.email,
@@ -3305,36 +3336,10 @@ const DashboardPage = () => {
                     ))}
                 </select>
 
-                <select
-                  value={supporterFilter}
-                  onChange={(e) => setSupporterFilter(e.target.value)}
-                  style={{
-                    padding: "8px 12px",
-                    borderRadius: "8px",
-                    border: "1px solid var(--border-color)",
-                    background: "#fff",
-                    fontSize: "0.9em",
-                    minWidth: "160px",
-                  }}
-                >
-                  <option value="all">All Supporters</option>
-                  {(organization?.members || [])
-                    .filter(
-                      (member) =>
-                        member.role !== "ADMIN" && member.userId !== user?.id,
-                    )
-                    .map((member) => (
-                      <option key={member.userId} value={member.userId}>
-                        {member.user.name || member.user.email}
-                      </option>
-                    ))}
-                </select>
-
-                {(ownerFilter !== "all" || supporterFilter !== "all") && (
+                {ownerFilter !== "all" && (
                   <button
                     onClick={() => {
                       setOwnerFilter("all");
-                      setSupporterFilter("all");
                     }}
                     className="btn-secondary"
                     style={{
@@ -3384,9 +3389,6 @@ const DashboardPage = () => {
                       </th>
                       <th style={{ padding: "12px 16px", fontWeight: 600 }}>
                         Role
-                      </th>
-                      <th style={{ padding: "12px 16px", fontWeight: 600 }}>
-                        Category
                       </th>
                       <th
                         style={{
@@ -3484,19 +3486,7 @@ const DashboardPage = () => {
                               {row.roleLabel}
                             </span>
                           </td>
-                          <td style={{ padding: "12px 16px" }}>
-                            <span
-                              className="category-badge"
-                              style={{
-                                padding: "4px 10px",
-                                borderRadius: "12px",
-                                fontSize: "0.8em",
-                                ...getCategoryStyles(row.category),
-                              }}
-                            >
-                              {row.category}
-                            </span>
-                          </td>
+                          {/* Category column removed as not needed */}
                           <td
                             style={{
                               padding: "12px 16px",
@@ -3536,7 +3526,7 @@ const DashboardPage = () => {
                     ) : (
                       <tr>
                         <td
-                          colSpan={8}
+                          colSpan={7}
                           style={{
                             padding: "16px",
                             textAlign: "center",
@@ -5314,7 +5304,7 @@ const DashboardPage = () => {
                       setNewTask({ ...newTask, supporterId: e.target.value })
                     }
                   >
-                    <option value="">None</option>
+                    <option value="">Select supporter (optional)</option>
                     {assignableUsers
                       .filter((member) => member.user.id !== newTask.assigneeId)
                       .map((member) => (
@@ -5582,7 +5572,7 @@ const DashboardPage = () => {
                     setEditTask({ ...editTask, supporterId: e.target.value })
                   }
                 >
-                  <option value="">None</option>
+                  <option value="">Select supporter (optional)</option>
                   {assignableUsers
                     .filter((member) => member.user.id !== editTask.assigneeId)
                     .map((member) => (
@@ -6122,7 +6112,15 @@ const DashboardPage = () => {
                       required
                     >
                       <option value="">Select team member</option>
-                      {assignableUsers.map((member) => (
+                      {getMembersForTeamIds(
+                        // include primary + supported teams
+                        [
+                          ...(newOkr.assignedToTeamId
+                            ? [newOkr.assignedToTeamId]
+                            : []),
+                          ...(newOkr.supportedByTeamIds || []),
+                        ],
+                      ).map((member) => (
                         <option key={member.user.id} value={member.user.id}>
                           {member.user.name || member.user.email}
                         </option>
@@ -6139,6 +6137,26 @@ const DashboardPage = () => {
                     Parsed contribution is calculated automatically from the
                     first number in the KR title.
                   </div>
+                  <button
+                    type="button"
+                    className="btn-logout"
+                    style={{
+                      padding: "4px 8px",
+                      fontSize: "0.8em",
+                      marginTop: 8,
+                    }}
+                    onClick={() => {
+                      const next = newOkr.keyResults.filter(
+                        (_, i) => i !== index,
+                      );
+                      setNewOkr({
+                        ...newOkr,
+                        keyResults: next.length ? next : [createEmptyKrForm()],
+                      });
+                    }}
+                  >
+                    Remove KR
+                  </button>
                 </div>
               ))}
               <button
@@ -6367,7 +6385,12 @@ const DashboardPage = () => {
                       required
                     >
                       <option value="">Select team member</option>
-                      {assignableUsers.map((member) => (
+                      {getMembersForTeamIds([
+                        ...(editOkrForm.assignedToTeamId
+                          ? [editOkrForm.assignedToTeamId]
+                          : []),
+                        ...(editOkrForm.supportedByTeamIds || []),
+                      ]).map((member) => (
                         <option key={member.user.id} value={member.user.id}>
                           {member.user.name || member.user.email}
                         </option>

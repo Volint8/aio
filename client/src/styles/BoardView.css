@@ -45,6 +45,22 @@
     font-weight: 500;
 }
 
+/* Fade-in animation for rotating quotes */
+.quote-fade {
+    animation: quoteFadeIn 420ms ease both;
+}
+
+@keyframes quoteFadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-6px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
 .quote-author {
     font-style: normal;
     font-size: 0.9em;

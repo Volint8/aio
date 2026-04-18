@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import "../styles/BoardView.css";
 
@@ -67,8 +67,26 @@ const BoardView: React.FC<BoardViewProps> = ({
 }) => {
   const { user } = useAuth();
 
-  // Use the latest quote or fall back to default text
-  const displayQuote = quotes.length > 0 ? quotes[0] : null;
+  // Quote rotation state
+  const quoteCount = quotes.length;
+  const [quoteIndex, setQuoteIndex] = useState(0);
+
+  // Reset index when number of quotes changes
+  useEffect(() => {
+    setQuoteIndex(0);
+  }, [quoteCount]);
+
+  // Rotate quotes every 30s when there are multiple quotes
+  useEffect(() => {
+    if (quoteCount <= 1) return;
+    const interval = setInterval(() => {
+      setQuoteIndex((i) => (i + 1) % quoteCount);
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [quoteCount]);
+
+  // Use the currently indexed quote or fall back to default text
+  const displayQuote = quoteCount > 0 ? quotes[quoteIndex] : null;
 
   // Calculate team totals (for Team Lead/Admin)
   const teamTotals = memberStats.reduce(
@@ -122,7 +140,11 @@ const BoardView: React.FC<BoardViewProps> = ({
           !
         </h1>
         {displayQuote ? (
-          <p className="welcome-quote">
+          <p
+            className="welcome-quote quote-fade"
+            key={displayQuote?.id ?? quoteIndex}
+            aria-live="polite"
+          >
             "{displayQuote.text}"
             {displayQuote.author && (
               <span className="quote-author"> — {displayQuote.author}</span>

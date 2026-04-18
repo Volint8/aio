@@ -97,8 +97,73 @@
     background: white;
     border: 1px solid #F1F5F9;
     border-radius: 16px;
-    overflow: hidden;
+    overflow: visible;
     box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+
+.task-actions {
+    position: relative;
+}
+
+.btn-icon {
+    border: 1px solid #CBD5E1;
+    background: #FFFFFF;
+    color: #0F172A;
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.1rem;
+    line-height: 1;
+    transition: all 0.2s ease;
+}
+
+.btn-icon:hover {
+    background: #F8FAFC;
+    border-color: #94A3B8;
+}
+
+.task-actions-menu {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 8px);
+    background: #fff;
+    border: 1px solid #E2E8F0;
+    border-radius: 12px;
+    box-shadow: 0 14px 32px rgba(2, 6, 23, 0.14);
+    z-index: 70;
+    min-width: 220px;
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.task-action-item {
+    width: 100%;
+    border: none;
+    background: transparent;
+    text-align: left;
+    color: #0F172A;
+    font-size: 0.92em;
+    font-weight: 600;
+    padding: 10px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.15s ease;
+}
+
+.task-action-item:hover {
+    background: #F1F5F9;
+}
+
+.task-actions-divider {
+    height: 1px;
+    background: #E2E8F0;
+    margin: 4px 0;
 }
 
 .tracker-table {
