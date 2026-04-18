@@ -215,8 +215,9 @@ const resolveTagForKr = async (params: {
     return existing;
   }
 
+  // If no tagId or tagName provided, tags are optional for key results.
   if (!tagName?.trim()) {
-    throw new Error('Each key result requires a tag');
+    return null;
   }
 
   return createOrReuseTag({
@@ -412,31 +413,38 @@ export const getOrgById = async (req: Request, res: Response) => {
       return res.status(403).json({ error: 'Access denied' });
     }
 
+    // Limit members returned to the lead's team when the requester is a TEAM_LEAD
+    const membersInclude: any = {
+      include: {
+        team: {
+          select: {
+            id: true,
+            name: true
+          }
+        },
+        user: {
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            jobTitle: true,
+            signupSource: true,
+            initialRole: true,
+            createdAt: true
+          }
+        }
+      },
+      orderBy: { joinedAt: 'asc' }
+    };
+
+    if (membership.role === 'TEAM_LEAD' && membership.teamId) {
+      membersInclude.where = { teamId: membership.teamId };
+    }
+
     const organization = await prisma.organization.findUnique({
       where: { id },
       include: {
-        members: {
-          include: {
-            team: {
-              select: {
-                id: true,
-                name: true
-              }
-            },
-            user: {
-              select: {
-                id: true,
-                email: true,
-                name: true,
-                jobTitle: true,
-                signupSource: true,
-                initialRole: true,
-                createdAt: true
-              }
-            }
-          },
-          orderBy: { joinedAt: 'asc' }
-        }
+        members: membersInclude
       }
     });
 
@@ -1278,7 +1286,7 @@ export const getTeams = async (req: Request, res: Response) => {
       let totalProgress = 0;
       if (teamOkrs.length > 0) {
         const okrProgresses = await Promise.all(teamOkrs.map(async (okr) => {
-          const tagIds = okr.keyResults.map(kr => kr.tagId);
+          const tagIds = okr.keyResults.map(kr => kr.tagId).filter((t: any) => !!t);
           if (tagIds.length === 0) return 0;
 
           const [totalTasks, completedTasks] = await Promise.all([
@@ -1999,7 +2007,7 @@ export const createOkr = async (req: Request, res: Response) => {
           data: {
             okrId: created.id,
             title: kr.title.trim(),
-            tagId: tag.id,
+            tagId: tag ? tag.id : null,
             assignedUserId: kr.isGeneral ? null : kr.assignedUserId,
             isGeneral: kr.isGeneral || false,
             metricName: kr.metricName?.trim() || null,
@@ -2293,7 +2301,7 @@ export const updateOkr = async (req: Request, res: Response) => {
             data: {
               okrId,
               title: kr.title.trim(),
-              tagId: tag.id,
+              tagId: tag ? tag.id : null,
               assignedUserId: kr.isGeneral ? null : kr.assignedUserId,
               isGeneral: kr.isGeneral || false,
               metricName: kr.metricName?.trim() || null,

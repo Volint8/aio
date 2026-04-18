@@ -530,7 +530,6 @@ interface AppraisalOkrImpactSummary {
 
 interface OkrKeyResultForm {
   title: string;
-  tagId: string;
   assignedUserId: string | null;
   id?: string;
 }
@@ -793,7 +792,6 @@ const DashboardPage = () => {
     dueDate: "",
     assigneeId: "",
     supporterId: "",
-    tagId: "",
     alertTeamLead: false,
     okrId: "",
     keyResultId: "",
@@ -824,7 +822,6 @@ const DashboardPage = () => {
     keyResults: [
       {
         title: "",
-        tagId: "",
         assignedUserId: "",
       },
     ] as OkrKeyResultForm[],
@@ -840,7 +837,6 @@ const DashboardPage = () => {
     keyResults: [
       {
         title: "",
-        tagId: "",
         assignedUserId: "",
       },
     ] as OkrKeyResultForm[],
@@ -982,7 +978,6 @@ const DashboardPage = () => {
 
   const createEmptyKrForm = (): OkrKeyResultForm => ({
     title: "",
-    tagId: "",
     assignedUserId: null,
     id: undefined,
   });
@@ -1556,16 +1551,7 @@ const DashboardPage = () => {
       setAppraisals(appraisalRes.data || []);
       setClients(clientsRes.data || []);
 
-      if (tagsRes.data?.[0]?.id) {
-        setNewTask((prev) => ({
-          ...prev,
-          tagId: prev.tagId || tagsRes.data[0].id,
-        }));
-        setEditTask((prev) => ({
-          ...prev,
-          tagId: prev.tagId || tagsRes.data[0].id,
-        }));
-      }
+      // No default tag selection for new tasks (tag removed from create form)
     } catch (error: any) {
       console.error("Failed to fetch dashboard data:", error);
       // Set organization to null on error to prevent rendering with stale data
@@ -1581,8 +1567,6 @@ const DashboardPage = () => {
 
   const selectedTask =
     allTasks.find((task) => task.id === selectedTaskId) || null;
-  const selectedCreateTaskTag =
-    tags.find((tag) => tag.id === newTask.tagId) || null;
   const selectedEditTaskTag =
     tags.find((tag) => tag.id === editTask.tagId) || null;
   const isDeletedView = filter === "recently_deleted";
@@ -1624,9 +1608,17 @@ const DashboardPage = () => {
         return;
       }
       await api.post("/tasks", {
-        ...newTask,
-        organizationId: orgId,
+        // send only createable fields (tag is intentionally omitted)
+        title: newTask.title,
+        description: newTask.description,
+        priority: newTask.priority,
+        dueDate: newTask.dueDate,
+        assigneeId: newTask.assigneeId,
+        supporterId: newTask.supporterId,
+        alertTeamLead: newTask.alertTeamLead,
+        okrId: newTask.okrId || null,
         keyResultId: newTask.keyResultId || null,
+        organizationId: orgId,
       });
       setNewTask({
         title: "",
@@ -1635,7 +1627,6 @@ const DashboardPage = () => {
         dueDate: "",
         assigneeId: "",
         supporterId: "",
-        tagId: tags[0]?.id || "",
         alertTeamLead: false,
         okrId: "",
         keyResultId: "",
@@ -1725,7 +1716,7 @@ const DashboardPage = () => {
         ...newOkr,
         assignments,
         keyResults: newOkr.keyResults.filter(
-          (kr) => kr.title.trim() && kr.tagId && kr.assignedUserId,
+          (kr) => kr.title.trim() && kr.assignedUserId,
         ),
       });
       setNewOkr({
@@ -1776,7 +1767,6 @@ const DashboardPage = () => {
       keyResults: okr.keyResults?.map((kr) => ({
         id: (kr as any).id,
         title: kr.title,
-        tagId: kr.tag.id,
         assignedUserId: kr.assignedUserId,
       })) || [createEmptyKrForm()],
       status: okr.status || "OPEN",
@@ -1805,7 +1795,7 @@ const DashboardPage = () => {
         ...editOkrForm,
         assignments,
         keyResults: editOkrForm.keyResults.filter(
-          (kr) => kr.title.trim() && kr.tagId && kr.assignedUserId,
+          (kr) => kr.title.trim() && kr.assignedUserId,
         ),
       });
       setShowEditOkrModal(false);
@@ -2983,6 +2973,10 @@ const DashboardPage = () => {
             members={(organization?.members || [])
               .filter((m) => m.userId !== user?.id)
               .filter((m) => {
+                // If team lead and not viewing a specific team, only show members of the lead's team
+                if (isTeamLead && !urlTeamId) {
+                  return ledTeamMemberIds.includes(m.userId);
+                }
                 if (!urlTeamId) return true;
                 // match by explicit team relation or by searching teams data
                 if (m.team?.id === urlTeamId || m.teamId === urlTeamId)
@@ -3113,7 +3107,7 @@ const DashboardPage = () => {
                       style={{ padding: "8px 16px", fontSize: "0.9em" }}
                       disabled={!isAdmin}
                     >
-                      📊 Bulk Invite
+                      Bulk Invite
                     </button>
                   </div>
                   {teamError && (
@@ -3483,7 +3477,9 @@ const DashboardPage = () => {
                             <span
                               className={`role-badge ${row.member.role.toLowerCase()}`}
                             >
-                              {row.roleLabel}
+                              {row.roleLabel
+                                ? formatRole(row.roleLabel)
+                                : formatRole(row.member.role)}
                             </span>
                           </td>
                           {/* Category column removed as not needed */}
@@ -3647,6 +3643,7 @@ const DashboardPage = () => {
               <button
                 className="btn-primary"
                 onClick={() => setShowCreateAppraisalModal(true)}
+                style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
               >
                 <svg
                   width="18"
@@ -3657,11 +3654,12 @@ const DashboardPage = () => {
                   strokeWidth="2.5"
                   strokeLinecap="round"
                   strokeLinejoin="round"
+                  style={{ display: "block" }}
                 >
                   <line x1="12" y1="5" x2="12" y2="19"></line>
                   <line x1="5" y1="12" x2="19" y2="12"></line>
                 </svg>
-                Generate Appraisal
+                <span style={{ lineHeight: 1 }}>{"Generate Appraisal"}</span>
               </button>
             </div>
             <div className="tasks-list">
@@ -5139,7 +5137,10 @@ const DashboardPage = () => {
           className="modal-overlay"
           onClick={() => setShowCreateTaskModal(false)}
         >
-          <div className="modal large" onClick={(e) => e.stopPropagation()}>
+          <div
+            className="modal large no-scroll"
+            onClick={(e) => e.stopPropagation()}
+          >
             <h2>Create New Task</h2>
             <form onSubmit={handleCreateTask}>
               <div className="form-group">
@@ -5164,81 +5165,7 @@ const DashboardPage = () => {
                   rows={4}
                 />
               </div>
-              <div className="form-group">
-                <label>Tag *</label>
-                <select
-                  value={newTask.tagId}
-                  onChange={(e) =>
-                    setNewTask({ ...newTask, tagId: e.target.value })
-                  }
-                  required
-                >
-                  <option value="">Select a tag</option>
-                  {availableTags.map((tag) => {
-                    return (
-                      <option key={tag.id} value={tag.id}>
-                        {tag.name}
-                      </option>
-                    );
-                  })}
-                </select>
-                {selectedCreateTaskTag && (
-                  <div
-                    className="selected-tag-preview"
-                    style={{
-                      marginTop: "8px",
-                      padding: "8px 12px",
-                      background: "#F1F5F9",
-                      borderRadius: "8px",
-                      border: "1px solid var(--border-color)",
-                    }}
-                  >
-                    <span
-                      className="color-preview-chip"
-                      style={{
-                        background: selectedCreateTaskTag.color,
-                        width: "12px",
-                        height: "12px",
-                        borderRadius: "3px",
-                        display: "inline-block",
-                        marginRight: "8px",
-                        flexShrink: 0,
-                      }}
-                      aria-hidden="true"
-                    ></span>
-                    <div
-                      style={{
-                        display: "flex",
-                        gap: "8px",
-                        alignItems: "flex-start",
-                      }}
-                    >
-                      <span
-                        style={{
-                          fontSize: "0.9em",
-                          color: "var(--text-main)",
-                          flexShrink: 0,
-                        }}
-                      >
-                        Selected:
-                      </span>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div
-                          style={{
-                            fontWeight: 600,
-                            color: "var(--text-main)",
-                            marginBottom: "4px",
-                          }}
-                        >
-                          <span title={selectedCreateTaskTag.name}>
-                            {selectedCreateTaskTag.name}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
+              {/* Tag removed from Create Task modal (handled separately) */}
               <div className="form-row">
                 <div className="form-group">
                   <label>Priority</label>
@@ -5412,7 +5339,10 @@ const DashboardPage = () => {
           className="modal-overlay"
           onClick={() => setShowEditTaskModal(false)}
         >
-          <div className="modal large" onClick={(e) => e.stopPropagation()}>
+          <div
+            className="modal large no-scroll"
+            onClick={(e) => e.stopPropagation()}
+          >
             <h2>Edit Task</h2>
             <form onSubmit={handleUpdateTask}>
               <div className="form-group">
@@ -5736,7 +5666,10 @@ const DashboardPage = () => {
           className="modal-overlay"
           onClick={() => setShowCreateTeamModal(false)}
         >
-          <div className="modal large" onClick={(e) => e.stopPropagation()}>
+          <div
+            className="modal large no-scroll"
+            onClick={(e) => e.stopPropagation()}
+          >
             <h2>Create Team</h2>
             <form onSubmit={handleCreateTeam}>
               <div className="form-group">
@@ -5832,7 +5765,10 @@ const DashboardPage = () => {
 
       {editingTeam && (
         <div className="modal-overlay" onClick={() => setEditingTeam(null)}>
-          <div className="modal large" onClick={(e) => e.stopPropagation()}>
+          <div
+            className="modal large no-scroll"
+            onClick={(e) => e.stopPropagation()}
+          >
             <h2>Edit Team</h2>
             <form onSubmit={handleUpdateTeam}>
               <div className="form-group">
@@ -5932,7 +5868,10 @@ const DashboardPage = () => {
             if (!creatingOkr) setShowCreateOkrModal(false);
           }}
         >
-          <div className="modal large" onClick={(e) => e.stopPropagation()}>
+          <div
+            className="modal large no-scroll"
+            onClick={(e) => e.stopPropagation()}
+          >
             <h2>Create OKR</h2>
             <form onSubmit={handleCreateOkr}>
               <div className="form-group">
@@ -6079,27 +6018,7 @@ const DashboardPage = () => {
                       required
                     />
                   </div>
-                  <div className="form-row">
-                    <div className="form-group">
-                      <label>Tag</label>
-                      <select
-                        value={kr.tagId}
-                        onChange={(e) => {
-                          const next = [...newOkr.keyResults];
-                          next[index].tagId = e.target.value;
-                          setNewOkr({ ...newOkr, keyResults: next });
-                        }}
-                        required
-                      >
-                        <option value="">Select tag</option>
-                        {tags.map((t) => (
-                          <option key={t.id} value={t.id}>
-                            {t.name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
+                  {/* Tag removed from Key Result form */}
                   <div className="form-group">
                     <label>Owner</label>
                     <select
@@ -6167,7 +6086,7 @@ const DashboardPage = () => {
                     ...newOkr,
                     keyResults: [
                       ...newOkr.keyResults,
-                      { ...createEmptyKrForm(), tagId: tags[0]?.id || "" },
+                      { ...createEmptyKrForm() },
                     ],
                   })
                 }
@@ -6352,27 +6271,7 @@ const DashboardPage = () => {
                       required
                     />
                   </div>
-                  <div className="form-row">
-                    <div className="form-group">
-                      <label>Tag</label>
-                      <select
-                        value={kr.tagId}
-                        onChange={(e) => {
-                          const next = [...editOkrForm.keyResults];
-                          next[index].tagId = e.target.value;
-                          setEditOkrForm({ ...editOkrForm, keyResults: next });
-                        }}
-                        required
-                      >
-                        <option value="">Select tag</option>
-                        {tags.map((t) => (
-                          <option key={t.id} value={t.id}>
-                            {t.name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
+                  {/* Tag removed from Key Result form */}
                   <div className="form-group">
                     <label>Owner</label>
                     <select
@@ -6437,7 +6336,7 @@ const DashboardPage = () => {
                     ...editOkrForm,
                     keyResults: [
                       ...editOkrForm.keyResults,
-                      { ...createEmptyKrForm(), tagId: tags[0]?.id || "" },
+                      { ...createEmptyKrForm() },
                     ],
                   })
                 }

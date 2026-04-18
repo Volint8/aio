@@ -1146,6 +1146,18 @@
     max-width: 720px;
 }
 
+/* Disable internal scrollbar for specific modals that should not scroll */
+.modal.no-scroll {
+    /* Allow scrolling but hide scrollbar visually */
+    max-height: calc(100vh - 32px);
+    overflow-y: auto;
+    -ms-overflow-style: none; /* IE and Edge */
+    scrollbar-width: none; /* Firefox */
+}
+.modal.no-scroll::-webkit-scrollbar {
+    display: none; /* Chrome, Safari, Opera */
+}
+
 .form-group {
     margin-bottom: 24px;
 }

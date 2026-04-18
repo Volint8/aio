@@ -110,7 +110,6 @@ const TaskTrackerView: React.FC<TaskTrackerViewProps> = ({
     userRole === "ADMIN"
       ? [
           { key: "all", label: "All Tasks" },
-          { key: "my", label: "My Tasks" },
           { key: "pending", label: "Pending" },
           { key: "ongoing", label: "In Progress" },
           { key: "completed", label: "Completed" },

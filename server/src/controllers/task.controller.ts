@@ -325,8 +325,8 @@ export const createTask = async (req: Request, res: Response) => {
         const normalizedAssigneeId = assigneeId === '' ? null : assigneeId;
         const normalizedSupporterId = supporterId === '' ? null : supporterId;
 
-        if (!title || !organizationId || !tagId || !normalizedAssigneeId) {
-            return res.status(400).json({ error: 'Title, organization, tag and assignee are required' });
+        if (!title || !organizationId || !normalizedAssigneeId) {
+            return res.status(400).json({ error: 'Title, organization and assignee are required' });
         }
 
         const membership = await prisma.organizationMember.findUnique({
@@ -345,9 +345,14 @@ export const createTask = async (req: Request, res: Response) => {
             return res.status(403).json({ error: 'Access denied' });
         }
 
-        const tag = await prisma.tag.findUnique({ where: { id: tagId } });
-        if (!tag || tag.organizationId !== organizationId) {
-            return res.status(400).json({ error: 'Selected tag is invalid for this organization' });
+
+        // If a tagId was provided, validate it belongs to the organization
+        let tag: any = null;
+        if (tagId) {
+            tag = await prisma.tag.findUnique({ where: { id: tagId } });
+            if (!tag || tag.organizationId !== organizationId) {
+                return res.status(400).json({ error: 'Selected tag is invalid for this organization' });
+            }
         }
 
         const { teamIds } = await resolveTaskTeamContext({
@@ -364,7 +369,7 @@ export const createTask = async (req: Request, res: Response) => {
                     organizationId,
                     assigneeId: normalizedAssigneeId,
                     supporterId: normalizedSupporterId,
-                    tagId,
+                    ...(tagId && { tagId }),
                     dueDate: dueDate ? new Date(dueDate) : null,
                     priority: priority || 'LOW',
                     status: 'CREATED'
