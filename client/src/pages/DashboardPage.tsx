@@ -543,6 +543,7 @@ interface AppraisalOkrImpactSummary {
 interface OkrKeyResultForm {
   title: string;
   assignedUserId: string | null;
+  ownerUserIds?: string[];
   id?: string;
 }
 
@@ -833,11 +834,11 @@ const DashboardPage = () => {
     status: "NOT_YET_OPEN",
     assignedToTeamId: "",
     supportedByTeamIds: [] as string[],
-    ownerUserIds: [] as string[],
     keyResults: [
       {
         title: "",
         assignedUserId: "",
+        ownerUserIds: [] as string[],
       },
     ] as OkrKeyResultForm[],
   });
@@ -849,11 +850,11 @@ const DashboardPage = () => {
     periodEnd: "",
     assignedToTeamId: "",
     supportedByTeamIds: [] as string[],
-    ownerUserIds: [] as string[],
     keyResults: [
       {
         title: "",
         assignedUserId: "",
+        ownerUserIds: [] as string[],
       },
     ] as OkrKeyResultForm[],
     status: "OPEN",
@@ -1036,6 +1037,7 @@ const DashboardPage = () => {
   const createEmptyKrForm = (): OkrKeyResultForm => ({
     title: "",
     assignedUserId: null,
+    ownerUserIds: [] as string[],
     id: undefined,
   });
 
@@ -1776,15 +1778,13 @@ const DashboardPage = () => {
       newOkr.supportedByTeamIds.forEach((teamId) => {
         assignments.push({ targetType: "TEAM", targetId: teamId });
       });
-      newOkr.ownerUserIds.forEach((userId) => {
-        assignments.push({ targetType: "MEMBER", targetId: userId });
-      });
 
       const keyResultsPayload = newOkr.keyResults
         .map((kr) => ({
           ...kr,
           title: kr.title.trim(),
           assignedUserId: kr.assignedUserId || null,
+          ownerUserIds: kr.ownerUserIds || [],
           isGeneral: !kr.assignedUserId,
         }))
         .filter((kr) => kr.title);
@@ -1802,7 +1802,6 @@ const DashboardPage = () => {
         status: "NOT_YET_OPEN",
         assignedToTeamId: "",
         supportedByTeamIds: [],
-        ownerUserIds: [],
         keyResults: [createEmptyKrForm()],
       });
       setShowCreateOkrModal(false);
@@ -1828,11 +1827,6 @@ const DashboardPage = () => {
         ?.filter((a) => a.targetType === "TEAM")
         .map((a) => a.targetId)
         .filter((teamId) => teamId !== assignedToTeamId) || [];
-    const ownerUserIds =
-      okr.assignments
-        ?.filter((a) => a.targetType === "MEMBER")
-        .map((a) => a.targetId)
-        .filter(Boolean) || [];
 
     setEditOkrForm({
       title: okr.title,
@@ -1845,11 +1839,11 @@ const DashboardPage = () => {
         : "",
       assignedToTeamId: assignedToTeamId,
       supportedByTeamIds: supportedByTeamIds,
-      ownerUserIds,
       keyResults: okr.keyResults?.map((kr) => ({
         id: (kr as any).id,
         title: kr.title,
         assignedUserId: kr.assignedUserId,
+        ownerUserIds: (kr as any).ownerUserIds || [],
       })) || [createEmptyKrForm()],
       status: okr.status || "OPEN",
     });
@@ -1872,15 +1866,13 @@ const DashboardPage = () => {
           assignments.push({ targetType: "TEAM", targetId: teamId });
         }
       });
-      editOkrForm.ownerUserIds.forEach((userId) => {
-        assignments.push({ targetType: "MEMBER", targetId: userId });
-      });
 
       const keyResultsPayload = editOkrForm.keyResults
         .map((kr) => ({
           ...kr,
           title: kr.title.trim(),
           assignedUserId: kr.assignedUserId || null,
+          ownerUserIds: kr.ownerUserIds || [],
           isGeneral: !kr.assignedUserId,
         }))
         .filter((kr) => kr.title);
@@ -6241,25 +6233,6 @@ const DashboardPage = () => {
                 )}
               </div>
 
-              <div className="form-group">
-                <label>Owners (Members)</label>
-                <MemberMultiSelect
-                  options={assignableUsers.map((member) => ({
-                    id: member.user.id,
-                    name: member.user.name,
-                    email: member.user.email,
-                  }))}
-                  value={newOkr.ownerUserIds}
-                  onChange={(ownerUserIds) =>
-                    setNewOkr((prev) => ({
-                      ...prev,
-                      ownerUserIds,
-                    }))
-                  }
-                  maxVisibleChips={6}
-                />
-              </div>
-
               <h3 style={{ marginTop: 8 }}>Key Results</h3>
               {newOkr.keyResults.map((kr, index) => (
                 <div
@@ -6310,6 +6283,24 @@ const DashboardPage = () => {
                         </option>
                       ))}
                     </select>
+                  </div>
+
+                  <div className="form-group">
+                    <label>Owners (Members)</label>
+                    <MemberMultiSelect
+                      options={assignableUsers.map((member) => ({
+                        id: member.user.id,
+                        name: member.user.name,
+                        email: member.user.email,
+                      }))}
+                      value={kr.ownerUserIds || []}
+                      onChange={(ownerUserIds) => {
+                        const next = [...newOkr.keyResults];
+                        next[index].ownerUserIds = ownerUserIds;
+                        setNewOkr({ ...newOkr, keyResults: next });
+                      }}
+                      maxVisibleChips={3}
+                    />
                   </div>
 
                   <div
@@ -6512,25 +6503,6 @@ const DashboardPage = () => {
                 )}
               </div>
 
-              <div className="form-group">
-                <label>Owners (Members)</label>
-                <MemberMultiSelect
-                  options={assignableUsers.map((member) => ({
-                    id: member.user.id,
-                    name: member.user.name,
-                    email: member.user.email,
-                  }))}
-                  value={editOkrForm.ownerUserIds}
-                  onChange={(ownerUserIds) =>
-                    setEditOkrForm((prev) => ({
-                      ...prev,
-                      ownerUserIds,
-                    }))
-                  }
-                  maxVisibleChips={6}
-                />
-              </div>
-
               <h3 style={{ marginTop: 8 }}>Key Results</h3>
               {editOkrForm.keyResults.map((kr, index) => (
                 <div
@@ -6578,6 +6550,24 @@ const DashboardPage = () => {
                         </option>
                       ))}
                     </select>
+                  </div>
+
+                  <div className="form-group">
+                    <label>Owners (Members)</label>
+                    <MemberMultiSelect
+                      options={assignableUsers.map((member) => ({
+                        id: member.user.id,
+                        name: member.user.name,
+                        email: member.user.email,
+                      }))}
+                      value={kr.ownerUserIds || []}
+                      onChange={(ownerUserIds) => {
+                        const next = [...editOkrForm.keyResults];
+                        next[index].ownerUserIds = ownerUserIds;
+                        setEditOkrForm({ ...editOkrForm, keyResults: next });
+                      }}
+                      maxVisibleChips={3}
+                    />
                   </div>
 
                   <div

@@ -1925,6 +1925,7 @@ export const createOkr = async (req: Request, res: Response) => {
         tagName?: string;
         tagColor?: string;
         assignedUserId?: string;
+        ownerUserIds?: string[];
         isGeneral?: boolean;
         metricName?: string;
         metricUnit?: string;
@@ -2018,6 +2019,24 @@ export const createOkr = async (req: Request, res: Response) => {
       }
     }
 
+    // Validate KR-level owners
+    const allKrOwnerIds = Array.from(new Set(
+      keyResults
+        .flatMap((kr) => kr.ownerUserIds || [])
+        .filter(Boolean)
+    ));
+    if (allKrOwnerIds.length > 0) {
+      const memberships = await prisma.organizationMember.findMany({
+        where: {
+          organizationId,
+          userId: { in: allKrOwnerIds }
+        }
+      });
+      if (memberships.length !== allKrOwnerIds.length || memberships.some((m) => m.role === 'ADMIN')) {
+        return res.status(400).json({ error: 'KR owners must be non-admin organization members' });
+      }
+    }
+
     const okr = await prisma.$transaction(async (tx) => {
       const created = await tx.okr.create({
         data: {
@@ -2056,6 +2075,7 @@ export const createOkr = async (req: Request, res: Response) => {
             title: kr.title.trim(),
             tagId: tag ? tag.id : null,
             assignedUserId: kr.isGeneral ? null : kr.assignedUserId,
+            ownerIds: kr.ownerUserIds || [],
             isGeneral: kr.isGeneral || false,
             metricName: kr.metricName?.trim() || null,
             metricUnit: kr.metricUnit?.trim() || null,
@@ -2251,6 +2271,7 @@ export const updateOkr = async (req: Request, res: Response) => {
         tagName?: string;
         tagColor?: string;
         assignedUserId?: string;
+        ownerUserIds?: string[];
         isGeneral?: boolean;
         metricName?: string;
         metricUnit?: string;
@@ -2355,6 +2376,24 @@ export const updateOkr = async (req: Request, res: Response) => {
           return res.status(400).json({ error: 'Assigned users must be non-admin organization members' });
         }
       }
+
+      // Validate KR-level owners
+      const allKrOwnerIds = Array.from(new Set(
+        normalizedKeyResults
+          .flatMap((kr) => (kr as any).ownerUserIds || [])
+          .filter(Boolean)
+      ));
+      if (allKrOwnerIds.length > 0) {
+        const memberships = await prisma.organizationMember.findMany({
+          where: {
+            organizationId,
+            userId: { in: allKrOwnerIds }
+          }
+        });
+        if (memberships.length !== allKrOwnerIds.length || memberships.some((m) => m.role === 'ADMIN')) {
+          return res.status(400).json({ error: 'KR owners must be non-admin organization members' });
+        }
+      }
     }
 
     const updated = await prisma.$transaction(async (tx) => {
@@ -2403,6 +2442,7 @@ export const updateOkr = async (req: Request, res: Response) => {
               title: kr.title.trim(),
               tagId: tag ? tag.id : null,
               assignedUserId: kr.isGeneral ? null : kr.assignedUserId,
+              ownerIds: (kr as any).ownerUserIds || [],
               isGeneral: kr.isGeneral || false,
               metricName: kr.metricName?.trim() || null,
               metricUnit: kr.metricUnit?.trim() || null,

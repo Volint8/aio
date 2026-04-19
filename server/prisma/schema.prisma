@@ -12,7 +12,7 @@ model User {
   email                     String               @unique
   passwordHash              String
   name                      String?
-  jobTitle                  String?              // Professional role: Software Engineer, Marketer, etc.
+  jobTitle                  String? // Professional role: Software Engineer, Marketer, etc.
   role                      String               @default("USER") // USER, ADMIN
   isVerified                Boolean              @default(false)
   deletedAt                 DateTime?
@@ -22,8 +22,8 @@ model User {
   passwordResetOtp          String?
   passwordResetOtpExpiresAt DateTime?
   pendingInviteId           String?
-  signupSource              String?              // ADMIN, INVITE, SYSTEM
-  initialRole               String?              // Initial role when joining (ADMIN, TEAM_LEAD, MEMBER)
+  signupSource              String? // ADMIN, INVITE, SYSTEM
+  initialRole               String? // Initial role when joining (ADMIN, TEAM_LEAD, MEMBER)
   createdAt                 DateTime             @default(now())
   updatedAt                 DateTime             @updatedAt
   organizations             OrganizationMember[]
@@ -215,22 +215,22 @@ model Tag {
 }
 
 model Okr {
-  id             String          @id @default(uuid())
-  organizationId String
-  title          String
-  description    String?
+  id                   String          @id @default(uuid())
+  organizationId       String
+  title                String
+  description          String?
   objectiveTargetValue Float?
   objectiveMetricUnit  String?
-  periodStart    DateTime
-  periodEnd      DateTime
-  status         String          @default("OPEN") // NOT_YET_OPEN, OPEN, COMPLETED
-  createdBy      String
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
-  organization   Organization    @relation(fields: [organizationId], references: [id])
-  creator        User            @relation("OKRCreator", fields: [createdBy], references: [id])
-  assignments    OkrAssignment[]
-  keyResults     OkrKeyResult[]
+  periodStart          DateTime
+  periodEnd            DateTime
+  status               String          @default("OPEN") // NOT_YET_OPEN, OPEN, COMPLETED
+  createdBy            String
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+  organization         Organization    @relation(fields: [organizationId], references: [id])
+  creator              User            @relation("OKRCreator", fields: [createdBy], references: [id])
+  assignments          OkrAssignment[]
+  keyResults           OkrKeyResult[]
 }
 
 model OkrAssignment {
@@ -243,29 +243,30 @@ model OkrAssignment {
 }
 
 model OkrKeyResult {
-  id               String    @id @default(uuid())
-  okrId            String
-  title            String
-  tagId            String
-  assignedUserId   String?
-  isGeneral        Boolean   @default(false)
-  metricName       String?
-  metricUnit       String?
-  targetValue      Float?
-  weight           Float     @default(1)
+  id                String         @id @default(uuid())
+  okrId             String
+  title             String
+  tagId             String
+  assignedUserId    String?
+  ownerIds          Json           @default("[]") // Array of user IDs
+  isGeneral         Boolean        @default(false)
+  metricName        String?
+  metricUnit        String?
+  targetValue       Float?
+  weight            Float          @default(1)
   contributionValue Float?
-  contributionPct  Float?
-  approvalStatus   String    @default("PENDING") // PENDING, APPROVED, REJECTED
-  approvedBy       String?
-  approvedAt       DateTime?
-  approvalNotes    String?
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
-  okr              Okr       @relation(fields: [okrId], references: [id], onDelete: Cascade)
-  tag              Tag       @relation(fields: [tagId], references: [id])
-  assignedUser     User?     @relation("AssignedKeyResults", fields: [assignedUserId], references: [id])
-  approver         User?     @relation("ApprovedKeyResults", fields: [approvedBy], references: [id])
-  impacts          TaskKrImpact[]
+  contributionPct   Float?
+  approvalStatus    String         @default("PENDING") // PENDING, APPROVED, REJECTED
+  approvedBy        String?
+  approvedAt        DateTime?
+  approvalNotes     String?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+  okr               Okr            @relation(fields: [okrId], references: [id], onDelete: Cascade)
+  tag               Tag            @relation(fields: [tagId], references: [id])
+  assignedUser      User?          @relation("AssignedKeyResults", fields: [assignedUserId], references: [id])
+  approver          User?          @relation("ApprovedKeyResults", fields: [approvedBy], references: [id])
+  impacts           TaskKrImpact[]
 
   @@index([tagId])
   @@index([assignedUserId])
@@ -273,25 +274,25 @@ model OkrKeyResult {
 }
 
 model Appraisal {
-  id              String       @id @default(uuid())
-  organizationId  String
-  subjectUserId   String
-  createdByUserId String
-  cycle           String
-  summary         String
-  tasksCompleted  Float? // Percentage
-  deadlinesMet    Float? // Percentage
-  okrContribution String? // HIGH, MEDIUM, LOW
-  okrImpactScore  Float? // Percentage
+  id               String       @id @default(uuid())
+  organizationId   String
+  subjectUserId    String
+  createdByUserId  String
+  cycle            String
+  summary          String
+  tasksCompleted   Float? // Percentage
+  deadlinesMet     Float? // Percentage
+  okrContribution  String? // HIGH, MEDIUM, LOW
+  okrImpactScore   Float? // Percentage
   okrImpactSummary Json?
-  scoreBreakdown  Json?
-  overallRating   String? // EXCELLENT, GOOD, AVERAGE, POOR
-  status          String       @default("GENERATED") // GENERATED, PUBLISHED
-  createdAt       DateTime     @default(now())
-  updatedAt       DateTime     @updatedAt
-  organization    Organization @relation(fields: [organizationId], references: [id])
-  subjectUser     User         @relation("AppraisalSubject", fields: [subjectUserId], references: [id])
-  createdByUser   User         @relation("AppraisalCreator", fields: [createdByUserId], references: [id])
+  scoreBreakdown   Json?
+  overallRating    String? // EXCELLENT, GOOD, AVERAGE, POOR
+  status           String       @default("GENERATED") // GENERATED, PUBLISHED
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+  organization     Organization @relation(fields: [organizationId], references: [id])
+  subjectUser      User         @relation("AppraisalSubject", fields: [subjectUserId], references: [id])
+  createdByUser    User         @relation("AppraisalCreator", fields: [createdByUserId], references: [id])
 }
 
 model TaskKrImpact {
@@ -399,21 +400,21 @@ model Subscription {
 }
 
 model Payment {
-  id                     String    @id @default(uuid())
-  userId                 String
-  organizationId         String
-  subscriptionId         String?
-  amount                 Int // Amount in kobo
-  currency               String    @default("NGN")
-  status                 String    @default("pending") // pending, success, failed
-  paystackReference      String    @unique
-  paystackAccessCode     String?
+  id                       String        @id @default(uuid())
+  userId                   String
+  organizationId           String
+  subscriptionId           String?
+  amount                   Int // Amount in kobo
+  currency                 String        @default("NGN")
+  status                   String        @default("pending") // pending, success, failed
+  paystackReference        String        @unique
+  paystackAccessCode       String?
   paystackAuthorizationUrl String?
-  metadata               Json?
-  paidAt                 DateTime?
-  createdAt              DateTime  @default(now())
-  updatedAt              DateTime  @updatedAt
-  subscription           Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  metadata                 Json?
+  paidAt                   DateTime?
+  createdAt                DateTime      @default(now())
+  updatedAt                DateTime      @updatedAt
+  subscription             Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
 
   @@index([userId])
   @@index([organizationId])
@@ -422,12 +423,12 @@ model Payment {
 }
 
 model WebhookEvent {
-  id           String   @id @default(uuid())
-  eventId      String   @unique // Paystack event ID
-  eventType    String // charge.success, subscription.create, etc.
-  processed    Boolean  @default(false)
-  payload      Json
-  createdAt    DateTime @default(now())
+  id        String   @id @default(uuid())
+  eventId   String   @unique // Paystack event ID
+  eventType String // charge.success, subscription.create, etc.
+  processed Boolean  @default(false)
+  payload   Json
+  createdAt DateTime @default(now())
 
   @@index([eventId])
   @@index([eventType])
