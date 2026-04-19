@@ -1944,7 +1944,16 @@ export const createOkr = async (req: Request, res: Response) => {
 
     const objectiveTargetValue = parseFirstNumericValue(title);
 
-    const nonGeneralKeyResults = keyResults.filter((kr) => kr?.title?.trim() && !kr.isGeneral);
+    const normalizedKeyResults = keyResults
+      .map((kr) => ({
+        ...kr,
+        title: kr?.title?.trim() || '',
+        assignedUserId: kr?.assignedUserId || undefined,
+        isGeneral: Boolean(kr?.isGeneral) || !kr?.assignedUserId
+      }))
+      .filter((kr) => kr.title);
+
+    const nonGeneralKeyResults = normalizedKeyResults.filter((kr) => !kr.isGeneral);
     const assignableUserIds = Array.from(new Set(
       nonGeneralKeyResults
         .map((kr) => kr?.assignedUserId)
@@ -1985,10 +1994,7 @@ export const createOkr = async (req: Request, res: Response) => {
         }
       });
 
-      for (const kr of keyResults) {
-        if (!kr?.title?.trim()) {
-          continue;
-        }
+      for (const kr of normalizedKeyResults) {
 
         const tag = await resolveTagForKr({
           tx,
@@ -2100,7 +2106,7 @@ export const createOkr = async (req: Request, res: Response) => {
       }
     }
 
-    if (keyResults.length > 0 && okr) {
+    if (normalizedKeyResults.length > 0 && okr) {
       await notifyAssignedKeyResults({
         organizationId,
         actorUserId: userId,
@@ -2226,8 +2232,19 @@ export const updateOkr = async (req: Request, res: Response) => {
     const resolvedTitle = title !== undefined ? title : existing.title;
     const objectiveTargetValue = parseFirstNumericValue(resolvedTitle);
 
-    if (keyResults) {
-      const nonGeneralKeyResults = keyResults.filter((kr) => kr?.title?.trim() && !kr.isGeneral);
+    const normalizedKeyResults = keyResults
+      ? keyResults
+        .map((kr) => ({
+          ...kr,
+          title: kr?.title?.trim() || '',
+          assignedUserId: kr?.assignedUserId || undefined,
+          isGeneral: Boolean(kr?.isGeneral) || !kr?.assignedUserId
+        }))
+        .filter((kr) => kr.title)
+      : null;
+
+    if (normalizedKeyResults) {
+      const nonGeneralKeyResults = normalizedKeyResults.filter((kr) => !kr.isGeneral);
       const requiredAssignments = nonGeneralKeyResults;
       if (requiredAssignments.some((kr) => !kr.assignedUserId)) {
         return res.status(400).json({ error: 'Each non-general key result requires an assigned user' });
@@ -2278,12 +2295,9 @@ export const updateOkr = async (req: Request, res: Response) => {
         });
       }
 
-      if (keyResults) {
+      if (normalizedKeyResults) {
         await tx.okrKeyResult.deleteMany({ where: { okrId } });
-        for (const kr of keyResults) {
-          if (!kr?.title?.trim()) {
-            continue;
-          }
+        for (const kr of normalizedKeyResults) {
 
           const tag = await resolveTagForKr({
             tx,
@@ -2325,7 +2339,7 @@ export const updateOkr = async (req: Request, res: Response) => {
       return res.status(500).json({ error: 'Internal server error' });
     }
 
-    if (keyResults) {
+    if (normalizedKeyResults) {
       await notifyAssignedKeyResults({
         organizationId,
         actorUserId: userId,

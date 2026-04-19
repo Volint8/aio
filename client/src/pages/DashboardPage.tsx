@@ -1775,12 +1775,19 @@ const DashboardPage = () => {
         assignments.push({ targetType: "TEAM", targetId: teamId });
       });
 
+      const keyResultsPayload = newOkr.keyResults
+        .map((kr) => ({
+          ...kr,
+          title: kr.title.trim(),
+          assignedUserId: kr.assignedUserId || null,
+          isGeneral: !kr.assignedUserId,
+        }))
+        .filter((kr) => kr.title);
+
       await api.post(`/orgs/${orgId}/okrs`, {
         ...newOkr,
         assignments,
-        keyResults: newOkr.keyResults.filter(
-          (kr) => kr.title.trim() && kr.assignedUserId,
-        ),
+        keyResults: keyResultsPayload,
       });
       setNewOkr({
         title: "",
@@ -1854,12 +1861,19 @@ const DashboardPage = () => {
         }
       });
 
+      const keyResultsPayload = editOkrForm.keyResults
+        .map((kr) => ({
+          ...kr,
+          title: kr.title.trim(),
+          assignedUserId: kr.assignedUserId || null,
+          isGeneral: !kr.assignedUserId,
+        }))
+        .filter((kr) => kr.title);
+
       await api.patch(`/orgs/${orgId}/okrs/${editingOkr.id}`, {
         ...editOkrForm,
         assignments,
-        keyResults: editOkrForm.keyResults.filter(
-          (kr) => kr.title.trim() && kr.assignedUserId,
-        ),
+        keyResults: keyResultsPayload,
       });
       setShowEditOkrModal(false);
       setEditingOkr(null);
@@ -6238,7 +6252,7 @@ const DashboardPage = () => {
                   </div>
                   {/* Tag removed from Key Result form */}
                   <div className="form-group">
-                    <label>Owner</label>
+                    <label>Owner (Optional)</label>
                     <select
                       value={kr.assignedUserId || ""}
                       onChange={(e) => {
@@ -6246,9 +6260,8 @@ const DashboardPage = () => {
                         next[index].assignedUserId = e.target.value || null;
                         setNewOkr({ ...newOkr, keyResults: next });
                       }}
-                      required
                     >
-                      <option value="">Select team member</option>
+                      <option value="">No owner (General key result)</option>
                       {getMembersForTeamIds(
                         // include primary + supported teams
                         [
@@ -6491,7 +6504,7 @@ const DashboardPage = () => {
                   </div>
                   {/* Tag removed from Key Result form */}
                   <div className="form-group">
-                    <label>Owner</label>
+                    <label>Owner (Optional)</label>
                     <select
                       value={kr.assignedUserId || ""}
                       onChange={(e) => {
@@ -6499,9 +6512,8 @@ const DashboardPage = () => {
                         next[index].assignedUserId = e.target.value || null;
                         setEditOkrForm({ ...editOkrForm, keyResults: next });
                       }}
-                      required
                     >
-                      <option value="">Select team member</option>
+                      <option value="">No owner (General key result)</option>
                       {getMembersForTeamIds([
                         ...(editOkrForm.assignedToTeamId
                           ? [editOkrForm.assignedToTeamId]

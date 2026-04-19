@@ -623,16 +623,21 @@ export const updateTask = async (req: Request, res: Response) => {
 
         const nextAssigneeId = hasAssigneeUpdate ? normalizedAssigneeId : task.assigneeId;
         const nextSupporterId = hasSupporterUpdate ? normalizedSupporterId : task.supporterId;
+        const shouldRecalculateTeams = hasAssigneeUpdate || hasSupporterUpdate;
+        let teamIds: string[] | null = null;
 
-        if (!nextAssigneeId) {
-            return res.status(400).json({ error: 'Primary assignee is required' });
+        if (shouldRecalculateTeams) {
+            if (!nextAssigneeId) {
+                return res.status(400).json({ error: 'Primary assignee is required' });
+            }
+
+            const resolved = await resolveTaskTeamContext({
+                organizationId: task.organizationId,
+                assigneeId: nextAssigneeId,
+                supporterId: nextSupporterId
+            });
+            teamIds = resolved.teamIds;
         }
-
-        const { teamIds } = await resolveTaskTeamContext({
-            organizationId: task.organizationId,
-            assigneeId: nextAssigneeId,
-            supporterId: nextSupporterId
-        });
 
         const updatedTask = await prisma.$transaction(async (tx) => {
             const updated = await tx.task.update({
@@ -726,11 +731,13 @@ export const updateTask = async (req: Request, res: Response) => {
                 });
             }
 
-            await tx.taskTeam.deleteMany({ where: { taskId: updated.id } });
-            if (teamIds.length > 0) {
-                await tx.taskTeam.createMany({
-                    data: teamIds.map((teamId) => ({ taskId: updated.id, teamId }))
-                });
+            if (shouldRecalculateTeams) {
+                await tx.taskTeam.deleteMany({ where: { taskId: updated.id } });
+                if (teamIds && teamIds.length > 0) {
+                    await tx.taskTeam.createMany({
+                        data: teamIds.map((teamId) => ({ taskId: updated.id, teamId }))
+                    });
+                }
             }
 
             return tx.task.findUnique({
