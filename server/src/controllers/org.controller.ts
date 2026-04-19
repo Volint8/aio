@@ -1942,6 +1942,49 @@ export const createOkr = async (req: Request, res: Response) => {
       return res.status(403).json({ error: 'Only admins can create OKRs' });
     }
 
+    const normalizedAssignments = assignments
+      .filter((a) => ['TEAM', 'MEMBER'].includes(a.targetType) && a.targetId)
+      .map((a) => ({ targetType: a.targetType, targetId: a.targetId }));
+
+    const memberOwnerIds = Array.from(
+      new Set(
+        normalizedAssignments
+          .filter((a) => a.targetType === 'MEMBER')
+          .map((a) => a.targetId)
+      )
+    );
+    if (memberOwnerIds.length > 0) {
+      const memberships = await prisma.organizationMember.findMany({
+        where: {
+          organizationId,
+          userId: { in: memberOwnerIds }
+        }
+      });
+      if (memberships.length !== memberOwnerIds.length || memberships.some((m) => m.role === 'ADMIN')) {
+        return res.status(400).json({ error: 'OKR owners must be non-admin organization members' });
+      }
+    }
+
+    const assignedTeamIds = Array.from(
+      new Set(
+        normalizedAssignments
+          .filter((a) => a.targetType === 'TEAM')
+          .map((a) => a.targetId)
+      )
+    );
+    if (assignedTeamIds.length > 0) {
+      const teams = await prisma.team.findMany({
+        where: {
+          organizationId,
+          id: { in: assignedTeamIds }
+        },
+        select: { id: true }
+      });
+      if (teams.length !== assignedTeamIds.length) {
+        return res.status(400).json({ error: 'One or more assigned teams are invalid for this organization' });
+      }
+    }
+
     const objectiveTargetValue = parseFirstNumericValue(title);
 
     const normalizedKeyResults = keyResults
@@ -1987,9 +2030,7 @@ export const createOkr = async (req: Request, res: Response) => {
           status: status || 'NOT_YET_OPEN',
           createdBy: userId,
           assignments: {
-            create: assignments
-              .filter((a) => ['TEAM', 'MEMBER'].includes(a.targetType) && a.targetId)
-              .map((a) => ({ targetType: a.targetType, targetId: a.targetId }))
+            create: normalizedAssignments
           }
         }
       });
@@ -2232,6 +2273,53 @@ export const updateOkr = async (req: Request, res: Response) => {
     const resolvedTitle = title !== undefined ? title : existing.title;
     const objectiveTargetValue = parseFirstNumericValue(resolvedTitle);
 
+    const normalizedAssignments = assignments
+      ? assignments
+        .filter((a) => ['TEAM', 'MEMBER'].includes(a.targetType) && a.targetId)
+        .map((a) => ({ targetType: a.targetType, targetId: a.targetId }))
+      : null;
+
+    if (normalizedAssignments) {
+      const memberOwnerIds = Array.from(
+        new Set(
+          normalizedAssignments
+            .filter((a) => a.targetType === 'MEMBER')
+            .map((a) => a.targetId)
+        )
+      );
+      if (memberOwnerIds.length > 0) {
+        const memberships = await prisma.organizationMember.findMany({
+          where: {
+            organizationId,
+            userId: { in: memberOwnerIds }
+          }
+        });
+        if (memberships.length !== memberOwnerIds.length || memberships.some((m) => m.role === 'ADMIN')) {
+          return res.status(400).json({ error: 'OKR owners must be non-admin organization members' });
+        }
+      }
+
+      const assignedTeamIds = Array.from(
+        new Set(
+          normalizedAssignments
+            .filter((a) => a.targetType === 'TEAM')
+            .map((a) => a.targetId)
+        )
+      );
+      if (assignedTeamIds.length > 0) {
+        const teams = await prisma.team.findMany({
+          where: {
+            organizationId,
+            id: { in: assignedTeamIds }
+          },
+          select: { id: true }
+        });
+        if (teams.length !== assignedTeamIds.length) {
+          return res.status(400).json({ error: 'One or more assigned teams are invalid for this organization' });
+        }
+      }
+    }
+
     const normalizedKeyResults = keyResults
       ? keyResults
         .map((kr) => ({
@@ -2282,16 +2370,14 @@ export const updateOkr = async (req: Request, res: Response) => {
         }
       });
 
-      if (assignments) {
+      if (normalizedAssignments) {
         await tx.okrAssignment.deleteMany({ where: { okrId } });
         await tx.okrAssignment.createMany({
-          data: assignments
-            .filter((a) => ['TEAM', 'MEMBER'].includes(a.targetType) && a.targetId)
-            .map((a) => ({
-              okrId,
-              targetType: a.targetType,
-              targetId: a.targetId
-            }))
+          data: normalizedAssignments.map((a) => ({
+            okrId,
+            targetType: a.targetType,
+            targetId: a.targetId
+          }))
         });
       }
 
