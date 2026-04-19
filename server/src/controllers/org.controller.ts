@@ -2074,7 +2074,7 @@ export const createOkr = async (req: Request, res: Response) => {
             okrId: created.id,
             title: kr.title.trim(),
             tagId: tag ? tag.id : null,
-            assignedUserId: kr.isGeneral ? null : kr.assignedUserId,
+            assignedUserId: kr.isGeneral ? null : (kr.assignedUserId || null),
             ownerIds: kr.ownerUserIds || [],
             isGeneral: kr.isGeneral || false,
             metricName: kr.metricName?.trim() || null,
@@ -2083,7 +2083,7 @@ export const createOkr = async (req: Request, res: Response) => {
             weight: asNumberOrNull(kr.weight) ?? 1,
             contributionValue,
             contributionPct
-          }
+          } as any
         });
       }
 
@@ -2441,7 +2441,7 @@ export const updateOkr = async (req: Request, res: Response) => {
               okrId,
               title: kr.title.trim(),
               tagId: tag ? tag.id : null,
-              assignedUserId: kr.isGeneral ? null : kr.assignedUserId,
+              assignedUserId: kr.isGeneral ? null : (kr.assignedUserId || null),
               ownerIds: (kr as any).ownerUserIds || [],
               isGeneral: kr.isGeneral || false,
               metricName: kr.metricName?.trim() || null,
@@ -2450,7 +2450,7 @@ export const updateOkr = async (req: Request, res: Response) => {
               weight: asNumberOrNull(kr.weight) ?? 1,
               contributionValue,
               contributionPct
-            }
+            } as any
           });
         }
       }
