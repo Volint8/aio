@@ -14,12 +14,6 @@ import DebouncedButton from "../components/common/DebouncedButton";
 import * as XLSX from "xlsx";
 import "../styles/Dashboard.css";
 
-interface Tag {
-  id: string;
-  name: string;
-  color: string;
-}
-
 interface Attachment {
   id: string;
   type?: string;
@@ -56,7 +50,6 @@ interface Task {
       name: string;
     };
   }>;
-  tag?: Tag | null;
   createdAt: string;
   deletedAt?: string | null;
   comments?: any[];
@@ -341,64 +334,43 @@ const MemberMultiSelect = ({
             Selected: {selectedOptions.length}
           </span>
           <div className="member-picker-actions">
-            <DebouncedButton
-              type="button"
-              className="btn-text member-picker-action"
-              onClick={selectAllFiltered}
-              disabled={filteredOptions.length === 0}
-              debounceMs={300}
-            >
-              Select all
-            </DebouncedButton>
-            <DebouncedButton
-              type="button"
-              className="btn-text member-picker-action"
-              onClick={clearAll}
-              disabled={
-                value.length === 0 || value.every((id) => locked.has(id))
-              }
-              debounceMs={300}
-            >
+            <button type="button" onClick={selectAllFiltered}>
+              Select Filtered
+            </button>
+            <button type="button" onClick={clearAll}>
               Clear
-            </DebouncedButton>
+            </button>
           </div>
         </div>
-
         <input
           type="text"
-          className="member-picker-search"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search members by name or email…"
+          placeholder="Search members"
+          className="member-picker-search"
         />
-
-        {selectedOptions.length > 0 && (
-          <div className="member-picker-chips" aria-label="Selected members">
-            {visibleChips.map((o) => (
-              <span className="member-chip" key={o.id}>
-                <span className="member-chip-avatar">
-                  {getInitials(o.name || o.email)}
-                </span>
-                <span className="member-chip-label">{o.name || o.email}</span>
-                <button
-                  type="button"
-                  className="member-chip-remove"
-                  aria-label={`Remove ${o.name || o.email}`}
-                  onClick={() => remove(o.id)}
-                  disabled={locked.has(o.id)}
-                >
-                  ×
-                </button>
-              </span>
-            ))}
-            {hiddenChipCount > 0 && (
-              <span className="member-chip member-chip-more">
-                +{hiddenChipCount} more
-              </span>
-            )}
-          </div>
-        )}
       </div>
+
+      {selectedOptions.length > 0 && (
+        <div className="member-picker-chips">
+          {visibleChips.map((o) => (
+            <button
+              key={o.id}
+              type="button"
+              className="member-chip"
+              onClick={() => remove(o.id)}
+              disabled={locked.has(o.id)}
+              title={locked.has(o.id) ? "Locked" : "Remove"}
+            >
+              <span>{o.name || o.email}</span>
+              {!locked.has(o.id) && <span aria-hidden="true">×</span>}
+            </button>
+          ))}
+          {hiddenChipCount > 0 && (
+            <span className="member-chip-more">+{hiddenChipCount} more</span>
+          )}
+        </div>
+      )}
 
       <div
         className="member-picker-list"
@@ -477,7 +449,6 @@ interface Okr {
   keyResults?: Array<{
     id: string;
     title: string;
-    tag: Tag;
     assignedUserId: string | null;
     isGeneral?: boolean;
     assignedUser: {
@@ -604,7 +575,6 @@ type DashboardSection =
   | "okr"
   | "tracker"
   | "team"
-  | "tags"
   | "appraisals"
   | "subscription"
   | "settings"
@@ -684,7 +654,6 @@ const DashboardPage = () => {
   const [allTasks, setAllTasks] = useState<Task[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
   const [organization, setOrganization] = useState<Organization | null>(null);
-  const [tags, setTags] = useState<Tag[]>([]);
   const [okrs, setOkrs] = useState<Okr[]>([]);
   const [linkableOkrsByUserId, setLinkableOkrsByUserId] = useState<
     Record<string, Okr[]>
@@ -794,9 +763,6 @@ const DashboardPage = () => {
   const [editingClient, setEditingClient] = useState<ClientRecord | null>(null);
   const [showEditOkrModal, setShowEditOkrModal] = useState(false);
   const [editingOkr, setEditingOkr] = useState<Okr | null>(null);
-  const [showTagModal, setShowTagModal] = useState(false);
-  const [editingTag, setEditingTag] = useState<Tag | null>(null);
-  const [tagForm, setTagForm] = useState({ name: "", color: "#2563eb" });
   const [selectedMemberDetail, setSelectedMemberDetail] =
     useState<MemberRow | null>(null);
 
@@ -820,7 +786,6 @@ const DashboardPage = () => {
     dueDate: "",
     assigneeId: "",
     supporterId: "",
-    tagId: "",
     alertTeamLead: false,
     okrId: "",
     keyResultIds: [] as string[],
@@ -983,15 +948,12 @@ const DashboardPage = () => {
     if (requestedSection === "okr") return "okr";
     if (requestedSection === "tracker") return "tracker";
     if (requestedSection === "team" && canTrackTeam) return "team";
-    if (requestedSection === "tags" && isAdmin) return "tags";
     if (requestedSection === "appraisals" && isAdmin) return "appraisals";
     if (requestedSection === "subscription" && isAdmin) return "subscription";
     if (requestedSection === "settings") return "settings";
     if (requestedSection === "support") return "support";
     return "board";
   }, [requestedSection, canTrackTeam, isAdmin]);
-
-  const availableTags = useMemo(() => tags, [tags]);
 
   const loadLinkableOkrs = async (targetUserId: string) => {
     if (!orgId || !targetUserId) {
@@ -1415,38 +1377,30 @@ const DashboardPage = () => {
   const fetchData = async () => {
     try {
       const isDeletedView = filter === "recently_deleted";
-      const [
-        tasksRes,
-        statsRes,
-        orgRes,
-        tagsRes,
-        okrRes,
-        appraisalRes,
-        quotesRes,
-      ] = await Promise.all([
-        api.get("/tasks", {
-          params: {
-            organizationId: orgId,
-            view: isDeletedView ? "deleted" : "active",
-            ...(taskClientFilter !== "all"
-              ? { clientId: taskClientFilter }
-              : {}),
-          },
-        }),
-        api.get("/tasks/stats", {
-          params: {
-            organizationId: orgId,
-            ...(taskClientFilter !== "all"
-              ? { clientId: taskClientFilter }
-              : {}),
-          },
-        }),
-        api.get(`/orgs/${orgId}`),
-        api.get(`/orgs/${orgId}/tags`),
-        api.get(`/orgs/${orgId}/okrs`),
-        api.get(`/orgs/${orgId}/appraisals`),
-        api.get(`/orgs/${orgId}/quotes`),
-      ]);
+      const [tasksRes, statsRes, orgRes, okrRes, appraisalRes, quotesRes] =
+        await Promise.all([
+          api.get("/tasks", {
+            params: {
+              organizationId: orgId,
+              view: isDeletedView ? "deleted" : "active",
+              ...(taskClientFilter !== "all"
+                ? { clientId: taskClientFilter }
+                : {}),
+            },
+          }),
+          api.get("/tasks/stats", {
+            params: {
+              organizationId: orgId,
+              ...(taskClientFilter !== "all"
+                ? { clientId: taskClientFilter }
+                : {}),
+            },
+          }),
+          api.get(`/orgs/${orgId}`),
+          api.get(`/orgs/${orgId}/okrs`),
+          api.get(`/orgs/${orgId}/appraisals`),
+          api.get(`/orgs/${orgId}/quotes`),
+        ]);
 
       setQuotes(quotesRes.data || []);
 
@@ -1591,13 +1545,12 @@ const DashboardPage = () => {
         });
       }
 
-      setTags(tagsRes.data || []);
       setOkrs(okrRes.data || []);
 
       setAppraisals(appraisalRes.data || []);
       setClients(clientsRes.data || []);
 
-      // No default tag selection for new tasks (tag removed from create form)
+      // No additional defaults needed for new tasks
     } catch (error: any) {
       console.error("Failed to fetch dashboard data:", error);
       // Set organization to null on error to prevent rendering with stale data
@@ -1613,8 +1566,6 @@ const DashboardPage = () => {
 
   const selectedTask =
     allTasks.find((task) => task.id === selectedTaskId) || null;
-  const selectedEditTaskTag =
-    tags.find((tag) => tag.id === editTask.tagId) || null;
   const isDeletedView = filter === "recently_deleted";
 
   const isOverdue = (task: Task) => {
@@ -1654,7 +1605,7 @@ const DashboardPage = () => {
         return;
       }
       const createResponse = await api.post("/tasks", {
-        // send only createable fields (tag is intentionally omitted)
+        // send only createable fields
         title: newTask.title,
         description: newTask.description,
         priority: newTask.priority,
@@ -1706,7 +1657,6 @@ const DashboardPage = () => {
       dueDate: task.dueDate ? task.dueDate.slice(0, 10) : "",
       assigneeId: task.assignee?.id || "",
       supporterId: task.supporter?.id || "",
-      tagId: task.tag?.id || tags[0]?.id || "",
       alertTeamLead: task.alertTeamLead || false,
       okrId: (task as any).okrId || "",
       keyResultIds: (task.krImpacts || []).map(
@@ -1740,7 +1690,6 @@ const DashboardPage = () => {
         dueDate: editTask.dueDate || null,
         assigneeId: editTask.assigneeId,
         supporterId: editTask.supporterId || null,
-        tagId: editTask.tagId,
         alertTeamLead: editTask.alertTeamLead,
       });
 
@@ -1902,33 +1851,6 @@ const DashboardPage = () => {
       await fetchData();
     } catch (error: any) {
       showError("Error", error.response?.data?.error || "Failed to delete OKR");
-    }
-  };
-
-  const handleTagSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      if (editingTag) {
-        await api.patch(`/orgs/${orgId}/tags/${editingTag.id}`, tagForm);
-      } else {
-        await api.post(`/orgs/${orgId}/tags`, tagForm);
-      }
-      setShowTagModal(false);
-      setEditingTag(null);
-      setTagForm({ name: "", color: "#2563eb" });
-      await fetchData();
-    } catch (error: any) {
-      showError("Error", error.response?.data?.error || "Failed to save tag");
-    }
-  };
-
-  const handleDeleteTag = async (tagId: string) => {
-    if (!window.confirm("Are you sure you want to delete this tag?")) return;
-    try {
-      await api.delete(`/orgs/${orgId}/tags/${tagId}`);
-      await fetchData();
-    } catch (error: any) {
-      showError("Error", error.response?.data?.error || "Failed to delete tag");
     }
   };
 
@@ -3025,7 +2947,6 @@ const DashboardPage = () => {
               name: m.user.name,
               email: m.user.email,
             }))}
-            tags={tags}
             hideOwnerFilter={isTeamLead}
             userRole={
               organization?.userRole as "ADMIN" | "TEAM_LEAD" | "MEMBER"
@@ -3102,7 +3023,6 @@ const DashboardPage = () => {
             onTaskClick={(task) => setSelectedTaskId(task.id)}
             onCreateTask={() => setShowCreateTaskModal(true)}
             onSendAlert={() => setShowSendAlertModal(true)}
-            tags={tags}
             userRole={
               organization?.userRole as "ADMIN" | "TEAM_LEAD" | "MEMBER"
             }
@@ -3121,7 +3041,6 @@ const DashboardPage = () => {
             onCreateOkr={() => setShowCreateOkrModal(true)}
             onEditOkr={handleOpenEditOkr as any}
             onDeleteOkr={handleDeleteOkr}
-            onNavigate={(path) => navigate(path)}
           />
         )}
 
@@ -3620,102 +3539,6 @@ const DashboardPage = () => {
                   </tbody>
                 </table>
               </div>
-            </div>
-          </div>
-        )}
-
-        {currentSection === "tags" && isAdmin && (
-          <div className="tasks-section">
-            <div className="tasks-header">
-              <h2>Organization Tags</h2>
-              <button
-                className="btn-primary"
-                onClick={() => {
-                  setEditingTag(null);
-                  setTagForm({ name: "", color: "#2563eb" });
-                  setShowTagModal(true);
-                }}
-              >
-                + New Tag
-              </button>
-            </div>
-            <div className="tasks-list">
-              {tags.map((tag: any) => {
-                return (
-                  <div
-                    key={tag.id}
-                    className="task-card"
-                    style={{ padding: "16px" }}
-                  >
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                      }}
-                    >
-                      <div
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: "12px",
-                          cursor: "default",
-                        }}
-                      >
-                        <span
-                          style={{
-                            width: 14,
-                            height: 14,
-                            borderRadius: 999,
-                            background: tag.color,
-                            display: "inline-block",
-                            boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
-                          }}
-                        ></span>
-                        <div>
-                          <strong
-                            style={{
-                              fontSize: "1.1em",
-                              color: "inherit",
-                            }}
-                          >
-                            {tag.name}
-                          </strong>
-                          <div
-                            style={{
-                              fontSize: "0.85em",
-                              color: "var(--text-muted)",
-                              marginTop: 2,
-                            }}
-                          >
-                            Used in {tag.taskCount || 0} tasks
-                          </div>
-                        </div>
-                      </div>
-                      <div className="header-actions" style={{ margin: 0 }}>
-                        <button
-                          className="btn-secondary"
-                          style={{ padding: "4px 8px", fontSize: "0.8em" }}
-                          onClick={() => {
-                            setEditingTag(tag);
-                            setTagForm({ name: tag.name, color: tag.color });
-                            setShowTagModal(true);
-                          }}
-                        >
-                          Edit
-                        </button>
-                        <button
-                          className="btn-logout"
-                          style={{ padding: "4px 8px", fontSize: "0.8em" }}
-                          onClick={() => handleDeleteTag(tag.id)}
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
             </div>
           </div>
         )}
@@ -4253,18 +4076,6 @@ const DashboardPage = () => {
                                 Overdue
                               </span>
                             )}
-                            {task.tag && (
-                              <span
-                                className="priority-badge low"
-                                style={{
-                                  borderColor: task.tag.color,
-                                  color: task.tag.color,
-                                  cursor: "default",
-                                }}
-                              >
-                                {task.tag.name}
-                              </span>
-                            )}
                             {task.approvalStatus &&
                               task.approvalStatus !== "NOT_SUBMITTED" && (
                                 <span
@@ -4481,18 +4292,6 @@ const DashboardPage = () => {
                             >
                               {selectedTask.priority}
                             </span>
-                            {selectedTask.tag && (
-                              <span
-                                className="priority-badge low"
-                                style={{
-                                  borderColor: selectedTask.tag.color,
-                                  color: selectedTask.tag.color,
-                                  cursor: "default",
-                                }}
-                              >
-                                {selectedTask.tag.name}
-                              </span>
-                            )}
                             {selectedTask.approvalStatus &&
                               selectedTask.approvalStatus !==
                                 "NOT_SUBMITTED" && (
@@ -5249,7 +5048,7 @@ const DashboardPage = () => {
                   rows={4}
                 />
               </div>
-              {/* Tag removed from Create Task modal (handled separately) */}
+              {/* Task create form */}
               <div className="form-row">
                 <div className="form-group">
                   <label>Priority</label>
@@ -5508,79 +5307,6 @@ const DashboardPage = () => {
                   }
                   rows={4}
                 />
-              </div>
-              <div className="form-group">
-                <label>Tag *</label>
-                <select
-                  value={editTask.tagId}
-                  onChange={(e) =>
-                    setEditTask({ ...editTask, tagId: e.target.value })
-                  }
-                  required
-                >
-                  <option value="">Select a tag</option>
-                  {availableTags.map((tag) => (
-                    <option key={tag.id} value={tag.id}>
-                      {tag.name}
-                    </option>
-                  ))}
-                </select>
-                {selectedEditTaskTag && (
-                  <div
-                    className="selected-tag-preview"
-                    style={{
-                      marginTop: "8px",
-                      padding: "8px 12px",
-                      background: "#F1F5F9",
-                      borderRadius: "8px",
-                      border: "1px solid var(--border-color)",
-                    }}
-                  >
-                    <span
-                      className="color-preview-chip"
-                      style={{
-                        background: selectedEditTaskTag.color,
-                        width: "12px",
-                        height: "12px",
-                        borderRadius: "3px",
-                        display: "inline-block",
-                        marginRight: "8px",
-                        flexShrink: 0,
-                      }}
-                      aria-hidden="true"
-                    ></span>
-                    <div
-                      style={{
-                        display: "flex",
-                        gap: "8px",
-                        alignItems: "flex-start",
-                      }}
-                    >
-                      <span
-                        style={{
-                          fontSize: "0.9em",
-                          color: "var(--text-main)",
-                          flexShrink: 0,
-                        }}
-                      >
-                        Selected:
-                      </span>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div
-                          style={{
-                            fontWeight: 600,
-                            color: "var(--text-main)",
-                            marginBottom: "4px",
-                          }}
-                        >
-                          <span title={selectedEditTaskTag.name}>
-                            {selectedEditTaskTag.name}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
               </div>
               <div className="form-row">
                 <div className="form-group">
@@ -6257,7 +5983,7 @@ const DashboardPage = () => {
                       required
                     />
                   </div>
-                  {/* Tag removed from Key Result form */}
+                  {/* Key result form fields */}
                   <div className="form-group">
                     <label>Owner (Optional)</label>
                     <select
@@ -6527,7 +6253,7 @@ const DashboardPage = () => {
                       required
                     />
                   </div>
-                  {/* Tag removed from Key Result form */}
+                  {/* Key result form fields */}
                   <div className="form-group">
                     <label>Owner (Optional)</label>
                     <select
@@ -7094,51 +6820,6 @@ const DashboardPage = () => {
         </div>
       )}
 
-      {showTagModal && (
-        <div className="modal-overlay" onClick={() => setShowTagModal(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <h2>{editingTag ? "Edit Tag" : "Create Tag"}</h2>
-            <form onSubmit={handleTagSubmit}>
-              <div className="form-group">
-                <label>Tag Name</label>
-                <input
-                  type="text"
-                  value={tagForm.name}
-                  onChange={(e) =>
-                    setTagForm({ ...tagForm, name: e.target.value })
-                  }
-                  required
-                  autoFocus
-                  placeholder="e.g. Critical, Q1 Priority"
-                />
-              </div>
-              <div className="form-group">
-                <label>Color</label>
-                <input
-                  type="color"
-                  value={tagForm.color}
-                  onChange={(e) =>
-                    setTagForm({ ...tagForm, color: e.target.value })
-                  }
-                />
-              </div>
-              <div className="modal-actions">
-                <button
-                  type="button"
-                  onClick={() => setShowTagModal(false)}
-                  className="btn-secondary"
-                >
-                  Cancel
-                </button>
-                <button type="submit" className="btn-primary">
-                  {editingTag ? "Update Tag" : "Create Tag"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
       {/* Error Dialog */}
       <ErrorDialog
         isOpen={errorDialog.isOpen}
@@ -7146,12 +6827,6 @@ const DashboardPage = () => {
         message={errorDialog.message}
         onClose={() => setErrorDialog({ ...errorDialog, isOpen: false })}
       />
-
-      <datalist id="okr-tag-options">
-        {availableTags.map((tag) => (
-          <option key={tag.id} value={tag.name}></option>
-        ))}
-      </datalist>
     </div>
   );
 };

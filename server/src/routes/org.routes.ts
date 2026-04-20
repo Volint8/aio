@@ -21,10 +21,6 @@ import {
     createClient,
     updateClient,
     deleteClient,
-    createTag,
-    listTags,
-    updateTag,
-    deleteTag,
     createOkr,
     listOkrs,
     listUserOkrs,
@@ -87,11 +83,6 @@ router.get('/:id/clients', authenticateToken, listClients);
 router.post('/:id/clients', authenticateToken, createClient);
 router.patch('/:id/clients/:clientId', authenticateToken, updateClient);
 router.delete('/:id/clients/:clientId', authenticateToken, deleteClient);
-
-router.post('/:id/tags', authenticateToken, createTag);
-router.get('/:id/tags', authenticateToken, listTags);
-router.patch('/:id/tags/:tagId', authenticateToken, updateTag);
-router.delete('/:id/tags/:tagId', authenticateToken, deleteTag);
 
 router.post('/:id/okrs', authenticateToken, createOkr);
 router.get('/:id/okrs', authenticateToken, listOkrs);

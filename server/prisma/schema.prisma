@@ -57,7 +57,6 @@ model Organization {
   teams          Team[]
   tasks          Task[]
   invites        Invite[]
-  tags           Tag[]
   okrs           Okr[]
   appraisals     Appraisal[]
   clients        Client[]
@@ -103,7 +102,6 @@ model Task {
   organizationId String
   assigneeId     String?
   supporterId    String?
-  tagId          String?
   deletedAt      DateTime?
   deletedById    String?
   createdAt      DateTime         @default(now())
@@ -116,7 +114,6 @@ model Task {
   attachments    Attachment[]
   submissions    WorkSubmission[]
   activityLogs   ActivityLog[]
-  tag            Tag?             @relation(fields: [tagId], references: [id])
   taskTeams      TaskTeam[]
   krImpacts      TaskKrImpact[]
 
@@ -199,21 +196,6 @@ model Invite {
   @@index([organizationId, email, status])
 }
 
-model Tag {
-  id             String         @id @default(uuid())
-  organizationId String
-  name           String
-  normalizedName String
-  color          String         @default("#2563eb")
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
-  organization   Organization   @relation(fields: [organizationId], references: [id])
-  tasks          Task[]
-  keyResults     OkrKeyResult[]
-
-  @@unique([organizationId, normalizedName])
-}
-
 model Okr {
   id                   String          @id @default(uuid())
   organizationId       String
@@ -246,7 +228,6 @@ model OkrKeyResult {
   id                String         @id @default(uuid())
   okrId             String
   title             String
-  tagId             String
   assignedUserId    String?
   ownerIds          Json           @default("[]") // Array of user IDs
   isGeneral         Boolean        @default(false)
@@ -263,12 +244,10 @@ model OkrKeyResult {
   createdAt         DateTime       @default(now())
   updatedAt         DateTime       @updatedAt
   okr               Okr            @relation(fields: [okrId], references: [id], onDelete: Cascade)
-  tag               Tag            @relation(fields: [tagId], references: [id])
   assignedUser      User?          @relation("AssignedKeyResults", fields: [assignedUserId], references: [id])
   approver          User?          @relation("ApprovedKeyResults", fields: [approvedBy], references: [id])
   impacts           TaskKrImpact[]
 
-  @@index([tagId])
   @@index([assignedUserId])
   @@index([isGeneral])
 }

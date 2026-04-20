@@ -34,11 +34,6 @@ interface Okr {
       name: string | null;
       email: string;
     } | null;
-    tag: {
-      id: string;
-      name: string;
-      color: string;
-    };
   }>;
   assignments?: Array<{
     id: string;
@@ -63,7 +58,6 @@ interface OkrViewProps {
     keyResultId: string,
     status: "APPROVED" | "REJECTED" | "PENDING",
   ) => void;
-  onNavigate?: (path: string) => void;
 }
 
 const OkrView: React.FC<OkrViewProps> = ({
@@ -73,8 +67,6 @@ const OkrView: React.FC<OkrViewProps> = ({
   onCreateOkr,
   onEditOkr,
   onDeleteOkr,
-
-  onNavigate,
 }) => {
   const currentYear = new Date().getFullYear();
 
@@ -227,29 +219,7 @@ const OkrView: React.FC<OkrViewProps> = ({
                           )}
                         {/* approval status removed - approvals handled outside creation flow */}
                       </span>
-                      <div
-                        style={{
-                          display: "flex",
-                          flexDirection: "column",
-                          gap: 6,
-                          alignItems: "flex-end",
-                        }}
-                      >
-                        <span
-                          className="okr-kr-tag"
-                          style={{
-                            backgroundColor: `${kr.tag.color}15`,
-                            color: kr.tag.color,
-                            borderColor: `${kr.tag.color}30`,
-                            cursor: "pointer",
-                          }}
-                          onClick={() => onNavigate?.("/dashboard?section=okr")}
-                          title="Click to view all OKRs"
-                        >
-                          {kr.tag.name}
-                        </span>
-                        {/* approve/reject removed */}
-                      </div>
+                      <div />
                     </div>
                   ))}
                 </div>

@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 import { buildOrgNameSuggestions, makeUniqueOrgName, makeUniqueSlug, normalizeOrgName } from '../utils/org.utils';
 import { generateInviteToken, getEmailDomain, hashToken, isWorkEmail, normalizeEmail } from '../utils/auth.utils';
 import { sendInviteEmail, sendOkrNotificationEmail, sendKeyResultNotificationEmail } from '../services/email.service';
@@ -76,35 +76,6 @@ const validateTeamParticipants = async (tx: any, organizationId: string, leadUse
   return uniqueMemberIds;
 };
 
-const createOrReuseTag = async (params: {
-  tx: any;
-  organizationId: string;
-  name: string;
-  color?: string;
-}) => {
-  const { tx, organizationId, name, color } = params;
-  const normalized = normalizeOrgName(name);
-  const existing = await tx.tag.findFirst({
-    where: {
-      organizationId,
-      normalizedName: normalized
-    }
-  });
-
-  if (existing) {
-    return existing;
-  }
-
-  return tx.tag.create({
-    data: {
-      organizationId,
-      name: name.trim(),
-      normalizedName: normalized,
-      color: color || '#2563eb'
-    }
-  });
-};
-
 type OkrImpactKrSummary = {
   krId: string;
   krTitle: string;
@@ -173,7 +144,6 @@ const okrInclude = {
   assignments: true,
   keyResults: {
     include: {
-      tag: true,
       assignedUser: {
         select: {
           id: true,
@@ -198,35 +168,7 @@ const okrInclude = {
   }
 } as const;
 
-const resolveTagForKr = async (params: {
-  tx: any;
-  organizationId: string;
-  tagId?: string | null;
-  tagName?: string | null;
-  tagColor?: string | null;
-}) => {
-  const { tx, organizationId, tagId, tagName, tagColor } = params;
-
-  if (tagId) {
-    const existing = await tx.tag.findUnique({ where: { id: tagId } });
-    if (!existing || existing.organizationId !== organizationId) {
-      throw new Error('Selected tag is invalid for this organization');
-    }
-    return existing;
-  }
-
-  // If no tagId or tagName provided, tags are optional for key results.
-  if (!tagName?.trim()) {
-    return null;
-  }
-
-  return createOrReuseTag({
-    tx,
-    organizationId,
-    name: tagName,
-    color: tagColor || undefined
-  });
-};
+// Key results no longer use category linkage
 
 const getAssigneeLeadMembership = async (organizationId: string, assignedUserId: string) => {
   const assigneeMembership = await prisma.organizationMember.findUnique({
@@ -1285,17 +1227,8 @@ export const getTeams = async (req: Request, res: Response) => {
 
       let totalProgress = 0;
       if (teamOkrs.length > 0) {
-        const okrProgresses = await Promise.all(teamOkrs.map(async (okr) => {
-          const tagIds = okr.keyResults.map(kr => kr.tagId).filter((t: any) => !!t);
-          if (tagIds.length === 0) return 0;
-
-          const [totalTasks, completedTasks] = await Promise.all([
-            prisma.task.count({ where: { organizationId, tagId: { in: tagIds }, deletedAt: null } }),
-            prisma.task.count({ where: { organizationId, tagId: { in: tagIds }, status: 'COMPLETED', deletedAt: null } })
-          ]);
-
-          return totalTasks > 0 ? (completedTasks / totalTasks) * 100 : 0;
-        }));
+        // Legacy linkage-based team progress removed. Default to 0 for now.
+        const okrProgresses = teamOkrs.map(() => 0);
         totalProgress = okrProgresses.reduce((acc, curr) => acc + curr, 0) / teamOkrs.length;
       }
 
@@ -1312,14 +1245,10 @@ export const getTeams = async (req: Request, res: Response) => {
               dueDate: { lt: now }
             }
           }),
-          prisma.task.count({
+          // Count tasks associated with OKRs by TaskKrImpact for this user
+          prisma.taskKrImpact.count({
             where: {
-              organizationId,
-              assigneeId: member.userId,
-              deletedAt: null,
-              tag: {
-                keyResults: { some: {} }
-              }
+              task: { assigneeId: member.userId, deletedAt: null }
             }
           })
         ]);
@@ -1706,137 +1635,6 @@ export const deleteClient = async (req: Request, res: Response) => {
   }
 };
 
-export const createTag = async (req: Request, res: Response) => {
-  try {
-    const userId = (req as any).user.userId as string;
-    const organizationId = req.params.id as string;
-    const { name, color } = req.body as { name?: string; color?: string };
-
-    if (!name?.trim()) {
-      return res.status(400).json({ error: 'Tag name is required' });
-    }
-
-    const isAdmin = await requireAdmin(userId, organizationId);
-    if (!isAdmin) {
-      return res.status(403).json({ error: 'Only admins can create tags' });
-    }
-
-    const normalizedName = normalizeOrgName(name);
-
-    const tag = await prisma.tag.create({
-      data: {
-        organizationId,
-        name: name.trim(),
-        normalizedName,
-        color: color || '#2563eb'
-      }
-    });
-
-    return res.status(201).json(tag);
-  } catch (error: any) {
-    if (error.code === 'P2002') {
-      return res.status(400).json({ error: 'Tag already exists in this organization' });
-    }
-    console.error('Create tag error:', error);
-    return res.status(500).json({ error: 'Internal server error' });
-  }
-};
-
-export const listTags = async (req: Request, res: Response) => {
-  try {
-    const userId = (req as any).user.userId as string;
-    const organizationId = req.params.id as string;
-
-    const membership = await getMembership(userId, organizationId);
-    if (!membership) {
-      return res.status(403).json({ error: 'Access denied' });
-    }
-
-    const tags = await prisma.tag.findMany({
-      where: { organizationId },
-      include: {
-        _count: {
-          select: { tasks: true }
-        }
-      },
-      orderBy: { name: 'asc' }
-    });
-
-    return res.json(tags.map(tag => ({
-      ...tag,
-      taskCount: tag._count.tasks
-    })));
-  } catch (error) {
-    console.error('List tags error:', error);
-    return res.status(500).json({ error: 'Internal server error' });
-  }
-};
-
-export const updateTag = async (req: Request, res: Response) => {
-  try {
-    const userId = (req as any).user.userId as string;
-    const organizationId = req.params.id as string;
-    const tagId = req.params.tagId as string;
-    const { name, color } = req.body as { name?: string; color?: string };
-
-    const isAdmin = await requireAdmin(userId, organizationId);
-    if (!isAdmin) {
-      return res.status(403).json({ error: 'Only admins can update tags' });
-    }
-
-    const existingTag = await prisma.tag.findUnique({ where: { id: tagId } });
-    if (!existingTag || existingTag.organizationId !== organizationId) {
-      return res.status(404).json({ error: 'Tag not found' });
-    }
-
-    const updated = await prisma.tag.update({
-      where: { id: tagId },
-      data: {
-        ...(name !== undefined ? { name: name.trim(), normalizedName: normalizeOrgName(name) } : {}),
-        ...(color !== undefined ? { color } : {})
-      }
-    });
-
-    return res.json(updated);
-  } catch (error) {
-    console.error('Update tag error:', error);
-    return res.status(500).json({ error: 'Internal server error' });
-  }
-};
-
-export const deleteTag = async (req: Request, res: Response) => {
-  try {
-    const userId = (req as any).user.userId as string;
-    const organizationId = req.params.id as string;
-    const tagId = req.params.tagId as string;
-
-    const isAdmin = await requireAdmin(userId, organizationId);
-    if (!isAdmin) {
-      return res.status(403).json({ error: 'Only admins can delete tags' });
-    }
-
-    const existingTag = await prisma.tag.findUnique({
-      where: { id: tagId },
-      include: { _count: { select: { tasks: true, keyResults: true } } }
-    });
-
-    if (!existingTag || existingTag.organizationId !== organizationId) {
-      return res.status(404).json({ error: 'Tag not found' });
-    }
-
-    if (existingTag._count.tasks > 0 || existingTag._count.keyResults > 0) {
-      return res.status(400).json({ error: 'Cannot delete tag that is in use by tasks or OKRs' });
-    }
-
-    await prisma.tag.delete({ where: { id: tagId } });
-
-    return res.json({ message: 'Tag deleted successfully' });
-  } catch (error) {
-    console.error('Delete tag error:', error);
-    return res.status(500).json({ error: 'Internal server error' });
-  }
-};
-
 const notifyAssignedKeyResults = async (params: {
   organizationId: string;
   actorUserId: string;
@@ -1921,9 +1719,6 @@ export const createOkr = async (req: Request, res: Response) => {
       assignments?: Array<{ targetType: string; targetId: string }>;
       keyResults?: Array<{
         title: string;
-        tagId?: string;
-        tagName?: string;
-        tagColor?: string;
         assignedUserId?: string;
         ownerUserIds?: string[];
         isGeneral?: boolean;
@@ -2055,14 +1850,6 @@ export const createOkr = async (req: Request, res: Response) => {
       });
 
       for (const kr of normalizedKeyResults) {
-
-        const tag = await resolveTagForKr({
-          tx,
-          organizationId,
-          tagId: kr.tagId,
-          tagName: kr.tagName,
-          tagColor: kr.tagColor
-        });
         const contributionValue = parseFirstNumericValue(kr.title);
         const contributionPct =
           contributionValue !== null && objectiveTargetValue !== null && objectiveTargetValue > 0
@@ -2071,10 +1858,10 @@ export const createOkr = async (req: Request, res: Response) => {
 
         await tx.okrKeyResult.create({
           data: {
-            okrId: created.id,
             title: kr.title.trim(),
-            tagId: tag ? tag.id : null,
-            assignedUserId: kr.isGeneral ? null : (kr.assignedUserId || null),
+            ...(kr.isGeneral || !kr.assignedUserId
+              ? {}
+              : { assignedUser: { connect: { id: kr.assignedUserId } } }),
             ownerIds: kr.ownerUserIds || [],
             isGeneral: kr.isGeneral || false,
             metricName: kr.metricName?.trim() || null,
@@ -2082,7 +1869,8 @@ export const createOkr = async (req: Request, res: Response) => {
             targetValue: asNumberOrNull(kr.targetValue),
             weight: asNumberOrNull(kr.weight) ?? 1,
             contributionValue,
-            contributionPct
+            contributionPct,
+            okr: { connect: { id: created.id } }
           } as any
         });
       }
@@ -2179,6 +1967,12 @@ export const createOkr = async (req: Request, res: Response) => {
 
     return res.status(201).json(okr);
   } catch (error) {
+    if (error instanceof Prisma.PrismaClientValidationError) {
+      return res.status(400).json({
+        error:
+          'Invalid key result assignee. Assign a valid user for non-general key results, or mark the key result as general.'
+      });
+    }
     console.error('Create OKR error:', error);
     return res.status(500).json({ error: 'Internal server error' });
   }
@@ -2267,9 +2061,6 @@ export const updateOkr = async (req: Request, res: Response) => {
       assignments?: Array<{ targetType: string; targetId: string }>;
       keyResults?: Array<{
         title: string;
-        tagId?: string;
-        tagName?: string;
-        tagColor?: string;
         assignedUserId?: string;
         ownerUserIds?: string[];
         isGeneral?: boolean;
@@ -2424,13 +2215,6 @@ export const updateOkr = async (req: Request, res: Response) => {
         await tx.okrKeyResult.deleteMany({ where: { okrId } });
         for (const kr of normalizedKeyResults) {
 
-          const tag = await resolveTagForKr({
-            tx,
-            organizationId,
-            tagId: kr.tagId,
-            tagName: kr.tagName,
-            tagColor: kr.tagColor
-          });
           const contributionValue = parseFirstNumericValue(kr.title);
           const contributionPct =
             contributionValue !== null && objectiveTargetValue !== null && objectiveTargetValue > 0
@@ -2438,10 +2222,10 @@ export const updateOkr = async (req: Request, res: Response) => {
               : null;
           await tx.okrKeyResult.create({
             data: {
-              okrId,
               title: kr.title.trim(),
-              tagId: tag ? tag.id : null,
-              assignedUserId: kr.isGeneral ? null : (kr.assignedUserId || null),
+              ...(kr.isGeneral || !kr.assignedUserId
+                ? {}
+                : { assignedUser: { connect: { id: kr.assignedUserId } } }),
               ownerIds: (kr as any).ownerUserIds || [],
               isGeneral: kr.isGeneral || false,
               metricName: kr.metricName?.trim() || null,
@@ -2449,7 +2233,8 @@ export const updateOkr = async (req: Request, res: Response) => {
               targetValue: asNumberOrNull(kr.targetValue),
               weight: asNumberOrNull(kr.weight) ?? 1,
               contributionValue,
-              contributionPct
+              contributionPct,
+              okr: { connect: { id: okrId } }
             } as any
           });
         }
@@ -2535,6 +2320,12 @@ export const updateOkr = async (req: Request, res: Response) => {
 
     return res.json(updated);
   } catch (error) {
+    if (error instanceof Prisma.PrismaClientValidationError) {
+      return res.status(400).json({
+        error:
+          'Invalid key result assignee. Assign a valid user for non-general key results, or mark the key result as general.'
+      });
+    }
     console.error('Update OKR error:', error);
     return res.status(500).json({ error: 'Internal server error' });
   }
@@ -2606,8 +2397,7 @@ export const reviewKeyResult = async (req: Request, res: Response) => {
             name: true,
             email: true
           }
-        },
-        tag: true
+        }
       }
     });
 
@@ -2635,7 +2425,6 @@ export const reviewKeyResult = async (req: Request, res: Response) => {
         approvalNotes: approvalNotes?.trim() || null
       },
       include: {
-        tag: true,
         assignedUser: {
           select: {
             id: true,
@@ -3031,11 +2820,10 @@ export const getAudit = async (req: Request, res: Response) => {
       return res.status(403).json({ error: 'Only admins can view organization audit' });
     }
 
-    const [memberCount, taskCount, pendingInvites, tagCount, okrCount, appraisalCount] = await Promise.all([
+    const [memberCount, taskCount, pendingInvites, okrCount, appraisalCount] = await Promise.all([
       prisma.organizationMember.count({ where: { organizationId } }),
       prisma.task.count({ where: { organizationId, deletedAt: null } }),
       prisma.invite.count({ where: { organizationId, status: 'PENDING', expiresAt: { gte: new Date() } } }),
-      prisma.tag.count({ where: { organizationId } }),
       prisma.okr.count({ where: { organizationId } }),
       prisma.appraisal.count({ where: { organizationId } })
     ]);
@@ -3045,7 +2833,6 @@ export const getAudit = async (req: Request, res: Response) => {
       memberCount,
       taskCount,
       pendingInvites,
-      tagCount,
       okrCount,
       appraisalCount
     });
@@ -3182,7 +2969,6 @@ export const listUserOkrs = async (req: Request, res: Response) => {
             ]
           },
           include: {
-            tag: true,
             assignedUser: {
               select: {
                 id: true,

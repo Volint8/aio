@@ -22,11 +22,6 @@ interface Task {
     name: string | null;
     email: string;
   } | null;
-  tag?: {
-    id: string;
-    name: string;
-    color: string;
-  } | null;
   createdAt: string;
 }
 
@@ -69,7 +64,6 @@ interface TaskTrackerViewProps {
     name: string | null;
     email: string;
   }>;
-  tags?: Array<{ id: string; name: string; color: string }>;
   hideOwnerFilter?: boolean;
   userRole?: "ADMIN" | "TEAM_LEAD" | "MEMBER";
 }
@@ -86,7 +80,6 @@ const TaskTrackerView: React.FC<TaskTrackerViewProps> = ({
   onChangeStatus,
   onApprovalAction,
   assignableUsers = [],
-  tags = [],
   hideOwnerFilter = false,
   userRole = "MEMBER",
 }) => {
@@ -94,7 +87,6 @@ const TaskTrackerView: React.FC<TaskTrackerViewProps> = ({
   const userId = user?.id || "";
   const [priorityFilter, setPriorityFilter] = React.useState<string>("all");
   const [assigneeFilter, setAssigneeFilter] = React.useState<string>("all");
-  const [tagFilter, setTagFilter] = React.useState<string>("all");
 
   const filters: Array<{
     key:
@@ -164,12 +156,9 @@ const TaskTrackerView: React.FC<TaskTrackerViewProps> = ({
       if (assigneeFilter !== "all" && task.assignee?.id !== assigneeFilter)
         return false;
 
-      // Tag/OKR filter
-      if (tagFilter !== "all" && task.tag?.id !== tagFilter) return false;
-
       return true;
     });
-  }, [tasks, filter, priorityFilter, assigneeFilter, tagFilter, userId]);
+  }, [tasks, filter, priorityFilter, assigneeFilter, userId]);
 
   const getInitials = (name: string) => {
     return name
@@ -296,35 +285,12 @@ const TaskTrackerView: React.FC<TaskTrackerViewProps> = ({
           </select>
         )}
 
-        <select
-          value={tagFilter}
-          onChange={(e) => setTagFilter(e.target.value)}
-          className="tracker-filter-select"
-          style={{
-            padding: "8px 12px",
-            borderRadius: "8px",
-            border: "1px solid var(--border-color)",
-            background: "#fff",
-            fontSize: "0.9em",
-            minWidth: "160px",
-          }}
-        >
-          <option value="all">All OKRs</option>
-          {tags.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.name}
-            </option>
-          ))}
-        </select>
-
         {(priorityFilter !== "all" ||
-          (!hideOwnerFilter && assigneeFilter !== "all") ||
-          tagFilter !== "all") && (
+          (!hideOwnerFilter && assigneeFilter !== "all")) && (
           <button
             onClick={() => {
               setPriorityFilter("all");
               setAssigneeFilter("all");
-              setTagFilter("all");
             }}
             className="btn-secondary"
             style={{
@@ -363,22 +329,7 @@ const TaskTrackerView: React.FC<TaskTrackerViewProps> = ({
                   onClick={() => onTaskClick(task)}
                 >
                   <td className="task-title-cell">{task.title}</td>
-                  <td>
-                    {task.tag ? (
-                      <span
-                        className="task-tag-pill"
-                        style={{
-                          backgroundColor: `${task.tag.color}15`,
-                          color: task.tag.color,
-                          borderColor: `${task.tag.color}30`,
-                        }}
-                      >
-                        {task.tag.name}
-                      </span>
-                    ) : (
-                      "-"
-                    )}
-                  </td>
+                  <td>-</td>
                   <td>
                     <div className="owner-cell">
                       <div className="owner-avatar">

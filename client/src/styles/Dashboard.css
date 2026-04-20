@@ -1365,20 +1365,6 @@
     box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.35);
 }
 
-.selected-tag-preview {
-    margin-top: 10px;
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    color: var(--text-muted);
-    font-size: 0.84em;
-}
-
-.selected-tag-preview .color-preview-chip {
-    width: 18px;
-    height: 18px;
-}
-
 .form-row {
     display: grid;
     grid-template-columns: 1fr 1fr;

@@ -21,11 +21,6 @@ interface Task {
     name: string | null;
     email: string;
   } | null;
-  tag?: {
-    id: string;
-    name: string;
-    color: string;
-  } | null;
   createdAt: string;
 }
 
@@ -72,7 +67,6 @@ interface TeamTrackerViewProps {
     action: "APPROVE" | "REJECT",
     notes?: string,
   ) => void;
-  tags?: Array<{ id: string; name: string; color: string }>;
   userRole?: "ADMIN" | "TEAM_LEAD" | "TEAM_LEAD" | "MEMBER";
 }
 
@@ -90,13 +84,11 @@ const TeamTrackerView: React.FC<TeamTrackerViewProps> = ({
   onEdit,
   onDelete,
   onChangeStatus,
-  tags = [],
   userRole = "MEMBER",
 }) => {
   const { user } = useAuth();
   const userId = user?.id || "";
   const [priorityFilter, setPriorityFilter] = React.useState<string>("all");
-  const [tagFilter, setTagFilter] = React.useState<string>("all");
 
   const filters: Array<{
     key:
@@ -178,12 +170,9 @@ const TeamTrackerView: React.FC<TeamTrackerViewProps> = ({
       if (priorityFilter !== "all" && task.priority !== priorityFilter)
         return false;
 
-      // Tag/OKR filter
-      if (tagFilter !== "all" && task.tag?.id !== tagFilter) return false;
-
       return true;
     });
-  }, [tasks, selectedMemberId, filter, priorityFilter, tagFilter, userId]);
+  }, [tasks, selectedMemberId, filter, priorityFilter, userId]);
 
   const getInitials = (name: string) => {
     return name
@@ -306,32 +295,10 @@ const TeamTrackerView: React.FC<TeamTrackerViewProps> = ({
           <option value="HIGH">High</option>
         </select>
 
-        <select
-          value={tagFilter}
-          onChange={(e) => setTagFilter(e.target.value)}
-          className="tracker-filter-select"
-          style={{
-            padding: "8px 12px",
-            borderRadius: "8px",
-            border: "1px solid var(--border-color)",
-            background: "#fff",
-            fontSize: "0.9em",
-            minWidth: "160px",
-          }}
-        >
-          <option value="all">All OKRs</option>
-          {tags.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.name}
-            </option>
-          ))}
-        </select>
-
-        {(priorityFilter !== "all" || tagFilter !== "all") && (
+        {priorityFilter !== "all" && (
           <DebouncedButton
             onClick={() => {
               setPriorityFilter("all");
-              setTagFilter("all");
             }}
             className="btn-secondary"
             style={{
@@ -371,22 +338,7 @@ const TeamTrackerView: React.FC<TeamTrackerViewProps> = ({
                   onClick={() => onTaskClick(task)}
                 >
                   <td className="task-title-cell">{task.title}</td>
-                  <td>
-                    {task.tag ? (
-                      <span
-                        className="task-tag-pill"
-                        style={{
-                          backgroundColor: `${task.tag.color}15`,
-                          color: task.tag.color,
-                          borderColor: `${task.tag.color}30`,
-                        }}
-                      >
-                        {task.tag.name}
-                      </span>
-                    ) : (
-                      "-"
-                    )}
-                  </td>
+                  <td>-</td>
                   <td>
                     <div className="owner-cell">
                       <div className="owner-avatar">

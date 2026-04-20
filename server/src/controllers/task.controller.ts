@@ -274,7 +274,6 @@ export const getTasks = async (req: Request, res: Response) => {
                     }
                 },
                 attachments: true,
-                tag: true,
                 krImpacts: {
                     include: {
                         okrKeyResult: {
@@ -321,7 +320,7 @@ export const getTasks = async (req: Request, res: Response) => {
 export const createTask = async (req: Request, res: Response) => {
     try {
         const userId = (req as any).user.userId;
-        const { title, description, organizationId, assigneeId, supporterId, dueDate, priority, tagId, alertTeamLead, keyResultId } = req.body;
+        const { title, description, organizationId, assigneeId, supporterId, dueDate, priority, alertTeamLead, keyResultId } = req.body;
         const normalizedAssigneeId = assigneeId === '' ? null : assigneeId;
         const normalizedSupporterId = supporterId === '' ? null : supporterId;
 
@@ -345,16 +344,6 @@ export const createTask = async (req: Request, res: Response) => {
             return res.status(403).json({ error: 'Access denied' });
         }
 
-
-        // If a tagId was provided, validate it belongs to the organization
-        let tag: any = null;
-        if (tagId) {
-            tag = await prisma.tag.findUnique({ where: { id: tagId } });
-            if (!tag || tag.organizationId !== organizationId) {
-                return res.status(400).json({ error: 'Selected tag is invalid for this organization' });
-            }
-        }
-
         const { teamIds } = await resolveTaskTeamContext({
             organizationId,
             assigneeId: normalizedAssigneeId,
@@ -369,7 +358,6 @@ export const createTask = async (req: Request, res: Response) => {
                     organizationId,
                     assigneeId: normalizedAssigneeId,
                     supporterId: normalizedSupporterId,
-                    ...(tagId && { tagId }),
                     dueDate: dueDate ? new Date(dueDate) : null,
                     priority: priority || 'LOW',
                     status: 'CREATED'
@@ -403,7 +391,6 @@ export const createTask = async (req: Request, res: Response) => {
                     assignee: { select: { id: true, email: true, name: true } },
                     supporter: { select: { id: true, email: true, name: true } },
                     organization: { select: { id: true, name: true } },
-                    tag: true,
                     krImpacts: {
                         include: {
                             okrKeyResult: {
@@ -517,7 +504,6 @@ export const getTaskById = async (req: Request, res: Response) => {
                     }
                 },
                 attachments: true,
-                tag: true,
                 krImpacts: {
                     include: {
                         okrKeyResult: {
@@ -571,12 +557,11 @@ export const updateTask = async (req: Request, res: Response) => {
     try {
         const userId = (req as any).user.userId;
         const id = req.params.id as string;
-        const { title, description, status, assigneeId, supporterId, dueDate, priority, tagId } = req.body;
+        const { title, description, status, assigneeId, supporterId, dueDate, priority } = req.body;
         const hasAssigneeUpdate = assigneeId !== undefined;
         const normalizedAssigneeId = assigneeId === '' ? null : assigneeId;
         const hasSupporterUpdate = supporterId !== undefined;
         const normalizedSupporterId = supporterId === '' ? null : supporterId;
-        const hasTagUpdate = tagId !== undefined;
 
         const task = await prisma.task.findUnique({
             where: { id: id }
@@ -611,15 +596,6 @@ export const updateTask = async (req: Request, res: Response) => {
             }
         }
 
-        if (hasTagUpdate) {
-            if (!tagId) {
-                return res.status(400).json({ error: 'Task tag is required' });
-            }
-            const tag = await prisma.tag.findUnique({ where: { id: tagId } });
-            if (!tag || tag.organizationId !== task.organizationId) {
-                return res.status(400).json({ error: 'Selected tag is invalid for this organization' });
-            }
-        }
 
         const nextAssigneeId = hasAssigneeUpdate ? normalizedAssigneeId : task.assigneeId;
         const nextSupporterId = hasSupporterUpdate ? normalizedSupporterId : task.supporterId;
@@ -649,7 +625,6 @@ export const updateTask = async (req: Request, res: Response) => {
                     ...(status && nextApprovalPatch),
                     ...(hasAssigneeUpdate && { assigneeId: normalizedAssigneeId }),
                     ...(hasSupporterUpdate && { supporterId: normalizedSupporterId }),
-                    ...(hasTagUpdate && { tagId }),
                     ...(dueDate !== undefined && { dueDate: dueDate ? new Date(dueDate) : null }),
                     ...(priority && { priority })
                 }
@@ -746,7 +721,6 @@ export const updateTask = async (req: Request, res: Response) => {
                     assignee: { select: { id: true, email: true, name: true } },
                     supporter: { select: { id: true, email: true, name: true } },
                     organization: { select: { id: true, name: true } },
-                    tag: true,
                     krImpacts: {
                         include: {
                             okrKeyResult: {
@@ -916,7 +890,6 @@ export const restoreTask = async (req: Request, res: Response) => {
                     }
                 },
                 attachments: true,
-                tag: true,
                 krImpacts: {
                     include: {
                         okrKeyResult: {
@@ -1300,13 +1273,12 @@ export const getMemberStats = async (req: Request, res: Response) => {
                         dueDate: { lt: now }
                     }
                 }),
-                prisma.task.count({
+                prisma.taskKrImpact.count({
                     where: {
-                        organizationId: organizationId as string,
-                        assigneeId: m.userId,
-                        deletedAt: null,
-                        tag: {
-                            keyResults: { some: {} }
+                        task: {
+                            organizationId: organizationId as string,
+                            assigneeId: m.userId,
+                            deletedAt: null
                         }
                     }
                 })
