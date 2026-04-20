@@ -979,6 +979,82 @@ export const removeMember = async (req: Request, res: Response) => {
   }
 };
 
+export const reactivateMember = async (req: Request, res: Response) => {
+  try {
+    const requesterUserId = (req as any).user.userId as string;
+    const organizationId = req.params.id as string;
+    const { email, role } = req.body as { email?: string; role?: string };
+
+    if (!email || !role) {
+      return res.status(400).json({ error: 'Email and role are required' });
+    }
+
+    const normalizedRole = role.toUpperCase();
+    if (!['ADMIN', 'TEAM_LEAD', 'MEMBER'].includes(normalizedRole)) {
+      return res.status(400).json({ error: 'Role must be ADMIN, TEAM LEAD, or MEMBER' });
+    }
+
+    const isAdmin = await requireAdmin(requesterUserId, organizationId);
+    if (!isAdmin) {
+      return res.status(403).json({ error: 'Only admins can reactivate members' });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { email: email.toLowerCase().trim() },
+      select: { id: true, email: true, name: true, deletedAt: true, purgedAt: true }
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: 'No user found with that email address' });
+    }
+
+    if (user.purgedAt) {
+      return res.status(400).json({ error: 'This account has been permanently purged and cannot be reactivated. Please invite them as a new user.' });
+    }
+
+    if (!user.deletedAt) {
+      // User is already active — check if they're already a member of this org
+      const existing = await prisma.organizationMember.findUnique({
+        where: { userId_organizationId: { userId: user.id, organizationId } }
+      });
+      if (existing) {
+        return res.status(400).json({ error: 'This user is already an active member of the organization' });
+      }
+    }
+
+    // Prevent duplicate admins via reactivation path
+    if (normalizedRole === 'ADMIN') {
+      const adminCount = await prisma.organizationMember.count({
+        where: { organizationId, role: 'ADMIN' }
+      });
+      if (adminCount >= 1) {
+        return res.status(400).json({ error: 'An organization can only have one admin' });
+      }
+    }
+
+    const [membership] = await prisma.$transaction([
+      prisma.organizationMember.upsert({
+        where: { userId_organizationId: { userId: user.id, organizationId } },
+        create: { userId: user.id, organizationId, role: normalizedRole, joinedAt: new Date() },
+        update: { role: normalizedRole }
+      }),
+      prisma.user.update({
+        where: { id: user.id },
+        data: { deletedAt: null, purgedAt: null }
+      })
+    ]);
+
+    return res.json({
+      message: 'Member reactivated successfully',
+      membership,
+      user: { id: user.id, email: user.email, name: user.name }
+    });
+  } catch (error) {
+    console.error('Reactivate member error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
 
 export const updateMemberRole = async (req: Request, res: Response) => {
   try {
@@ -1784,12 +1860,19 @@ export const createOkr = async (req: Request, res: Response) => {
     const objectiveTargetValue = parseFirstNumericValue(title);
 
     const normalizedKeyResults = keyResults
-      .map((kr) => ({
-        ...kr,
-        title: kr?.title?.trim() || '',
-        assignedUserId: kr?.assignedUserId || undefined,
-        isGeneral: Boolean(kr?.isGeneral) || !kr?.assignedUserId
-      }))
+      .map((kr) => {
+        const ownerUserIds = Array.from(
+          new Set((kr?.ownerUserIds || []).filter((id): id is string => Boolean(id)))
+        );
+        const assignedUserId = kr?.assignedUserId || ownerUserIds[0] || undefined;
+        return {
+          ...kr,
+          title: kr?.title?.trim() || '',
+          ownerUserIds,
+          assignedUserId,
+          isGeneral: Boolean(kr?.isGeneral) || (!assignedUserId && ownerUserIds.length === 0)
+        };
+      })
       .filter((kr) => kr.title);
 
     const nonGeneralKeyResults = normalizedKeyResults.filter((kr) => !kr.isGeneral);
@@ -1816,7 +1899,7 @@ export const createOkr = async (req: Request, res: Response) => {
 
     // Validate KR-level owners
     const allKrOwnerIds = Array.from(new Set(
-      keyResults
+      normalizedKeyResults
         .flatMap((kr) => kr.ownerUserIds || [])
         .filter(Boolean)
     ));
@@ -1996,7 +2079,8 @@ export const listOkrs = async (req: Request, res: Response) => {
     if (membership.role === 'MEMBER' || membership.role === 'TEAM_LEAD') {
       const assignmentScope: any[] = [
         { assignments: { some: { targetType: 'MEMBER', targetId: userId } } },
-        { keyResults: { some: { assignedUserId: userId } } }
+        { keyResults: { some: { assignedUserId: userId } } },
+        { keyResults: { some: { ownerIds: { array_contains: [userId] } } } }
       ];
       if (membership.teamId) {
         assignmentScope.unshift({ assignments: { some: { targetType: 'TEAM', targetId: membership.teamId } } });
@@ -2134,12 +2218,19 @@ export const updateOkr = async (req: Request, res: Response) => {
 
     const normalizedKeyResults = keyResults
       ? keyResults
-        .map((kr) => ({
-          ...kr,
-          title: kr?.title?.trim() || '',
-          assignedUserId: kr?.assignedUserId || undefined,
-          isGeneral: Boolean(kr?.isGeneral) || !kr?.assignedUserId
-        }))
+        .map((kr) => {
+          const ownerUserIds = Array.from(
+            new Set((kr?.ownerUserIds || []).filter((id): id is string => Boolean(id)))
+          );
+          const assignedUserId = kr?.assignedUserId || ownerUserIds[0] || undefined;
+          return {
+            ...kr,
+            title: kr?.title?.trim() || '',
+            ownerUserIds,
+            assignedUserId,
+            isGeneral: Boolean(kr?.isGeneral) || (!assignedUserId && ownerUserIds.length === 0)
+          };
+        })
         .filter((kr) => kr.title)
       : null;
 
@@ -2171,7 +2262,7 @@ export const updateOkr = async (req: Request, res: Response) => {
       // Validate KR-level owners
       const allKrOwnerIds = Array.from(new Set(
         normalizedKeyResults
-          .flatMap((kr) => (kr as any).ownerUserIds || [])
+          .flatMap((kr) => kr.ownerUserIds || [])
           .filter(Boolean)
       ));
       if (allKrOwnerIds.length > 0) {
@@ -2941,7 +3032,8 @@ export const listUserOkrs = async (req: Request, res: Response) => {
     if (membership.role === 'MEMBER' || membership.role === 'TEAM_LEAD') {
       const assignmentScope: any[] = [
         { assignments: { some: { targetType: 'MEMBER', targetId: targetUserId } } },
-        { keyResults: { some: { assignedUserId: targetUserId } } }
+        { keyResults: { some: { assignedUserId: targetUserId } } },
+        { keyResults: { some: { ownerIds: { array_contains: [targetUserId] } } } }
       ];
       if (membership.teamId) {
         assignmentScope.unshift({ assignments: { some: { targetType: 'TEAM', targetId: membership.teamId } } });
@@ -2965,6 +3057,7 @@ export const listUserOkrs = async (req: Request, res: Response) => {
           where: {
             OR: [
               { assignedUserId: targetUserId },
+              { ownerIds: { array_contains: [targetUserId] } },
               { isGeneral: true }
             ]
           },

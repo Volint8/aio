@@ -12,6 +12,9 @@ const LandingPage = () => {
             style={{ height: "36px" }}
           />
         </div>
+        <Link to="/login" className="mobile-signin btn-secondary">
+          Sign In
+        </Link>
         <nav className="landing-nav">
           <a href="#features">Features</a>
           <a href="mailto:Hello@apraizal.com">Contact</a>

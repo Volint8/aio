@@ -63,13 +63,16 @@
 /* Filter Tabs */
 .tracker-tabs {
     display: flex;
-    gap: 24px;
+    gap: 16px;
     border-bottom: 2px solid #E2E8F0;
     margin-bottom: 8px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 8px;
 }
 
 .tracker-tab {
-    padding: 12px 4px;
+    padding: 10px 12px;
     background: transparent;
     border: none;
     border-bottom: 3px solid transparent;
@@ -80,7 +83,13 @@
     color: #64748B;
     transition: all 0.2s ease;
     position: relative;
+    flex: 0 0 auto; /* prevent tabs from shrinking */
+    white-space: nowrap;
 }
+
+/* hide scrollbar in WebKit but keep scrollable */
+.tracker-tabs::-webkit-scrollbar { height: 8px; }
+.tracker-tabs::-webkit-scrollbar-thumb { background: rgba(99,102,241,0.12); border-radius: 6px; }
 
 .tracker-tab:hover {
     color: var(--primary-blue);

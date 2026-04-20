@@ -1158,6 +1158,53 @@
     display: none; /* Chrome, Safari, Opera */
 }
 
+.modal-form {
+    display: flex;
+    flex-direction: column;
+}
+
+.modal-subtitle {
+    margin: 4px 0 14px;
+    font-size: 1.02em;
+    font-weight: 800;
+    color: var(--text-main);
+}
+
+.okr-kr-form-card {
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 14px;
+    margin-bottom: 12px;
+    background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+}
+
+.modal-helper-text {
+    font-size: 0.84em;
+    color: var(--text-muted);
+    line-height: 1.45;
+}
+
+.modal-inline-danger {
+    margin-top: 10px;
+    padding: 6px 10px;
+    border: 1px solid rgba(220, 38, 38, 0.2);
+    border-radius: 8px;
+    background: #fff1f2;
+    color: #be123c;
+    font-size: 0.8em;
+    font-weight: 700;
+}
+
+.modal-inline-danger:hover {
+    background: #ffe4e6;
+}
+
+.team-dialog .member-picker,
+.okr-dialog .member-picker {
+    border-color: #dbe5f2;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+
 .form-group {
     margin-bottom: 24px;
 }
@@ -2409,7 +2456,19 @@
 }
 
 .member-picker-action {
+    border: none;
+    background: transparent;
+    color: var(--accent-color);
+    font-size: 0.85em;
+    font-weight: 700;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    cursor: pointer;
     padding: 0;
+}
+
+.member-picker-action:hover {
+    color: #1d4ed8;
 }
 
 .member-picker-search {
@@ -2432,6 +2491,8 @@
     gap: 8px;
     flex-wrap: wrap;
     margin-top: 10px;
+    padding: 0 12px 12px;
+    background: #fff;
 }
 
 .member-chip {
@@ -2535,11 +2596,23 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    background: var(--primary-color);
+    background: var(--primary-blue);
     color: #fff;
     font-weight: 800;
     font-size: 0.85em;
     flex: 0 0 auto;
+}
+
+/* Improve avatar contrast and visibility */
+.member-picker-avatar {
+    border: 2px solid rgba(0,0,0,0.06);
+    box-shadow: 0 1px 2px rgba(0,0,0,0.08);
+    color: #ffffff;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.35);
+    font-weight: 900;
+    width: 36px;
+    height: 36px;
+    font-size: 0.9em;
 }
 
 .member-picker-info {

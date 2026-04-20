@@ -13,6 +13,7 @@ import {
     resendInviteById,
     deleteInvite,
     removeMember,
+    reactivateMember,
     createTeam,
     getTeams,
     updateTeam,
@@ -74,6 +75,7 @@ router.post('/invites/:token/resend', authenticateToken, resendInvite);
 router.post('/:id/invites/:inviteId/resend', authenticateToken, resendInviteById);
 router.delete('/:id/invites/:inviteId', authenticateToken, deleteInvite);
 router.delete('/:id/members/:memberId', authenticateToken, removeMember);
+router.post('/:id/members/reactivate', authenticateToken, reactivateMember);
 router.post('/:id/teams', authenticateToken, createTeam);
 router.get('/:id/teams', authenticateToken, getTeams);
 router.patch('/:id/teams/:teamId', authenticateToken, updateTeam);

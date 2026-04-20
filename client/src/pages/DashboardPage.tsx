@@ -265,19 +265,10 @@ const MemberMultiSelect = ({
   lockedIds = [],
   maxVisibleChips = 8,
 }: MemberMultiSelectProps) => {
-  const [query, setQuery] = useState("");
-
   const locked = useMemo(() => new Set(lockedIds.filter(Boolean)), [lockedIds]);
   const selected = useMemo(() => new Set(value), [value]);
 
-  const filteredOptions = useMemo(() => {
-    const normalizedQuery = query.trim().toLowerCase();
-    if (!normalizedQuery) return options;
-    return options.filter((o) => {
-      const haystack = `${o.name || ""} ${o.email}`.toLowerCase();
-      return haystack.includes(normalizedQuery);
-    });
-  }, [options, query]);
+  const filteredOptions = useMemo(() => options, [options]);
 
   const selectedOptions = useMemo(
     () => options.filter((o) => selected.has(o.id)),
@@ -315,16 +306,7 @@ const MemberMultiSelect = ({
     onChange(value.filter((id) => id !== userId));
   };
 
-  const selectAllFiltered = () => {
-    const addIds = filteredOptions
-      .map((o) => o.id)
-      .filter((id) => !selected.has(id));
-    onChange([...value, ...addIds]);
-  };
-
-  const clearAll = () => {
-    onChange(value.filter((id) => locked.has(id)));
-  };
+  // Bulk actions and per-instance search removed per UX decision.
 
   return (
     <div className="member-picker">
@@ -333,22 +315,7 @@ const MemberMultiSelect = ({
           <span className="member-picker-title">
             Selected: {selectedOptions.length}
           </span>
-          <div className="member-picker-actions">
-            <button type="button" onClick={selectAllFiltered}>
-              Select Filtered
-            </button>
-            <button type="button" onClick={clearAll}>
-              Clear
-            </button>
-          </div>
         </div>
-        <input
-          type="text"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search members"
-          className="member-picker-search"
-        />
       </div>
 
       {selectedOptions.length > 0 && (
@@ -378,9 +345,7 @@ const MemberMultiSelect = ({
         aria-multiselectable="true"
       >
         {filteredOptions.length === 0 ? (
-          <div className="member-picker-empty">
-            No members match your search.
-          </div>
+          <div className="member-picker-empty">No members available.</div>
         ) : (
           filteredOptions.map((o) => {
             const isLocked = locked.has(o.id);
@@ -645,6 +610,19 @@ interface TeamDistributionRecord {
 const COMMENTS_PREVIEW_COUNT = 4;
 const RETENTION_DAYS = 30;
 
+const parseDateOnly = (value: string) => {
+  const [year, month, day] = value.slice(0, 10).split("-").map(Number);
+  return new Date(year, month - 1, day);
+};
+
+const isDueDateOverdue = (dueDateValue: string | null | undefined) => {
+  if (!dueDateValue) return false;
+  const dueDate = parseDateOnly(dueDateValue);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return dueDate < today;
+};
+
 const DashboardPage = () => {
   const location = useLocation();
   const requestedFilter = (new URLSearchParams(location.search).get("filter") ||
@@ -662,6 +640,11 @@ const DashboardPage = () => {
   const [teams, setTeams] = useState<Team[]>([]);
   const [invites, setInvites] = useState<InviteRecord[]>([]);
   const [memberStats, setMemberStats] = useState<MemberStatRecord[]>([]);
+  const [reactivateEmail, setReactivateEmail] = useState("");
+  const [reactivateRole, setReactivateRole] = useState("MEMBER");
+  const [reactivateLoading, setReactivateLoading] = useState(false);
+  const [reactivateError, setReactivateError] = useState("");
+  const [reactivateSuccess, setReactivateSuccess] = useState("");
   const [teamDistribution, setTeamDistribution] = useState<
     TeamDistributionRecord[]
   >([]);
@@ -1061,26 +1044,6 @@ const DashboardPage = () => {
     (member) => member.role !== "ADMIN",
   );
 
-  const getMembersForTeamIds = (teamIds: string[] | undefined | null) => {
-    if (!teamIds || teamIds.length === 0) return assignableUsers;
-    const ids = new Set(teamIds.filter(Boolean));
-    return assignableUsers.filter((member) => {
-      if (member.team?.id && ids.has(member.team.id)) return true;
-      if (member.teamId && ids.has(member.teamId)) return true;
-      // check teams data
-      return teams.some((t) => {
-        if (!ids.has(t.id)) return false;
-        const inMembers = (t.members || []).some(
-          (tm) => (tm.userId || tm.id) === member.userId,
-        );
-        const inPeople = (t.people || []).some(
-          (p) => p.userId === member.userId,
-        );
-        return inMembers || inPeople;
-      });
-    });
-  };
-
   const teamLeadUsers = (organization?.members || []).filter(
     (member) => member.role === "TEAM_LEAD",
   );
@@ -1294,6 +1257,7 @@ const DashboardPage = () => {
   };
 
   const handleTeamClick = (teamId: string) => {
+    setAssigneeFilterId(null);
     const params = new URLSearchParams(location.search);
     params.set("section", "team-tracker");
     params.set("teamId", teamId);
@@ -1499,7 +1463,7 @@ const DashboardPage = () => {
       setAllTasks(allFetchedTasks);
 
       let filteredTasks = allFetchedTasks;
-      if (assigneeFilterId) {
+      if (assigneeFilterId && currentSection === "team-tracker") {
         filteredTasks = filteredTasks.filter(
           (t: Task) => t.assignee?.id === assigneeFilterId,
         );
@@ -1514,10 +1478,8 @@ const DashboardPage = () => {
           (t: Task) => t.supporter?.id === user?.id,
         );
       } else if (filter === "overdue") {
-        const now = new Date();
         filteredTasks = filteredTasks.filter(
-          (t: Task) =>
-            t.dueDate && new Date(t.dueDate) < now && t.status !== "COMPLETED",
+          (t: Task) => t.status !== "COMPLETED" && isDueDateOverdue(t.dueDate),
         );
       } else if (filter !== "all" && filter !== "recently_deleted") {
         const statusMap: Record<string, string> = {
@@ -1567,16 +1529,19 @@ const DashboardPage = () => {
   const selectedTask =
     allTasks.find((task) => task.id === selectedTaskId) || null;
   const isDeletedView = filter === "recently_deleted";
+  const focusMembers =
+    new URLSearchParams(location.search).get("focus") === "members";
 
   const isOverdue = (task: Task) => {
     if (!task.dueDate || task.status === "COMPLETED") return false;
-    return new Date(task.dueDate) < new Date();
+    return isDueDateOverdue(task.dueDate);
   };
 
   const getDaysOverdue = (task: Task) => {
     if (!task.dueDate) return 0;
-    const dueDate = new Date(task.dueDate);
+    const dueDate = parseDateOnly(task.dueDate);
     const now = new Date();
+    now.setHours(0, 0, 0, 0);
     if (dueDate >= now) return 0;
     const diffMs = now.getTime() - dueDate.getTime();
     return Math.ceil(diffMs / (24 * 60 * 60 * 1000));
@@ -1732,11 +1697,22 @@ const DashboardPage = () => {
         .map((kr) => ({
           ...kr,
           title: kr.title.trim(),
-          assignedUserId: kr.assignedUserId || null,
+          assignedUserId: (kr.ownerUserIds || [])[0] || null,
           ownerUserIds: kr.ownerUserIds || [],
-          isGeneral: !kr.assignedUserId,
+          isGeneral: (kr.ownerUserIds || []).length === 0,
         }))
         .filter((kr) => kr.title);
+
+      const memberOwnerIds = Array.from(
+        new Set(
+          keyResultsPayload
+            .flatMap((kr) => kr.ownerUserIds || [])
+            .filter(Boolean),
+        ),
+      );
+      memberOwnerIds.forEach((userId) => {
+        assignments.push({ targetType: "MEMBER", targetId: userId });
+      });
 
       await api.post(`/orgs/${orgId}/okrs`, {
         ...newOkr,
@@ -1792,7 +1768,10 @@ const DashboardPage = () => {
         id: (kr as any).id,
         title: kr.title,
         assignedUserId: kr.assignedUserId,
-        ownerUserIds: (kr as any).ownerUserIds || [],
+        ownerUserIds:
+          (kr as any).ownerUserIds ||
+          (kr as any).ownerIds ||
+          (kr.assignedUserId ? [kr.assignedUserId] : []),
       })) || [createEmptyKrForm()],
       status: okr.status || "OPEN",
     });
@@ -1820,11 +1799,22 @@ const DashboardPage = () => {
         .map((kr) => ({
           ...kr,
           title: kr.title.trim(),
-          assignedUserId: kr.assignedUserId || null,
+          assignedUserId: (kr.ownerUserIds || [])[0] || null,
           ownerUserIds: kr.ownerUserIds || [],
-          isGeneral: !kr.assignedUserId,
+          isGeneral: (kr.ownerUserIds || []).length === 0,
         }))
         .filter((kr) => kr.title);
+
+      const memberOwnerIds = Array.from(
+        new Set(
+          keyResultsPayload
+            .flatMap((kr) => kr.ownerUserIds || [])
+            .filter(Boolean),
+        ),
+      );
+      memberOwnerIds.forEach((userId) => {
+        assignments.push({ targetType: "MEMBER", targetId: userId });
+      });
 
       await api.patch(`/orgs/${orgId}/okrs/${editingOkr.id}`, {
         ...editOkrForm,
@@ -2243,6 +2233,37 @@ const DashboardPage = () => {
     }
   };
 
+  const handleReactivateMember = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!orgId) return;
+    setReactivateError("");
+    setReactivateSuccess("");
+    if (!reactivateEmail.trim()) {
+      setReactivateError("Email is required");
+      return;
+    }
+    try {
+      setReactivateLoading(true);
+      await api.post(`/orgs/${orgId}/members/reactivate`, {
+        email: reactivateEmail.trim(),
+        role: reactivateRole,
+      });
+      setReactivateSuccess(
+        `Member reactivated successfully as ${reactivateRole.charAt(0) + reactivateRole.slice(1).toLowerCase()}.`,
+      );
+      setReactivateEmail("");
+      setReactivateRole("MEMBER");
+      await fetchData();
+    } catch (error: any) {
+      const errorData = error.response?.data?.error;
+      const message =
+        typeof errorData === "object" ? errorData.message : errorData;
+      setReactivateError(message || "Failed to reactivate member");
+    } finally {
+      setReactivateLoading(false);
+    }
+  };
+
   const handleProfileUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
     setProfileError("");
@@ -2584,116 +2605,6 @@ const DashboardPage = () => {
                 Hello@apraizal.com
               </a>
             </div>
-            {selectedMemberDetail && (
-              <div className="modal-overlay" onClick={handleCloseMemberDetail}>
-                <div
-                  className="member-detail-modal"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      marginBottom: "16px",
-                    }}
-                  >
-                    <h3 style={{ margin: 0 }}>Member Details</h3>
-                    <button
-                      className="btn-secondary"
-                      style={{ fontSize: "0.85em", padding: "6px 12px" }}
-                      onClick={handleCloseMemberDetail}
-                    >
-                      Close
-                    </button>
-                  </div>
-                  <div style={{ marginBottom: "12px" }}>
-                    <strong style={{ fontSize: "1.1em" }}>
-                      {selectedMemberDetail.member.user.name ||
-                        selectedMemberDetail.member.user.email}
-                    </strong>
-                    <div
-                      style={{ fontSize: "0.85em", color: "var(--text-muted)" }}
-                    >
-                      {selectedMemberDetail.member.user.email}
-                    </div>
-                  </div>
-                  <div className="member-detail-grid">
-                    <div>
-                      <small className="detail-label">Team</small>
-                      <p>{selectedMemberDetail.teamName}</p>
-                    </div>
-                    <div>
-                      <small className="detail-label">Role</small>
-                      <p>{selectedMemberDetail.roleLabel}</p>
-                    </div>
-                    <div>
-                      <small className="detail-label">Category</small>
-                      <p>{selectedMemberDetail.category}</p>
-                    </div>
-                    <div>
-                      <small className="detail-label">Date Joined</small>
-                      <p>
-                        {formatJoinedDate(selectedMemberDetail.member.joinedAt)}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="member-detail-stats">
-                    {(
-                      [
-                        "pending",
-                        "ongoing",
-                        "completed",
-                        "overdue",
-                        "total",
-                      ] as const
-                    ).map((key) => {
-                      const detailStats = selectedMemberDetail.stats?.stats;
-                      const value = detailStats ? detailStats[key] || 0 : 0;
-                      return (
-                        <div key={key} className="member-detail-stat-card">
-                          <div className="member-detail-stat-label">
-                            {key.charAt(0).toUpperCase() + key.slice(1)}
-                          </div>
-                          <div className="member-detail-stat-value">
-                            {value}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                  <div
-                    className="member-detail-actions"
-                    style={{
-                      marginTop: "20px",
-                      display: "flex",
-                      gap: "12px",
-                      justifyContent: "flex-end",
-                    }}
-                  >
-                    <button
-                      className="btn-outline-blue"
-                      onClick={() => {
-                        const member = selectedMemberDetail.member;
-                        setAssigneeFilterId(member.userId);
-                        const params = new URLSearchParams(location.search);
-                        params.set("section", "team-tracker");
-                        navigate(`/dashboard?${params.toString()}`);
-                        handleCloseMemberDetail();
-                      }}
-                    >
-                      View Tasks
-                    </button>
-                    <button
-                      className="btn-secondary"
-                      onClick={handleCloseMemberDetail}
-                    >
-                      Close
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
           </div>
 
           <a
@@ -2786,7 +2697,7 @@ const DashboardPage = () => {
         approvalNotes: notes || null,
       });
       await fetchData();
-    } catch (err) {
+    } catch {
       showError("Error", "Failed to perform approval action");
     }
   };
@@ -3050,6 +2961,113 @@ const DashboardPage = () => {
         )}
         {currentSection === "support" && renderSupportSection()}
 
+        {selectedMemberDetail && (
+          <div className="modal-overlay" onClick={handleCloseMemberDetail}>
+            <div
+              className="member-detail-modal"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  marginBottom: "16px",
+                }}
+              >
+                <h3 style={{ margin: 0 }}>Member Details</h3>
+                <button
+                  className="btn-secondary"
+                  style={{ fontSize: "0.85em", padding: "6px 12px" }}
+                  onClick={handleCloseMemberDetail}
+                >
+                  Close
+                </button>
+              </div>
+              <div style={{ marginBottom: "12px" }}>
+                <strong style={{ fontSize: "1.1em" }}>
+                  {selectedMemberDetail.member.user.name ||
+                    selectedMemberDetail.member.user.email}
+                </strong>
+                <div style={{ fontSize: "0.85em", color: "var(--text-muted)" }}>
+                  {selectedMemberDetail.member.user.email}
+                </div>
+              </div>
+              <div className="member-detail-grid">
+                <div>
+                  <small className="detail-label">Team</small>
+                  <p>{selectedMemberDetail.teamName}</p>
+                </div>
+                <div>
+                  <small className="detail-label">Role</small>
+                  <p>{selectedMemberDetail.roleLabel}</p>
+                </div>
+                <div>
+                  <small className="detail-label">Category</small>
+                  <p>{selectedMemberDetail.category}</p>
+                </div>
+                <div>
+                  <small className="detail-label">Date Joined</small>
+                  <p>
+                    {formatJoinedDate(selectedMemberDetail.member.joinedAt)}
+                  </p>
+                </div>
+              </div>
+              <div className="member-detail-stats">
+                {(
+                  [
+                    "pending",
+                    "ongoing",
+                    "completed",
+                    "overdue",
+                    "total",
+                  ] as const
+                ).map((key) => {
+                  const detailStats = selectedMemberDetail.stats?.stats;
+                  const value = detailStats ? detailStats[key] || 0 : 0;
+                  return (
+                    <div key={key} className="member-detail-stat-card">
+                      <div className="member-detail-stat-label">
+                        {key.charAt(0).toUpperCase() + key.slice(1)}
+                      </div>
+                      <div className="member-detail-stat-value">{value}</div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div
+                className="member-detail-actions"
+                style={{
+                  marginTop: "20px",
+                  display: "flex",
+                  gap: "12px",
+                  justifyContent: "flex-end",
+                }}
+              >
+                <button
+                  className="btn-outline-blue"
+                  onClick={() => {
+                    const member = selectedMemberDetail.member;
+                    setAssigneeFilterId(member.userId);
+                    const params = new URLSearchParams(location.search);
+                    params.set("section", "team-tracker");
+                    navigate(`/dashboard?${params.toString()}`);
+                    handleCloseMemberDetail();
+                  }}
+                >
+                  View Tasks
+                </button>
+                <button
+                  className="btn-secondary"
+                  onClick={handleCloseMemberDetail}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="dashboard-header">
           {currentSection === "tracker" && (
             <div className="header-actions">
@@ -3091,7 +3109,7 @@ const DashboardPage = () => {
 
         {currentSection === "team" && canTrackTeam && (
           <div className="team-management-view">
-            {isAdmin && (
+            {isAdmin && !focusMembers && (
               <>
                 <div className="team-invite-panel">
                   <div
@@ -3540,6 +3558,141 @@ const DashboardPage = () => {
                 </table>
               </div>
             </div>
+
+            {isAdmin && (
+              <div
+                className="task-card"
+                style={{ padding: "24px", marginTop: "24px" }}
+              >
+                <h3 style={{ margin: "0 0 8px 0", fontSize: "1em" }}>
+                  Reactivate Deactivated Member
+                </h3>
+                <p
+                  style={{
+                    margin: "0 0 16px 0",
+                    fontSize: "0.875em",
+                    color: "var(--text-muted)",
+                  }}
+                >
+                  Restore a previously removed member by their email address.
+                  This only works before their account is permanently purged
+                  (within 7 days of removal).
+                </p>
+                <form
+                  onSubmit={handleReactivateMember}
+                  style={{
+                    display: "flex",
+                    gap: "12px",
+                    flexWrap: "wrap",
+                    alignItems: "flex-end",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "4px",
+                      flex: "1 1 220px",
+                    }}
+                  >
+                    <label
+                      htmlFor="reactivate-email"
+                      style={{
+                        fontSize: "0.8em",
+                        fontWeight: 600,
+                        color: "var(--text-muted)",
+                      }}
+                    >
+                      Email address
+                    </label>
+                    <input
+                      id="reactivate-email"
+                      type="email"
+                      value={reactivateEmail}
+                      onChange={(e) => {
+                        setReactivateEmail(e.target.value);
+                        setReactivateError("");
+                        setReactivateSuccess("");
+                      }}
+                      placeholder="member@example.com"
+                      style={{
+                        padding: "8px 12px",
+                        border: "1px solid var(--border-color, #e2e8f0)",
+                        borderRadius: "6px",
+                        fontSize: "0.9em",
+                        background: "var(--input-bg, #fff)",
+                        color: "var(--text-primary)",
+                      }}
+                      required
+                    />
+                  </div>
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "4px",
+                    }}
+                  >
+                    <label
+                      htmlFor="reactivate-role"
+                      style={{
+                        fontSize: "0.8em",
+                        fontWeight: 600,
+                        color: "var(--text-muted)",
+                      }}
+                    >
+                      Role
+                    </label>
+                    <select
+                      id="reactivate-role"
+                      value={reactivateRole}
+                      onChange={(e) => setReactivateRole(e.target.value)}
+                      style={{
+                        padding: "8px 12px",
+                        border: "1px solid var(--border-color, #e2e8f0)",
+                        borderRadius: "6px",
+                        fontSize: "0.9em",
+                        background: "var(--input-bg, #fff)",
+                        color: "var(--text-primary)",
+                      }}
+                    >
+                      <option value="MEMBER">Member</option>
+                      <option value="TEAM_LEAD">Team Lead</option>
+                    </select>
+                  </div>
+                  <button
+                    type="submit"
+                    className="btn-primary"
+                    disabled={reactivateLoading}
+                    style={{ padding: "8px 20px", alignSelf: "flex-end" }}
+                  >
+                    {reactivateLoading ? "Reactivating…" : "Reactivate"}
+                  </button>
+                </form>
+                {reactivateError && (
+                  <p
+                    style={{
+                      margin: "12px 0 0 0",
+                      color: "var(--error-color, #dc2626)",
+                      fontSize: "0.875em",
+                    }}
+                  >
+                    {reactivateError}
+                  </p>
+                )}
+                {reactivateSuccess && (
+                  <p
+                    style={{
+                      margin: "12px 0 0 0",
+                      color: "var(--success-color, #16a34a)",
+                      fontSize: "0.875em",
+                    }}
+                  >
+                    {reactivateSuccess}
+                  </p>
+                )}
+              </div>
+            )}
           </div>
         )}
 
@@ -5632,11 +5785,11 @@ const DashboardPage = () => {
           onClick={() => setShowCreateTeamModal(false)}
         >
           <div
-            className="modal large no-scroll"
+            className="modal large no-scroll team-dialog"
             onClick={(e) => e.stopPropagation()}
           >
             <h2>Create Team</h2>
-            <form onSubmit={handleCreateTeam}>
+            <form onSubmit={handleCreateTeam} className="modal-form">
               <div className="form-group">
                 <label>Team Name</label>
                 <input
@@ -5650,7 +5803,7 @@ const DashboardPage = () => {
                 />
               </div>
               <div className="form-group">
-                <label>Team Lead - Optional</label>
+                <label>Team Lead (Optional)</label>
                 <select
                   value={teamForm.leadUserId}
                   onChange={(e) => {
@@ -5834,11 +5987,11 @@ const DashboardPage = () => {
           }}
         >
           <div
-            className="modal large no-scroll"
+            className="modal large no-scroll okr-dialog"
             onClick={(e) => e.stopPropagation()}
           >
             <h2>Create OKR</h2>
-            <form onSubmit={handleCreateOkr}>
+            <form onSubmit={handleCreateOkr} className="modal-form">
               <div className="form-group">
                 <label>Objective Title</label>
                 <input
@@ -5959,17 +6112,9 @@ const DashboardPage = () => {
                 )}
               </div>
 
-              <h3 style={{ marginTop: 8 }}>Key Results</h3>
+              <h3 className="modal-subtitle">Key Results</h3>
               {newOkr.keyResults.map((kr, index) => (
-                <div
-                  key={index}
-                  style={{
-                    border: "1px solid var(--border-color)",
-                    borderRadius: 10,
-                    padding: 12,
-                    marginBottom: 10,
-                  }}
-                >
+                <div key={index} className="okr-kr-form-card">
                   <div className="form-group">
                     <label>Key Result</label>
                     <input
@@ -5983,34 +6128,6 @@ const DashboardPage = () => {
                       required
                     />
                   </div>
-                  {/* Key result form fields */}
-                  <div className="form-group">
-                    <label>Owner (Optional)</label>
-                    <select
-                      value={kr.assignedUserId || ""}
-                      onChange={(e) => {
-                        const next = [...newOkr.keyResults];
-                        next[index].assignedUserId = e.target.value || null;
-                        setNewOkr({ ...newOkr, keyResults: next });
-                      }}
-                    >
-                      <option value="">No owner (General key result)</option>
-                      {getMembersForTeamIds(
-                        // include primary + supported teams
-                        [
-                          ...(newOkr.assignedToTeamId
-                            ? [newOkr.assignedToTeamId]
-                            : []),
-                          ...(newOkr.supportedByTeamIds || []),
-                        ],
-                      ).map((member) => (
-                        <option key={member.user.id} value={member.user.id}>
-                          {member.user.name || member.user.email}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
                   <div className="form-group">
                     <label>Owners (Members)</label>
                     <MemberMultiSelect
@@ -6029,23 +6146,13 @@ const DashboardPage = () => {
                     />
                   </div>
 
-                  <div
-                    style={{
-                      fontSize: "0.85em",
-                      color: "var(--text-muted)",
-                    }}
-                  >
+                  <div className="modal-helper-text">
                     Parsed contribution is calculated automatically from the
                     first number in the KR title.
                   </div>
                   <button
                     type="button"
-                    className="btn-logout"
-                    style={{
-                      padding: "4px 8px",
-                      fontSize: "0.8em",
-                      marginTop: 8,
-                    }}
+                    className="modal-inline-danger"
                     onClick={() => {
                       const next = newOkr.keyResults.filter(
                         (_, i) => i !== index,
@@ -6103,9 +6210,12 @@ const DashboardPage = () => {
           className="modal-overlay"
           onClick={() => setShowEditOkrModal(false)}
         >
-          <div className="modal large" onClick={(e) => e.stopPropagation()}>
+          <div
+            className="modal large no-scroll okr-dialog"
+            onClick={(e) => e.stopPropagation()}
+          >
             <h2>Edit OKR</h2>
-            <form onSubmit={handleUpdateOkr}>
+            <form onSubmit={handleUpdateOkr} className="modal-form">
               <div className="form-group">
                 <label>Objective Title</label>
                 <input
@@ -6229,17 +6339,9 @@ const DashboardPage = () => {
                 )}
               </div>
 
-              <h3 style={{ marginTop: 8 }}>Key Results</h3>
+              <h3 className="modal-subtitle">Key Results</h3>
               {editOkrForm.keyResults.map((kr, index) => (
-                <div
-                  key={index}
-                  style={{
-                    border: "1px solid var(--border-color)",
-                    borderRadius: 10,
-                    padding: 12,
-                    marginBottom: 10,
-                  }}
-                >
+                <div key={index} className="okr-kr-form-card">
                   <div className="form-group">
                     <label>Key Result</label>
                     <input
@@ -6253,31 +6355,6 @@ const DashboardPage = () => {
                       required
                     />
                   </div>
-                  {/* Key result form fields */}
-                  <div className="form-group">
-                    <label>Owner (Optional)</label>
-                    <select
-                      value={kr.assignedUserId || ""}
-                      onChange={(e) => {
-                        const next = [...editOkrForm.keyResults];
-                        next[index].assignedUserId = e.target.value || null;
-                        setEditOkrForm({ ...editOkrForm, keyResults: next });
-                      }}
-                    >
-                      <option value="">No owner (General key result)</option>
-                      {getMembersForTeamIds([
-                        ...(editOkrForm.assignedToTeamId
-                          ? [editOkrForm.assignedToTeamId]
-                          : []),
-                        ...(editOkrForm.supportedByTeamIds || []),
-                      ]).map((member) => (
-                        <option key={member.user.id} value={member.user.id}>
-                          {member.user.name || member.user.email}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
                   <div className="form-group">
                     <label>Owners (Members)</label>
                     <MemberMultiSelect
@@ -6296,23 +6373,13 @@ const DashboardPage = () => {
                     />
                   </div>
 
-                  <div
-                    style={{
-                      fontSize: "0.85em",
-                      color: "var(--text-muted)",
-                    }}
-                  >
+                  <div className="modal-helper-text">
                     Parsed contribution is calculated automatically from the
                     first number in the KR title.
                   </div>
                   <button
                     type="button"
-                    className="btn-logout"
-                    style={{
-                      padding: "4px 8px",
-                      fontSize: "0.8em",
-                      marginTop: 8,
-                    }}
+                    className="modal-inline-danger"
                     onClick={() => {
                       const next = editOkrForm.keyResults.filter(
                         (_, i) => i !== index,

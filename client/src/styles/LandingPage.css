@@ -37,6 +37,11 @@
     align-items: center;
 }
 
+/* Mobile-only sign in button (hidden on desktop) */
+.mobile-signin {
+    display: none;
+}
+
 .landing-nav a {
     text-decoration: none;
     color: #64748B;
@@ -185,6 +190,21 @@
 @media (max-width: 768px) {
     .landing-header {
         padding: 16px 24px;
+    }
+    .mobile-signin {
+        display: inline-block;
+        margin-left: 12px;
+        padding: 8px 20px; /* match desktop inline padding */
+        font-size: 0.9em; /* match desktop inline font size */
+        background: white;
+        color: #0F172A;
+        border: 1px solid #E2E8F0;
+        border-radius: 8px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        text-decoration: none;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
     }
     
     .landing-nav {

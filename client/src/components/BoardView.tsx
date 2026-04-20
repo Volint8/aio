@@ -217,9 +217,11 @@ const BoardView: React.FC<BoardViewProps> = ({
                   className="board-stat-card clickable"
                   role="button"
                   tabIndex={0}
-                  onClick={() => onNavigate?.("/dashboard?section=team")}
+                  onClick={() =>
+                    onNavigate?.("/dashboard?section=team&focus=members")
+                  }
                   onKeyDown={handleCardKeyDown(() =>
-                    onNavigate?.("/dashboard?section=team"),
+                    onNavigate?.("/dashboard?section=team&focus=members"),
                   )}
                 >
                   <span className="board-stat-label">Members</span>

@@ -4,6 +4,19 @@ import { useAuth } from "../context/AuthContext";
 import "../styles/TrackerView.css";
 import DebouncedButton from "./common/DebouncedButton";
 
+const parseDateOnly = (value: string) => {
+  const [year, month, day] = value.slice(0, 10).split("-").map(Number);
+  return new Date(year, month - 1, day);
+};
+
+const isDueDateOverdue = (dueDateValue: string | null | undefined) => {
+  if (!dueDateValue) return false;
+  const dueDate = parseDateOnly(dueDateValue);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return dueDate < today;
+};
+
 interface Task {
   id: string;
   title: string;
@@ -152,11 +165,7 @@ const TeamTrackerView: React.FC<TeamTrackerViewProps> = ({
       } else if (filter === "completed") {
         if (task.status !== "COMPLETED") return false;
       } else if (filter === "overdue") {
-        if (
-          task.status === "COMPLETED" ||
-          !task.dueDate ||
-          new Date(task.dueDate) >= new Date()
-        ) {
+        if (task.status === "COMPLETED" || !isDueDateOverdue(task.dueDate)) {
           return false;
         }
       } else if (filter === "my") {
@@ -185,7 +194,7 @@ const TeamTrackerView: React.FC<TeamTrackerViewProps> = ({
 
   const getStatusLabel = (status: string, dueDate: string | null) => {
     // Check if overdue first (automatic status)
-    if (status !== "COMPLETED" && dueDate && new Date(dueDate) < new Date()) {
+    if (status !== "COMPLETED" && isDueDateOverdue(dueDate)) {
       return "Overdue";
     }
     // Map status to user-friendly labels
