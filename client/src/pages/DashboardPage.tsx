@@ -4601,42 +4601,119 @@ const DashboardPage = () => {
                         )}
                       </div>
 
-                      {/* Description */}
-                      {selectedTask.description && (
-                        <div
-                          className="task-description-section"
+                      <div
+                        className="task-description-section"
+                        style={{
+                          marginTop: "16px",
+                          padding: "12px",
+                          background: "#f8fafc",
+                          borderRadius: "8px",
+                          border: "1px solid #e2e8f0",
+                        }}
+                      >
+                        <label
                           style={{
-                            marginTop: "16px",
-                            padding: "12px",
-                            background: "#f8fafc",
-                            borderRadius: "8px",
-                            border: "1px solid #e2e8f0",
+                            fontSize: "0.75em",
+                            fontWeight: 600,
+                            color: "#64748b",
+                            marginBottom: "8px",
+                            display: "block",
                           }}
                         >
-                          <label
+                          Description
+                        </label>
+                        <p
+                          style={{
+                            margin: 0,
+                            fontSize: "0.9em",
+                            color: selectedTask.description
+                              ? "#0f172a"
+                              : "#64748b",
+                            lineHeight: "1.6",
+                            whiteSpace: "pre-wrap",
+                          }}
+                        >
+                          {selectedTask.description || "No description provided."}
+                        </p>
+                      </div>
+
+                      <div
+                        className="task-description-section"
+                        style={{
+                          marginTop: "12px",
+                          padding: "12px",
+                          background: "#f8fafc",
+                          borderRadius: "8px",
+                          border: "1px solid #e2e8f0",
+                        }}
+                      >
+                        <label
+                          style={{
+                            fontSize: "0.75em",
+                            fontWeight: 600,
+                            color: "#64748b",
+                            marginBottom: "8px",
+                            display: "block",
+                          }}
+                        >
+                          Linked OKRs
+                        </label>
+                        {selectedTask.krImpacts &&
+                        selectedTask.krImpacts.length > 0 ? (
+                          <div
                             style={{
-                              fontSize: "0.75em",
-                              fontWeight: 600,
-                              color: "#64748b",
-                              marginBottom: "8px",
-                              display: "block",
+                              display: "grid",
+                              gap: "8px",
                             }}
                           >
-                            Description
-                          </label>
+                            {selectedTask.krImpacts.map((impact) => (
+                              <div
+                                key={impact.id}
+                                style={{
+                                  padding: "10px",
+                                  borderRadius: "6px",
+                                  background: "#fff",
+                                  border: "1px solid #e2e8f0",
+                                }}
+                              >
+                                <div
+                                  style={{
+                                    fontSize: "0.85em",
+                                    fontWeight: 700,
+                                    color: "#0f172a",
+                                    lineHeight: 1.4,
+                                  }}
+                                >
+                                  {impact.okrKeyResult.isGeneral
+                                    ? "General"
+                                    : impact.okrKeyResult.title}
+                                </div>
+                                <div
+                                  style={{
+                                    marginTop: "3px",
+                                    fontSize: "0.78em",
+                                    color: "#64748b",
+                                    lineHeight: 1.4,
+                                  }}
+                                >
+                                  {impact.okrKeyResult.okr.title}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
                           <p
                             style={{
                               margin: 0,
                               fontSize: "0.9em",
-                              color: "#0f172a",
+                              color: "#64748b",
                               lineHeight: "1.6",
-                              whiteSpace: "pre-wrap",
                             }}
                           >
-                            {selectedTask.description}
+                            No key result linked.
                           </p>
-                        </div>
-                      )}
+                        )}
+                      </div>
 
                       <div className="task-meta">
                         <div className="meta-item">

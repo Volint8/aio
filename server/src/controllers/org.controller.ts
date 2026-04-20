@@ -168,6 +168,40 @@ const okrInclude = {
   }
 } as const;
 
+const asOwnerIds = (value: unknown): string[] => {
+  if (!Array.isArray(value)) return [];
+  return value.filter((id): id is string => typeof id === 'string' && id.trim() !== '');
+};
+
+const enrichOkrOwnerUsers = async <T extends { keyResults?: Array<{ ownerIds?: unknown }> }>(okrs: T[]) => {
+  const ownerIds = Array.from(new Set(
+    okrs.flatMap((okr) => (okr.keyResults || []).flatMap((kr) => asOwnerIds(kr.ownerIds)))
+  ));
+
+  if (ownerIds.length === 0) {
+    return okrs.map((okr) => ({
+      ...okr,
+      keyResults: (okr.keyResults || []).map((kr) => ({ ...kr, ownerUsers: [] }))
+    }));
+  }
+
+  const users = await prisma.user.findMany({
+    where: { id: { in: ownerIds } },
+    select: { id: true, name: true, email: true }
+  });
+  const usersById = new Map(users.map((user) => [user.id, user]));
+
+  return okrs.map((okr) => ({
+    ...okr,
+    keyResults: (okr.keyResults || []).map((kr) => ({
+      ...kr,
+      ownerUsers: asOwnerIds(kr.ownerIds)
+        .map((id) => usersById.get(id))
+        .filter(Boolean)
+    }))
+  }));
+};
+
 // Key results no longer use category linkage
 
 const getAssigneeLeadMembership = async (organizationId: string, assignedUserId: string) => {
@@ -1876,14 +1910,15 @@ export const createOkr = async (req: Request, res: Response) => {
       .filter((kr) => kr.title);
 
     const nonGeneralKeyResults = normalizedKeyResults.filter((kr) => !kr.isGeneral);
+    if (nonGeneralKeyResults.some((kr) => !kr.assignedUserId)) {
+      return res.status(400).json({ error: 'Each non-general key result requires an assigned user' });
+    }
+
     const assignableUserIds = Array.from(new Set(
       nonGeneralKeyResults
         .map((kr) => kr?.assignedUserId)
         .filter((value): value is string => !!value)
     ));
-    if (assignableUserIds.length !== nonGeneralKeyResults.length) {
-      return res.status(400).json({ error: 'Each non-general key result requires an assigned user' });
-    }
 
     if (assignableUserIds.length > 0) {
       const memberships = await prisma.organizationMember.findMany({
@@ -2103,7 +2138,8 @@ export const listOkrs = async (req: Request, res: Response) => {
     });
 
     // Enrich assignments with team data
-    const enrichedOkrs = await Promise.all(okrs.map(async (okr) => {
+    const okrsWithOwnerUsers = await enrichOkrOwnerUsers(okrs);
+    const enrichedOkrs = await Promise.all(okrsWithOwnerUsers.map(async (okr) => {
       const enrichedAssignments = await Promise.all(okr.assignments.map(async (assignment) => {
         if (assignment.targetType === 'TEAM') {
           const team = await prisma.team.findUnique({
@@ -3088,7 +3124,8 @@ export const listUserOkrs = async (req: Request, res: Response) => {
       orderBy: { createdAt: 'desc' }
     });
 
-    const enrichedOkrs = await Promise.all(okrs.map(async (okr) => {
+    const okrsWithOwnerUsers = await enrichOkrOwnerUsers(okrs);
+    const enrichedOkrs = await Promise.all(okrsWithOwnerUsers.map(async (okr) => {
       const enrichedAssignments = await Promise.all(okr.assignments.map(async (assignment) => {
         if (assignment.targetType === 'TEAM') {
           const team = await prisma.team.findUnique({

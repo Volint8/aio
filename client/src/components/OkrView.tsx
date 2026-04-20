@@ -2,6 +2,12 @@ import React from "react";
 import "../styles/OkrView.css";
 import DebouncedButton from "./common/DebouncedButton";
 
+interface OkrUserSummary {
+  id: string;
+  name: string | null;
+  email: string;
+}
+
 interface Okr {
   id: string;
   title: string;
@@ -15,11 +21,9 @@ interface Okr {
     id: string;
     title: string;
     assignedUserId: string | null;
-    assignedUser?: {
-      id: string;
-      name: string | null;
-      email: string;
-    } | null;
+    ownerIds?: string[];
+    ownerUsers?: OkrUserSummary[];
+    assignedUser?: OkrUserSummary | null;
     metricName?: string | null;
     metricUnit?: string | null;
     targetValue?: number | null;
@@ -69,6 +73,16 @@ const OkrView: React.FC<OkrViewProps> = ({
   onDeleteOkr,
 }) => {
   const currentYear = new Date().getFullYear();
+  const getKeyResultOwners = (kr: NonNullable<Okr["keyResults"]>[number]) => {
+    const owners =
+      kr.ownerUsers && kr.ownerUsers.length > 0
+        ? kr.ownerUsers
+        : kr.assignedUser
+          ? [kr.assignedUser]
+          : [];
+
+    return owners.map((owner) => owner.name || owner.email).join(", ");
+  };
 
   return (
     <div className="okr-view">
@@ -184,8 +198,10 @@ const OkrView: React.FC<OkrViewProps> = ({
                             fontWeight: 500,
                           }}
                         >
-                          Owner:{" "}
-                          {kr.assignedUser?.name || kr.assignedUser?.email}
+                          {kr.ownerUsers && kr.ownerUsers.length > 1
+                            ? "Owners"
+                            : "Owner"}
+                          : {getKeyResultOwners(kr) || "General"}
                         </small>
                         {kr.contributionPct !== null &&
                           kr.contributionPct !== undefined && (
