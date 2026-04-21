@@ -13,13 +13,39 @@ export const sendAlert = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'All fields are required' });
     }
 
-    // Check if sender is admin or team lead
     const membership = await prisma.organizationMember.findUnique({
       where: { userId_organizationId: { userId: senderId, organizationId } }
     });
 
-    if (!membership || (membership.role !== 'ADMIN' && membership.role !== 'TEAM_LEAD')) {
-      return res.status(403).json({ error: 'Only admins and team leads can send alerts' });
+    if (!membership) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    if (membership.role === 'MEMBER') {
+      if (targetType !== 'INDIVIDUAL') {
+        return res.status(403).json({ error: 'Members can only send alerts to an admin or their team lead' });
+      }
+
+      const targetMembership = await prisma.organizationMember.findUnique({
+        where: {
+          userId_organizationId: {
+            userId: targetId,
+            organizationId
+          }
+        }
+      });
+
+      const canAlertTarget =
+        targetMembership?.role === 'ADMIN' ||
+        (
+          targetMembership?.role === 'TEAM_LEAD' &&
+          !!membership.teamId &&
+          targetMembership.teamId === membership.teamId
+        );
+
+      if (!canAlertTarget) {
+        return res.status(403).json({ error: 'Members can only send alerts to an admin or their team lead' });
+      }
     }
 
     // Create notification record

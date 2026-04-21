@@ -1049,6 +1049,21 @@ const DashboardPage = () => {
     (member) => member.role !== "ADMIN",
   );
 
+  const currentOrgMember = (organization?.members || []).find(
+    (member) => member.userId === user?.id,
+  );
+
+  const alertRecipientUsers = isMember
+    ? (organization?.members || []).filter(
+        (member) =>
+          member.userId !== user?.id &&
+          (member.role === "ADMIN" ||
+            (member.role === "TEAM_LEAD" &&
+              Boolean(currentOrgMember?.teamId) &&
+              member.teamId === currentOrgMember?.teamId)),
+      )
+    : assignableUsers;
+
   const teamLeadUsers = (organization?.members || []).filter(
     (member) => member.role === "TEAM_LEAD",
   );
@@ -5891,8 +5906,10 @@ const DashboardPage = () => {
                     })
                   }
                 >
-                  <option value="INDIVIDUAL">Individual Member</option>
-                  <option value="TEAM">Entire Team</option>
+                  <option value="INDIVIDUAL">
+                    {isMember ? "Admin or Team Lead" : "Individual Member"}
+                  </option>
+                  {!isMember && <option value="TEAM">Entire Team</option>}
                 </select>
               </div>
 
@@ -5907,7 +5924,7 @@ const DashboardPage = () => {
                 >
                   <option value="">Select Recipient</option>
                   {alertForm.targetType === "INDIVIDUAL" &&
-                    assignableUsers.map((u) => (
+                    alertRecipientUsers.map((u) => (
                       <option key={u.userId} value={u.userId}>
                         {u.user.name || u.user.email}
                       </option>
