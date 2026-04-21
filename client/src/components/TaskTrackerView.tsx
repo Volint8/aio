@@ -25,6 +25,7 @@ interface Task {
   approvalStatus?: string | null;
   priority: string;
   dueDate: string | null;
+  createdByUserId?: string | null;
   assignee: {
     id: string;
     name: string | null;
@@ -419,23 +420,26 @@ const TaskTrackerView: React.FC<TaskTrackerViewProps> = ({
                           >
                             Edit
                           </button>
-                          <button
-                            className="task-action-item"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              closeMenu();
-                              if (
-                                onDelete &&
-                                window.confirm(
-                                  "Move this task to Recently Deleted?",
-                                )
-                              ) {
-                                onDelete(task.id);
-                              }
-                            }}
-                          >
-                            Delete
-                          </button>
+                          {onDelete &&
+                            (userRole === "ADMIN" ||
+                              task.createdByUserId === userId) && (
+                            <button
+                              className="task-action-item"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                closeMenu();
+                                if (
+                                  window.confirm(
+                                    "Move this task to Recently Deleted?",
+                                  )
+                                ) {
+                                  onDelete(task.id);
+                                }
+                              }}
+                            >
+                              Delete
+                            </button>
+                          )}
                           <div
                             style={{
                               borderTop: "1px solid var(--border-color)",

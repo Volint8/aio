@@ -33,6 +33,7 @@ interface Task {
   approvalNotes?: string | null;
   priority: string;
   dueDate: string | null;
+  createdByUserId?: string | null;
   assignee: {
     id: string;
     name: string | null;
@@ -1529,6 +1530,8 @@ const DashboardPage = () => {
   const selectedTask =
     allTasks.find((task) => task.id === selectedTaskId) || null;
   const isDeletedView = filter === "recently_deleted";
+  const canDeleteTask = (task: Task) =>
+    isAdmin || task.createdByUserId === user?.id;
   const focusMembers =
     new URLSearchParams(location.search).get("focus") === "members";
 
@@ -1881,6 +1884,25 @@ const DashboardPage = () => {
         "Error",
         (typeof errorData === "object" ? errorData.message : errorData) ||
           "Failed to generate appraisal",
+      );
+    }
+  };
+
+  const handleDeleteAppraisal = async (appraisalId: string) => {
+    if (
+      !window.confirm(
+        "Delete this appraisal report? This action cannot be undone.",
+      )
+    )
+      return;
+
+    try {
+      await api.delete(`/orgs/${orgId}/appraisals/${appraisalId}`);
+      await fetchData();
+    } catch (error: any) {
+      showError(
+        "Error",
+        error.response?.data?.error || "Failed to delete appraisal",
       );
     }
   };
@@ -2708,8 +2730,11 @@ const DashboardPage = () => {
       await api.delete(`/tasks/${taskId}`);
       setSelectedTaskId(null);
       await fetchData();
-    } catch {
-      showError("Error", "Failed to delete task");
+    } catch (error: any) {
+      showError(
+        "Error",
+        error.response?.data?.error || "Failed to delete task",
+      );
     }
   };
 
@@ -3927,6 +3952,7 @@ const DashboardPage = () => {
                     style={{
                       display: "flex",
                       justifyContent: "flex-end",
+                      gap: "10px",
                       borderTop: "1px solid #e2e8f0",
                       paddingTop: "16px",
                     }}
@@ -3941,6 +3967,12 @@ const DashboardPage = () => {
                       }
                     >
                       Export Report (CSV)
+                    </button>
+                    <button
+                      className="btn-action danger"
+                      onClick={() => handleDeleteAppraisal(appraisal.id)}
+                    >
+                      Delete Report
                     </button>
                   </div>
                 </div>
@@ -4392,28 +4424,30 @@ const DashboardPage = () => {
                               Mark as Complete
                             </button>
                           )}
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDeleteTask(task.id);
-                              setMenuOpenTaskId(null);
-                            }}
-                            style={{
-                              display: "block",
-                              width: "100%",
-                              padding: "10px 16px",
-                              background: "none",
-                              border: "none",
-                              textAlign: "left",
-                              cursor: "pointer",
-                              fontSize: "0.9em",
-                              color: "#DC2626",
-                              borderTop: "1px solid var(--border-color)",
-                              borderRadius: "0 0 8px 8px",
-                            }}
-                          >
-                            Delete
-                          </button>
+                          {canDeleteTask(task) && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteTask(task.id);
+                                setMenuOpenTaskId(null);
+                              }}
+                              style={{
+                                display: "block",
+                                width: "100%",
+                                padding: "10px 16px",
+                                background: "none",
+                                border: "none",
+                                textAlign: "left",
+                                cursor: "pointer",
+                                fontSize: "0.9em",
+                                color: "#DC2626",
+                                borderTop: "1px solid var(--border-color)",
+                                borderRadius: "0 0 8px 8px",
+                              }}
+                            >
+                              Delete
+                            </button>
+                          )}
                         </div>
                       )}
                     </div>
@@ -4839,7 +4873,7 @@ const DashboardPage = () => {
                               </svg>
                               Attach Link
                             </button>
-                            {isAdmin && (
+                            {canDeleteTask(selectedTask) && (
                               <button
                                 onClick={() =>
                                   handleDeleteTask(selectedTask.id)

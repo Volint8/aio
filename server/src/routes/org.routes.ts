@@ -30,6 +30,7 @@ import {
     reviewKeyResult,
     generateAppraisal,
     listAppraisals,
+    deleteAppraisal,
     getAudit,
     bulkInviteMembers,
     listQuotes,
@@ -95,6 +96,7 @@ router.delete('/:id/okrs/:okrId', authenticateToken, deleteOkr);
 
 router.post('/:id/appraisals/generate', authenticateToken, generateAppraisal);
 router.get('/:id/appraisals', authenticateToken, listAppraisals);
+router.delete('/:id/appraisals/:appraisalId', authenticateToken, deleteAppraisal);
 router.get('/:id/audit', authenticateToken, getAudit);
 
 // Quotes

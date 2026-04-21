@@ -1999,87 +1999,91 @@ export const createOkr = async (req: Request, res: Response) => {
       });
     });
 
-    // Send notifications to teams assigned to this OKR
+    // Notification/email delivery can be slow, so keep it off the create request path.
     const teamAssignments = assignments.filter((a) => a.targetType === 'TEAM' && a.targetId);
-    if (teamAssignments.length > 0 && okr) {
-      try {
-        const creator = await prisma.user.findUnique({
-          where: { id: userId },
-          select: { name: true }
-        });
-
-        const organization = await prisma.organization.findUnique({
-          where: { id: organizationId },
-          select: { name: true }
-        });
-
-        for (const assignment of teamAssignments) {
+    if (okr) {
+      void (async () => {
+        if (teamAssignments.length > 0) {
           try {
-            const team = await prisma.team.findUnique({
-              where: { id: assignment.targetId },
-              include: {
-                members: {
+            const creator = await prisma.user.findUnique({
+              where: { id: userId },
+              select: { name: true }
+            });
+
+            const organization = await prisma.organization.findUnique({
+              where: { id: organizationId },
+              select: { name: true }
+            });
+
+            for (const assignment of teamAssignments) {
+              try {
+                const team = await prisma.team.findUnique({
+                  where: { id: assignment.targetId },
                   include: {
-                    user: {
-                      select: {
-                        id: true,
-                        email: true,
-                        name: true
+                    members: {
+                      include: {
+                        user: {
+                          select: {
+                            id: true,
+                            email: true,
+                            name: true
+                          }
+                        }
                       }
                     }
                   }
-                }
-              }
-            });
+                });
 
-            if (team) {
-              // Create in-app notification for the team
-              await prisma.notification.create({
-                data: {
-                  organizationId,
-                  senderId: userId,
-                  targetType: 'TEAM',
-                  targetId: assignment.targetId,
-                  type: 'PRIORITY_ALERT',
-                  message: `New OKR assigned to ${team.name}: ${okr.title}`
-                }
-              });
-
-              // Send email notifications to all team members
-              for (const member of team.members) {
-                try {
-                  await sendOkrNotificationEmail({
-                    to: member.user.email,
-                    recipientName: member.user.name,
-                    okrTitle: okr.title,
-                    okrDescription: okr.description || null,
-                    teamName: team.name,
-                    organizationName: organization?.name || '',
-                    creatorName: creator?.name || null,
-                    periodStart,
-                    periodEnd
+                if (team) {
+                  await prisma.notification.create({
+                    data: {
+                      organizationId,
+                      senderId: userId,
+                      targetType: 'TEAM',
+                      targetId: assignment.targetId,
+                      type: 'PRIORITY_ALERT',
+                      message: `New OKR assigned to ${team.name}: ${okr.title}`
+                    }
                   });
-                } catch (memberNotifyErr) {
-                  console.error(`Failed to notify member ${member.user.email} about OKR:`, memberNotifyErr);
+
+                  for (const member of team.members) {
+                    try {
+                      await sendOkrNotificationEmail({
+                        to: member.user.email,
+                        recipientName: member.user.name,
+                        okrTitle: okr.title,
+                        okrDescription: okr.description || null,
+                        teamName: team.name,
+                        organizationName: organization?.name || '',
+                        creatorName: creator?.name || null,
+                        periodStart,
+                        periodEnd
+                      });
+                    } catch (memberNotifyErr) {
+                      console.error(`Failed to notify member ${member.user.email} about OKR:`, memberNotifyErr);
+                    }
+                  }
                 }
+              } catch (teamNotifyErr) {
+                console.error(`Failed to notify team ${assignment.targetId} about OKR:`, teamNotifyErr);
               }
             }
-          } catch (teamNotifyErr) {
-            console.error(`Failed to notify team ${assignment.targetId} about OKR:`, teamNotifyErr);
+          } catch (notificationErr) {
+            console.error('Failed to send team notifications:', notificationErr);
           }
         }
-      } catch (notificationErr) {
-        console.error('Failed to send team notifications:', notificationErr);
-      }
-    }
 
-    if (normalizedKeyResults.length > 0 && okr) {
-      await notifyAssignedKeyResults({
-        organizationId,
-        actorUserId: userId,
-        okr,
-        periodStart,
-        periodEnd
+        if (normalizedKeyResults.length > 0) {
+          await notifyAssignedKeyResults({
+            organizationId,
+            actorUserId: userId,
+            okr,
+            periodStart,
+            periodEnd
+          });
+        }
+      })().catch((notificationErr) => {
+        console.error('Failed to send OKR creation notifications:', notificationErr);
       });
     }
 
@@ -2933,6 +2937,38 @@ export const listAppraisals = async (req: Request, res: Response) => {
     return res.json(transformedAppraisals);
   } catch (error) {
     console.error('List appraisals error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+export const deleteAppraisal = async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user.userId as string;
+    const organizationId = req.params.id as string;
+    const appraisalId = req.params.appraisalId as string;
+
+    const isAdmin = await requireAdmin(userId, organizationId);
+    if (!isAdmin) {
+      return res.status(403).json({ error: 'Only admins can delete appraisals' });
+    }
+
+    const appraisal = await prisma.appraisal.findFirst({
+      where: {
+        id: appraisalId,
+        organizationId
+      },
+      select: { id: true }
+    });
+
+    if (!appraisal) {
+      return res.status(404).json({ error: 'Appraisal not found' });
+    }
+
+    await prisma.appraisal.delete({ where: { id: appraisalId } });
+
+    return res.json({ message: 'Appraisal deleted successfully' });
+  } catch (error) {
+    console.error('Delete appraisal error:', error);
     return res.status(500).json({ error: 'Internal server error' });
   }
 };

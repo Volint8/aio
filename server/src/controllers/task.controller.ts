@@ -356,6 +356,7 @@ export const createTask = async (req: Request, res: Response) => {
                     title,
                     description,
                     organizationId,
+                    createdByUserId: userId,
                     assigneeId: normalizedAssigneeId,
                     supporterId: normalizedSupporterId,
                     dueDate: dueDate ? new Date(dueDate) : null,
@@ -793,8 +794,12 @@ export const deleteTask = async (req: Request, res: Response) => {
             }
         });
 
-        if (!membership || membership.role !== 'ADMIN') {
-            return res.status(403).json({ error: 'Only admins can delete tasks' });
+        if (!membership) {
+            return res.status(403).json({ error: 'Access denied' });
+        }
+
+        if (membership.role !== 'ADMIN' && task.createdByUserId !== userId) {
+            return res.status(403).json({ error: 'Only admins or the task creator can delete this task' });
         }
 
         if (task.deletedAt) {

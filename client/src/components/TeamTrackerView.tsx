@@ -24,6 +24,7 @@ interface Task {
   status: string;
   priority: string;
   dueDate: string | null;
+  createdByUserId?: string | null;
   assignee: {
     id: string;
     name: string | null;
@@ -418,25 +419,30 @@ const TeamTrackerView: React.FC<TeamTrackerViewProps> = ({
                           >
                             Edit
                           </button>
-                          <button
-                            type="button"
-                            className="task-action-item"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              closeMenu();
-                              if (
-                                onDelete &&
-                                window.confirm(
-                                  "Move this task to Recently Deleted?",
-                                )
-                              ) {
-                                onDelete(task.id);
-                              }
-                            }}
-                          >
-                            Delete
-                          </button>
-                          <div className="task-actions-divider" />
+                          {onDelete &&
+                            (userRole === "ADMIN" ||
+                              task.createdByUserId === userId) && (
+                            <>
+                              <button
+                                type="button"
+                                className="task-action-item"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  closeMenu();
+                                  if (
+                                    window.confirm(
+                                      "Move this task to Recently Deleted?",
+                                    )
+                                  ) {
+                                    onDelete(task.id);
+                                  }
+                                }}
+                              >
+                                Delete
+                              </button>
+                              <div className="task-actions-divider" />
+                            </>
+                          )}
                           <button
                             type="button"
                             className="task-action-item"

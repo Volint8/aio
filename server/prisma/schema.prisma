@@ -29,6 +29,7 @@ model User {
   organizations             OrganizationMember[]
   tasks                     Task[]               @relation("AssignedTasks")
   supportedTasks            Task[]               @relation("SupportedTasks")
+  createdTasks              Task[]               @relation("CreatedTasks")
   deletedTasks              Task[]               @relation("DeletedTasks")
   leadingTeams              Team[]               @relation("TeamLead")
   comments                  Comment[]
@@ -89,35 +90,38 @@ model OrganizationMember {
 }
 
 model Task {
-  id             String           @id @default(uuid())
-  title          String
-  description    String?
-  status         String           @default("CREATED") // CREATED, IN_PROGRESS, COMPLETED
-  approvalStatus String           @default("NOT_SUBMITTED") // NOT_SUBMITTED, PENDING, APPROVED, REJECTED
-  approvedById   String?
-  approvedAt     DateTime?
-  approvalNotes  String?
-  priority       String           @default("LOW") // LOW, MEDIUM, HIGH
-  dueDate        DateTime?
-  organizationId String
-  assigneeId     String?
-  supporterId    String?
-  deletedAt      DateTime?
-  deletedById    String?
-  createdAt      DateTime         @default(now())
-  updatedAt      DateTime         @updatedAt
-  organization   Organization     @relation(fields: [organizationId], references: [id])
-  assignee       User?            @relation("AssignedTasks", fields: [assigneeId], references: [id])
-  supporter      User?            @relation("SupportedTasks", fields: [supporterId], references: [id])
-  deletedBy      User?            @relation("DeletedTasks", fields: [deletedById], references: [id])
-  comments       Comment[]
-  attachments    Attachment[]
-  submissions    WorkSubmission[]
-  activityLogs   ActivityLog[]
-  taskTeams      TaskTeam[]
-  krImpacts      TaskKrImpact[]
+  id              String           @id @default(uuid())
+  title           String
+  description     String?
+  status          String           @default("CREATED") // CREATED, IN_PROGRESS, COMPLETED
+  approvalStatus  String           @default("NOT_SUBMITTED") // NOT_SUBMITTED, PENDING, APPROVED, REJECTED
+  approvedById    String?
+  approvedAt      DateTime?
+  approvalNotes   String?
+  priority        String           @default("LOW") // LOW, MEDIUM, HIGH
+  dueDate         DateTime?
+  organizationId  String
+  createdByUserId String?
+  assigneeId      String?
+  supporterId     String?
+  deletedAt       DateTime?
+  deletedById     String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  organization    Organization     @relation(fields: [organizationId], references: [id])
+  createdBy       User?            @relation("CreatedTasks", fields: [createdByUserId], references: [id])
+  assignee        User?            @relation("AssignedTasks", fields: [assigneeId], references: [id])
+  supporter       User?            @relation("SupportedTasks", fields: [supporterId], references: [id])
+  deletedBy       User?            @relation("DeletedTasks", fields: [deletedById], references: [id])
+  comments        Comment[]
+  attachments     Attachment[]
+  submissions     WorkSubmission[]
+  activityLogs    ActivityLog[]
+  taskTeams       TaskTeam[]
+  krImpacts       TaskKrImpact[]
 
   @@index([organizationId, deletedAt])
+  @@index([createdByUserId])
   @@index([deletedAt])
 }
 
