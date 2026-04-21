@@ -188,6 +188,44 @@ const resolveTaskTeamContext = async (params: {
     };
 };
 
+const enforceMemberAssignmentScope = async (params: {
+    actorMembership: { role: string; teamId?: string | null; userId?: string | null };
+    actorUserId: string;
+    organizationId: string;
+    assigneeId: string;
+    supporterId?: string | null;
+}) => {
+    const { actorMembership, actorUserId, organizationId, assigneeId, supporterId } = params;
+
+    if (actorMembership.role !== 'MEMBER') {
+        return;
+    }
+
+    const allowedMemberships = await prisma.organizationMember.findMany({
+        where: {
+            organizationId,
+            OR: actorMembership.teamId
+                ? [
+                    { userId: actorUserId },
+                    { teamId: actorMembership.teamId, role: 'MEMBER' },
+                    { teamId: actorMembership.teamId, role: 'TEAM_LEAD' }
+                ]
+                : [{ userId: actorUserId }]
+        },
+        select: { userId: true }
+    });
+
+    const allowedUserIds = new Set(allowedMemberships.map((m) => m.userId));
+
+    if (!allowedUserIds.has(assigneeId)) {
+        throw new Error('Members can only assign tasks to their team members or team lead');
+    }
+
+    if (supporterId && !allowedUserIds.has(supporterId)) {
+        throw new Error('Members can only select supporters from their team members or team lead');
+    }
+};
+
 const ensureMembershipOrAssignment = async (userId: string, organizationId: string, task?: { assigneeId?: string | null; supporterId?: string | null }) => {
     const membership = await prisma.organizationMember.findUnique({
         where: {
@@ -399,6 +437,14 @@ export const createTask = async (req: Request, res: Response) => {
         }
 
         const { teamIds } = await resolveTaskTeamContext({
+            organizationId,
+            assigneeId: normalizedAssigneeId,
+            supporterId: normalizedSupporterId
+        });
+
+        await enforceMemberAssignmentScope({
+            actorMembership: membership,
+            actorUserId: userId,
             organizationId,
             assigneeId: normalizedAssigneeId,
             supporterId: normalizedSupporterId
@@ -685,6 +731,14 @@ export const updateTask = async (req: Request, res: Response) => {
             if (!nextAssigneeId) {
                 return res.status(400).json({ error: 'Primary assignee is required' });
             }
+
+            await enforceMemberAssignmentScope({
+                actorMembership: membership,
+                actorUserId: userId,
+                organizationId: task.organizationId,
+                assigneeId: nextAssigneeId,
+                supporterId: nextSupporterId
+            });
 
             const resolved = await resolveTaskTeamContext({
                 organizationId: task.organizationId,

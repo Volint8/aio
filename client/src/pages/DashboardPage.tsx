@@ -5578,52 +5578,76 @@ const DashboardPage = () => {
                 <label>OKR Key Results</label>
                 <div className="task-kr-toolbar">
                   <span className="task-kr-count-pill">
-                    {newTask.keyResultIds.length} selected
+                    {newTask.keyResultIds.length > 0
+                      ? `${newTask.keyResultIds.length} selected`
+                      : "General selected"}
                   </span>
                 </div>
                 {newTask.assigneeId ? (
-                  newTaskLinkableOkrs.length > 0 ? (
-                    <div className="task-kr-picker">
-                      {newTaskLinkableOkrs.map((okr) => (
-                        <div key={okr.id} className="task-kr-group">
-                          <div className="task-kr-group-title">{okr.title}</div>
-                          <div className="task-kr-options">
-                            {(okr.keyResults || []).map((kr) => {
-                              const selected = newTask.keyResultIds.includes(
-                                kr.id,
-                              );
-                              return (
-                                <button
-                                  key={kr.id}
-                                  type="button"
-                                  className={`task-kr-option ${selected ? "selected" : ""}`}
-                                  aria-pressed={selected}
-                                  onClick={() =>
-                                    setNewTask({
-                                      ...newTask,
-                                      okrId: okr.id,
-                                      keyResultIds: toggleTaskKeyResult(
-                                        newTask.keyResultIds,
-                                        kr.id,
-                                      ),
-                                    })
-                                  }
-                                >
-                                  <span className="task-kr-option-label">
-                                    {kr.isGeneral ? "General" : kr.title}
-                                  </span>
-                                </button>
-                              );
-                            })}
+                  <>
+                    <div style={{ marginBottom: 10 }}>
+                      <button
+                        type="button"
+                        className={`task-kr-option ${newTask.keyResultIds.length === 0 ? "selected" : ""}`}
+                        aria-pressed={newTask.keyResultIds.length === 0}
+                        onClick={() =>
+                          setNewTask({
+                            ...newTask,
+                            okrId: "",
+                            keyResultIds: [],
+                          })
+                        }
+                      >
+                        <span className="task-kr-option-label">
+                          General (Not attached to any OKR)
+                        </span>
+                      </button>
+                    </div>
+                    {newTaskLinkableOkrs.length > 0 ? (
+                      <div className="task-kr-picker">
+                        {newTaskLinkableOkrs.map((okr) => (
+                          <div key={okr.id} className="task-kr-group">
+                            <div className="task-kr-group-title">
+                              {okr.title}
+                            </div>
+                            <div className="task-kr-options">
+                              {(okr.keyResults || []).map((kr) => {
+                                const selected = newTask.keyResultIds.includes(
+                                  kr.id,
+                                );
+                                return (
+                                  <button
+                                    key={kr.id}
+                                    type="button"
+                                    className={`task-kr-option ${selected ? "selected" : ""}`}
+                                    aria-pressed={selected}
+                                    onClick={() =>
+                                      setNewTask({
+                                        ...newTask,
+                                        okrId: okr.id,
+                                        keyResultIds: toggleTaskKeyResult(
+                                          newTask.keyResultIds,
+                                          kr.id,
+                                        ),
+                                      })
+                                    }
+                                  >
+                                    <span className="task-kr-option-label">
+                                      {kr.isGeneral ? "General" : kr.title}
+                                    </span>
+                                  </button>
+                                );
+                              })}
+                            </div>
                           </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="task-kr-empty">
-                      No key results found for this assignee.
-                    </div>
-                  )
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="task-kr-empty">
+                        No key results found for this assignee.
+                      </div>
+                    )}
+                  </>
                 ) : (
                   <div className="task-kr-empty">
                     Select an assignee first to load their key results.
@@ -5632,7 +5656,7 @@ const DashboardPage = () => {
                 <small className="modal-helper-text" style={{ marginTop: 8 }}>
                   {newTask.keyResultIds.length > 0
                     ? `This task will contribute to ${newTask.keyResultIds.length} selected key result${newTask.keyResultIds.length > 1 ? "s" : ""}`
-                    : "Select one or more key results to link this task"}
+                    : "This task is marked as General and not attached to any OKR"}
                 </small>
               </div>
               <div className="modal-actions">
@@ -5753,79 +5777,103 @@ const DashboardPage = () => {
               <div className="form-group">
                 <label>OKR Key Results</label>
                 {editTask.assigneeId ? (
-                  editTaskLinkableOkrs.length > 0 ? (
-                    <div
+                  <>
+                    <label
                       style={{
                         display: "flex",
-                        flexDirection: "column",
-                        gap: 12,
-                        maxHeight: 220,
-                        overflowY: "auto",
-                        padding: 12,
-                        border: "1px solid var(--border-color)",
-                        borderRadius: 12,
-                        background: "#fff",
+                        alignItems: "center",
+                        gap: 8,
+                        cursor: "pointer",
+                        marginBottom: 8,
                       }}
                     >
-                      {editTaskLinkableOkrs.map((okr) => (
-                        <div key={okr.id}>
-                          <div
-                            style={{
-                              fontWeight: 600,
-                              marginBottom: 6,
-                              color: "var(--text-main)",
-                            }}
-                          >
-                            {okr.title}
+                      <input
+                        type="checkbox"
+                        checked={editTask.keyResultIds.length === 0}
+                        onChange={() =>
+                          setEditTask({
+                            ...editTask,
+                            okrId: "",
+                            keyResultIds: [],
+                          })
+                        }
+                      />
+                      <span>General (Not attached to any OKR)</span>
+                    </label>
+                    {editTaskLinkableOkrs.length > 0 ? (
+                      <div
+                        style={{
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: 12,
+                          maxHeight: 220,
+                          overflowY: "auto",
+                          padding: 12,
+                          border: "1px solid var(--border-color)",
+                          borderRadius: 12,
+                          background: "#fff",
+                        }}
+                      >
+                        {editTaskLinkableOkrs.map((okr) => (
+                          <div key={okr.id}>
+                            <div
+                              style={{
+                                fontWeight: 600,
+                                marginBottom: 6,
+                                color: "var(--text-main)",
+                              }}
+                            >
+                              {okr.title}
+                            </div>
+                            <div
+                              style={{
+                                display: "flex",
+                                flexDirection: "column",
+                                gap: 8,
+                              }}
+                            >
+                              {(okr.keyResults || []).map((kr) => (
+                                <label
+                                  key={kr.id}
+                                  style={{
+                                    display: "flex",
+                                    alignItems: "flex-start",
+                                    gap: 8,
+                                    cursor: "pointer",
+                                  }}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={editTask.keyResultIds.includes(
+                                      kr.id,
+                                    )}
+                                    onChange={() =>
+                                      setEditTask({
+                                        ...editTask,
+                                        okrId: okr.id,
+                                        keyResultIds: toggleTaskKeyResult(
+                                          editTask.keyResultIds,
+                                          kr.id,
+                                        ),
+                                      })
+                                    }
+                                    style={{ marginTop: 2 }}
+                                  />
+                                  <span>
+                                    {kr.isGeneral ? "General" : kr.title}
+                                  </span>
+                                </label>
+                              ))}
+                            </div>
                           </div>
-                          <div
-                            style={{
-                              display: "flex",
-                              flexDirection: "column",
-                              gap: 8,
-                            }}
-                          >
-                            {(okr.keyResults || []).map((kr) => (
-                              <label
-                                key={kr.id}
-                                style={{
-                                  display: "flex",
-                                  alignItems: "flex-start",
-                                  gap: 8,
-                                  cursor: "pointer",
-                                }}
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={editTask.keyResultIds.includes(
-                                    kr.id,
-                                  )}
-                                  onChange={() =>
-                                    setEditTask({
-                                      ...editTask,
-                                      okrId: okr.id,
-                                      keyResultIds: toggleTaskKeyResult(
-                                        editTask.keyResultIds,
-                                        kr.id,
-                                      ),
-                                    })
-                                  }
-                                  style={{ marginTop: 2 }}
-                                />
-                                <span>
-                                  {kr.isGeneral ? "General" : kr.title}
-                                </span>
-                              </label>
-                            ))}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="helper-text">
-                      No key results found for this assignee.
-                    </div>
-                  )
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="helper-text">
+                        No key results found for this assignee.
+                      </div>
+                    )}
+                  </>
                 ) : (
                   <div className="helper-text">
                     Select an assignee first to load their key results.
@@ -5840,7 +5888,7 @@ const DashboardPage = () => {
                 >
                   {editTask.keyResultIds.length > 0
                     ? `This task is linked to ${editTask.keyResultIds.length} key result${editTask.keyResultIds.length > 1 ? "s" : ""}`
-                    : "Select one or more key results to link this task"}
+                    : "This task is marked as General and not attached to any OKR"}
                 </small>
               </div>
               <div className="form-group">

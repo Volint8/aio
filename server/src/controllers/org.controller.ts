@@ -113,6 +113,9 @@ type OkrImpactSummary = {
     achievedPct: number | null;
     quantitativeOkrCount: number;
     excludedOkrCount: number;
+    generalTaskCount: number;
+    generalTaskCompletedCount: number;
+    generalTaskAchievedPct: number | null;
   };
 };
 
@@ -548,13 +551,13 @@ export const createInvite = async (req: Request, res: Response) => {
     const inviteUrl = `${baseUrl}/accept-invite?token=${rawToken}`;
 
     void sendInviteEmail({
-        to: normalizedInviteEmail,
-        organizationName: invite.organization.name,
-        role: normalizedRole,
-        inviteUrl,
-        inviterName: invite.invitedBy.name || invite.invitedBy.email,
-        inviteeName: name
-      }).catch((emailError) => {
+      to: normalizedInviteEmail,
+      organizationName: invite.organization.name,
+      role: normalizedRole,
+      inviteUrl,
+      inviterName: invite.invitedBy.name || invite.invitedBy.email,
+      inviteeName: name
+    }).catch((emailError) => {
       console.error('Failed to send invite email:', emailError);
     });
 
@@ -2679,6 +2682,23 @@ export const generateAppraisal = async (req: Request, res: Response) => {
       })
     ]);
 
+    // General tasks are tasks without any KR impact link.
+    const [generalTaskCount, completedGeneralTaskCount] = await Promise.all([
+      prisma.task.count({
+        where: {
+          ...taskWhere,
+          krImpacts: { none: {} }
+        }
+      }),
+      prisma.task.count({
+        where: {
+          ...taskWhere,
+          status: 'COMPLETED',
+          krImpacts: { none: {} }
+        }
+      })
+    ]);
+
     const tasksCompleted = allTasks > 0 ? (completedTasks / allTasks) * 100 : 0;
     const deadlinesMet = allTasks > 0 ? ((allTasks - overdueTasks) / allTasks) * 100 : 0;
 
@@ -2820,13 +2840,57 @@ export const generateAppraisal = async (req: Request, res: Response) => {
         return acc + (achievedPct * effectiveWeight * approvalFactor);
       }, 0) / contributionWeightTotal
       : 0;
-    const okrImpactScore = krScore;
+    const generalTaskAchievedPct = generalTaskCount > 0
+      ? (completedGeneralTaskCount / generalTaskCount) * 100
+      : null;
+
+    const weightedImpactDenominator = assignedKeyResults.length + generalTaskCount;
+    const okrImpactScore = weightedImpactDenominator > 0
+      ? ((krScore * assignedKeyResults.length) + ((generalTaskAchievedPct || 0) * generalTaskCount)) / weightedImpactDenominator
+      : 0;
+
+    const generalSummary: OkrImpactSummary['okrs'] = generalTaskCount > 0
+      ? [{
+        okrId: 'GENERAL',
+        okrTitle: 'General (Unlinked Tasks)',
+        objectiveTargetValue: generalTaskCount,
+        objectiveMetricUnit: 'tasks',
+        achievedPct: generalTaskAchievedPct,
+        targetValueTotal: generalTaskCount,
+        actualValueTotal: completedGeneralTaskCount,
+        keyResults: [{
+          krId: 'GENERAL',
+          krTitle: 'General task completion',
+          assignedUserId: subjectUserId,
+          assignedUserName: null,
+          assignedUserEmail: null,
+          metricName: 'Completed general tasks',
+          metricUnit: 'tasks',
+          targetValue: generalTaskCount,
+          actualValue: completedGeneralTaskCount,
+          weight: 1,
+          contributionValue: null,
+          contributionPct: null,
+          achievedPct: generalTaskAchievedPct,
+          approvalStatus: 'APPROVED',
+          approvedByName: null,
+          approvedAt: null,
+          approvalNotes: null
+        }],
+        quantitativeKrCount: 1,
+        excludedKrCount: 0
+      }]
+      : [];
+
     const okrImpactSummary: OkrImpactSummary = {
-      okrs: okrSummaries,
+      okrs: [...okrSummaries, ...generalSummary],
       totals: {
-        achievedPct: assignedKeyResults.length > 0 ? okrImpactScore : null,
+        achievedPct: (assignedKeyResults.length > 0 || generalTaskCount > 0) ? okrImpactScore : null,
         quantitativeOkrCount: assignedKeyResults.length,
-        excludedOkrCount: okrSummaries.reduce((acc, okr) => acc + okr.excludedKrCount, 0)
+        excludedOkrCount: okrSummaries.reduce((acc, okr) => acc + okr.excludedKrCount, 0),
+        generalTaskCount,
+        generalTaskCompletedCount: completedGeneralTaskCount,
+        generalTaskAchievedPct
       }
     };
 
@@ -2855,6 +2919,7 @@ export const generateAppraisal = async (req: Request, res: Response) => {
     const summary = `${name} logged ${allTasks} tasks during ${cycle}.
 ${name} completed ${completedTasks} tasks (${Math.round(tasksCompleted)}%) and met deadlines on ${Math.round(deadlinesMet)}% of tasks.
 Assigned key results approved: ${approvedKeyResultCount}/${assignedKeyResults.length}. Pending: ${pendingKeyResultCount}. Rejected: ${rejectedKeyResultCount}.
+General tasks completed: ${completedGeneralTaskCount}/${generalTaskCount}${generalTaskAchievedPct !== null ? ` (${Math.round(generalTaskAchievedPct)}%)` : ''}.
 ${renderedOkrLines.length > 0 ? renderedOkrLines.join('\n') : 'No scoped OKRs were included for this appraisal.'}
 Overall Rating: ${overallRating}`;
 
@@ -2880,6 +2945,9 @@ Overall Rating: ${overallRating}`;
           approvedKeyResultCount,
           pendingKeyResultCount,
           rejectedKeyResultCount,
+          generalTaskCount,
+          completedGeneralTaskCount,
+          generalTaskAchievedPct,
           performanceScore
         } as any,
         overallRating,
