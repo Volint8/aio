@@ -1946,10 +1946,11 @@ export const upsertTaskKrImpacts = async (req: Request, res: Response) => {
         const canEdit =
             membership.role === 'ADMIN' ||
             membership.role === 'TEAM_LEAD' ||
+            task.createdByUserId === userId ||
             task.assigneeId === userId ||
             task.supporterId === userId;
         if (!canEdit) {
-            return res.status(403).json({ error: 'Only admins, team leads, assignee, or supporter can edit KR impacts' });
+            return res.status(403).json({ error: 'Only admins, team leads, the task creator, assignee, or supporter can edit KR impacts' });
         }
 
         const sanitized = impacts

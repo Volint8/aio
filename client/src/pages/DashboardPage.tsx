@@ -697,6 +697,7 @@ const DashboardPage = () => {
   const [reviewNotes, setReviewNotes] = useState("");
 
   const [showCreateTaskModal, setShowCreateTaskModal] = useState(false);
+  const [creatingTask, setCreatingTask] = useState(false);
   const [showCreateOkrModal, setShowCreateOkrModal] = useState(false);
   const [creatingOkr, setCreatingOkr] = useState(false);
   const [showCreateAppraisalModal, setShowCreateAppraisalModal] =
@@ -1607,6 +1608,8 @@ const DashboardPage = () => {
 
   const handleCreateTask = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (creatingTask) return;
+
     try {
       if (!newTask.assigneeId) {
         showError("Validation Error", "Primary assignee is required");
@@ -1619,6 +1622,8 @@ const DashboardPage = () => {
         );
         return;
       }
+
+      setCreatingTask(true);
       const createResponse = await api.post("/tasks", {
         // send only createable fields
         title: newTask.title,
@@ -1660,6 +1665,8 @@ const DashboardPage = () => {
         (typeof errorData === "object" ? errorData.message : errorData) ||
           "Failed to create task",
       );
+    } finally {
+      setCreatingTask(false);
     }
   };
 
@@ -5646,6 +5653,7 @@ const DashboardPage = () => {
                   type="button"
                   onClick={() => setShowCreateTaskModal(false)}
                   className="btn-secondary"
+                  disabled={creatingTask}
                 >
                   Cancel
                 </button>
@@ -5653,8 +5661,10 @@ const DashboardPage = () => {
                   type="submit"
                   className="btn-primary"
                   debounceMs={1200}
+                  disabled={creatingTask}
+                  aria-busy={creatingTask}
                 >
-                  Create Task
+                  {creatingTask ? "Creating..." : "Create Task"}
                 </DebouncedButton>
               </div>
             </form>
@@ -6960,7 +6970,7 @@ const DashboardPage = () => {
                       Upload a spreadsheet (.xlsx or .csv) to invite multiple
                       members at once. The file must contain{" "}
                       <strong>Email</strong>, <strong>Team</strong>, and{" "}
-                      <strong>Role</strong> (TEAM_LEAD or MEMBER) columns. Teams
+                      <strong>Role</strong> (TEAM LEAD or MEMBER) columns. Teams
                       will be created automatically.
                     </p>
                     <button
