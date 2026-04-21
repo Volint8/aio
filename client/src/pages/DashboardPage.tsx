@@ -3080,9 +3080,11 @@ const DashboardPage = () => {
                 <div>
                   <small className="detail-label">Role</small>
                   <p>
-                    {selectedMemberDetail.roleLabel == "TEAM_LEAD"
-                      ? "TEAM LEAD"
-                      : selectedMemberDetail.roleLabel}
+                    {selectedMemberDetail.roleLabel
+                      ? selectedMemberDetail.roleLabel === "TEAM_LEAD"
+                        ? "TEAM LEAD"
+                        : formatRole(selectedMemberDetail.roleLabel)
+                      : "-"}
                   </p>
                 </div>
                 <div>
@@ -3163,10 +3165,7 @@ const DashboardPage = () => {
                 </button>
               )}
               {(isAdmin || isTeamLead) && (
-                <button
-                  onClick={openSendAlertModal}
-                  className="btn-secondary"
-                >
+                <button onClick={openSendAlertModal} className="btn-secondary">
                   Send Alert
                 </button>
               )}
