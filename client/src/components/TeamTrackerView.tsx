@@ -431,13 +431,7 @@ const TeamTrackerView: React.FC<TeamTrackerViewProps> = ({
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   closeMenu();
-                                  if (
-                                    window.confirm(
-                                      "Move this task to Recently Deleted?",
-                                    )
-                                  ) {
-                                    onDelete(task.id);
-                                  }
+                                  onDelete(task.id);
                                 }}
                               >
                                 Delete

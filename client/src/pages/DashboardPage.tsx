@@ -840,6 +840,9 @@ const DashboardPage = () => {
   const [clientFormName, setClientFormName] = useState("");
   const [clientFormVisibility, setClientFormVisibility] = useState("ORG_WIDE");
   const [taskClientFilter, setTaskClientFilter] = useState("all");
+  const [taskDeleteTargetId, setTaskDeleteTargetId] = useState<string | null>(
+    null,
+  );
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -2785,7 +2788,6 @@ const DashboardPage = () => {
   };
 
   const handleDeleteTask = async (taskId: string) => {
-    if (!window.confirm("Move this task to Recently Deleted?")) return;
     try {
       await api.delete(`/tasks/${taskId}`);
       setSelectedTaskId(null);
@@ -2796,6 +2798,21 @@ const DashboardPage = () => {
         error.response?.data?.error || "Failed to delete task",
       );
     }
+  };
+
+  const openTaskDeleteDialog = (taskId: string) => {
+    setTaskDeleteTargetId(taskId);
+  };
+
+  const closeTaskDeleteDialog = () => {
+    setTaskDeleteTargetId(null);
+  };
+
+  const confirmTaskDelete = async () => {
+    if (!taskDeleteTargetId) return;
+    const targetId = taskDeleteTargetId;
+    closeTaskDeleteDialog();
+    await handleDeleteTask(targetId);
   };
 
   const handleRestoreTask = async (taskId: string) => {
@@ -2949,7 +2966,7 @@ const DashboardPage = () => {
               organization?.userRole as "ADMIN" | "TEAM_LEAD" | "MEMBER"
             }
             onEdit={handleOpenEditTask}
-            onDelete={(id) => handleDeleteTask(id)}
+            onDelete={(id) => openTaskDeleteDialog(id)}
             onChangeStatus={handleUpdateTaskStatus}
             onApprovalAction={handleApprovalAction}
           />
@@ -3024,7 +3041,7 @@ const DashboardPage = () => {
               organization?.userRole as "ADMIN" | "TEAM_LEAD" | "MEMBER"
             }
             onEdit={handleOpenEditTask}
-            onDelete={(id) => handleDeleteTask(id)}
+            onDelete={(id) => openTaskDeleteDialog(id)}
             onChangeStatus={handleUpdateTaskStatus}
             onApprovalAction={handleApprovalAction}
           />
@@ -4518,7 +4535,7 @@ const DashboardPage = () => {
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                handleDeleteTask(task.id);
+                                openTaskDeleteDialog(task.id);
                                 setMenuOpenTaskId(null);
                               }}
                               style={{
@@ -7141,6 +7158,30 @@ const DashboardPage = () => {
                   Close
                 </button>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {taskDeleteTargetId && (
+        <div className="modal-overlay" onClick={closeTaskDeleteDialog}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h2>Move Task</h2>
+            <p>Move this task to Recently Deleted?</p>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "flex-end",
+                gap: "12px",
+                marginTop: "20px",
+              }}
+            >
+              <button className="btn-secondary" onClick={closeTaskDeleteDialog}>
+                Cancel
+              </button>
+              <button className="btn-logout" onClick={confirmTaskDelete}>
+                Move
+              </button>
             </div>
           </div>
         </div>

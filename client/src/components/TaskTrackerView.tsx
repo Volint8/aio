@@ -428,13 +428,7 @@ const TaskTrackerView: React.FC<TaskTrackerViewProps> = ({
                               onClick={(e) => {
                                 e.stopPropagation();
                                 closeMenu();
-                                if (
-                                  window.confirm(
-                                    "Move this task to Recently Deleted?",
-                                  )
-                                ) {
-                                  onDelete(task.id);
-                                }
+                                onDelete(task.id);
                               }}
                             >
                               Delete
