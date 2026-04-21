@@ -717,7 +717,14 @@ const DashboardPage = () => {
   const handleSendAlert = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      if (!alertForm.targetId) {
+      const targetId =
+        isTeamLead && alertForm.targetType === "ADMINS"
+          ? "ADMINS"
+          : isTeamLead && alertForm.targetType === "TEAM"
+            ? currentOrgMember?.teamId || ""
+            : alertForm.targetId;
+
+      if (!targetId) {
         showError("Validation Error", "Target is required");
         return;
       }
@@ -727,11 +734,12 @@ const DashboardPage = () => {
       }
       await api.post("/notifications/send-alert", {
         ...alertForm,
+        targetId,
         organizationId: orgId,
       });
       setShowSendAlertModal(false);
       setAlertForm({
-        targetType: "INDIVIDUAL",
+        targetType: isTeamLead ? "ADMINS" : "INDIVIDUAL",
         targetId: "",
         type: "DEADLINE_REMINDER",
         message: "",
@@ -1062,7 +1070,26 @@ const DashboardPage = () => {
               Boolean(currentOrgMember?.teamId) &&
               member.teamId === currentOrgMember?.teamId)),
       )
-    : assignableUsers;
+    : isTeamLead
+      ? (organization?.members || []).filter(
+          (member) => member.role === "ADMIN",
+        )
+      : assignableUsers;
+
+  const alertRecipientTeams = isTeamLead
+    ? teamDistribution.filter(
+        (team) => team.teamId === currentOrgMember?.teamId,
+      )
+    : teamDistribution;
+
+  const openSendAlertModal = () => {
+    setAlertForm((prev) => ({
+      ...prev,
+      targetType: isTeamLead ? "ADMINS" : "INDIVIDUAL",
+      targetId: "",
+    }));
+    setShowSendAlertModal(true);
+  };
 
   const teamLeadUsers = (organization?.members || []).filter(
     (member) => member.role === "TEAM_LEAD",
@@ -2904,7 +2931,7 @@ const DashboardPage = () => {
             }
             onTaskClick={(task) => setSelectedTaskId(task.id)}
             onCreateTask={() => setShowCreateTaskModal(true)}
-            onSendAlert={() => setShowSendAlertModal(true)}
+            onSendAlert={openSendAlertModal}
             assignableUsers={assignableUsers.map((m) => ({
               userId: m.userId,
               name: m.user.name,
@@ -2985,7 +3012,7 @@ const DashboardPage = () => {
             }
             onTaskClick={(task) => setSelectedTaskId(task.id)}
             onCreateTask={() => setShowCreateTaskModal(true)}
-            onSendAlert={() => setShowSendAlertModal(true)}
+            onSendAlert={openSendAlertModal}
             userRole={
               organization?.userRole as "ADMIN" | "TEAM_LEAD" | "MEMBER"
             }
@@ -3052,7 +3079,11 @@ const DashboardPage = () => {
                 </div>
                 <div>
                   <small className="detail-label">Role</small>
-                  <p>{selectedMemberDetail.roleLabel}</p>
+                  <p>
+                    {selectedMemberDetail.roleLabel == "TEAM_LEAD"
+                      ? "TEAM LEAD"
+                      : selectedMemberDetail.roleLabel}
+                  </p>
                 </div>
                 <div>
                   <small className="detail-label">Category</small>
@@ -3133,7 +3164,7 @@ const DashboardPage = () => {
               )}
               {(isAdmin || isTeamLead) && (
                 <button
-                  onClick={() => setShowSendAlertModal(true)}
+                  onClick={openSendAlertModal}
                   className="btn-secondary"
                 >
                   Send Alert
@@ -3221,17 +3252,17 @@ const DashboardPage = () => {
                     className="team-invite-form"
                     onSubmit={handleInviteMember}
                   >
-	                    <div className="team-invite-fields">
-	                      <input
-	                        type="text"
-	                        value={inviteName}
-	                        onChange={(e) => setInviteName(e.target.value)}
-	                        placeholder="Member name"
-	                        disabled={!isAdmin || inviting}
-	                      />
-	                      <input
-	                        type="email"
-	                        value={inviteEmail}
+                    <div className="team-invite-fields">
+                      <input
+                        type="text"
+                        value={inviteName}
+                        onChange={(e) => setInviteName(e.target.value)}
+                        placeholder="Member name"
+                        disabled={!isAdmin || inviting}
+                      />
+                      <input
+                        type="email"
+                        value={inviteEmail}
                         onChange={(e) => setInviteEmail(e.target.value)}
                         placeholder="team.member@company.com"
                         required
@@ -3242,29 +3273,29 @@ const DashboardPage = () => {
                         onChange={(e) => setInviteRole(e.target.value)}
                         disabled={!isAdmin || inviting}
                       >
-	                        <option value="MEMBER">Member</option>
-	                        <option value="TEAM_LEAD">Team Lead</option>
-	                      </select>
-	                      <select
-	                        value={inviteTeamId}
-	                        onChange={(e) => setInviteTeamId(e.target.value)}
-	                        disabled={!isAdmin || inviting}
-	                      >
-	                        <option value="">No team</option>
-	                        {teams.map((team) => (
-	                          <option key={team.id} value={team.id}>
-	                            {team.name}
-	                          </option>
-	                        ))}
-	                      </select>
-	                      <input
-	                        type="text"
-	                        value={inviteCategory}
-	                        onChange={(e) => setInviteCategory(e.target.value)}
-	                        placeholder="Category"
-	                        disabled={!isAdmin || inviting}
-	                      />
-	                    </div>
+                        <option value="MEMBER">Member</option>
+                        <option value="TEAM_LEAD">Team Lead</option>
+                      </select>
+                      <select
+                        value={inviteTeamId}
+                        onChange={(e) => setInviteTeamId(e.target.value)}
+                        disabled={!isAdmin || inviting}
+                      >
+                        <option value="">No team</option>
+                        {teams.map((team) => (
+                          <option key={team.id} value={team.id}>
+                            {team.name}
+                          </option>
+                        ))}
+                      </select>
+                      <input
+                        type="text"
+                        value={inviteCategory}
+                        onChange={(e) => setInviteCategory(e.target.value)}
+                        placeholder="Category"
+                        disabled={!isAdmin || inviting}
+                      />
+                    </div>
                     <DebouncedButton
                       type="submit"
                       className="btn-primary"
@@ -5906,37 +5937,50 @@ const DashboardPage = () => {
                     })
                   }
                 >
-                  <option value="INDIVIDUAL">
-                    {isMember ? "Admin or Team Lead" : "Individual Member"}
-                  </option>
-                  {!isMember && <option value="TEAM">Entire Team</option>}
+                  {isTeamLead ? (
+                    <>
+                      <option value="ADMINS">Admin</option>
+                      <option value="TEAM" disabled={!currentOrgMember?.teamId}>
+                        My Team
+                      </option>
+                    </>
+                  ) : (
+                    <>
+                      <option value="INDIVIDUAL">
+                        {isMember ? "Admin or Team Lead" : "Individual Member"}
+                      </option>
+                      {!isMember && <option value="TEAM">Entire Team</option>}
+                    </>
+                  )}
                 </select>
               </div>
 
-              <div className="form-group">
-                <label>Recipient</label>
-                <select
-                  value={alertForm.targetId}
-                  onChange={(e) =>
-                    setAlertForm({ ...alertForm, targetId: e.target.value })
-                  }
-                  required
-                >
-                  <option value="">Select Recipient</option>
-                  {alertForm.targetType === "INDIVIDUAL" &&
-                    alertRecipientUsers.map((u) => (
-                      <option key={u.userId} value={u.userId}>
-                        {u.user.name || u.user.email}
-                      </option>
-                    ))}
-                  {alertForm.targetType === "TEAM" &&
-                    teamDistribution.map((t) => (
-                      <option key={t.teamId} value={t.teamId}>
-                        {t.teamName}
-                      </option>
-                    ))}
-                </select>
-              </div>
+              {!isTeamLead && (
+                <div className="form-group">
+                  <label>Recipient</label>
+                  <select
+                    value={alertForm.targetId}
+                    onChange={(e) =>
+                      setAlertForm({ ...alertForm, targetId: e.target.value })
+                    }
+                    required
+                  >
+                    <option value="">Select Recipient</option>
+                    {alertForm.targetType === "INDIVIDUAL" &&
+                      alertRecipientUsers.map((u) => (
+                        <option key={u.userId} value={u.userId}>
+                          {u.user.name || u.user.email}
+                        </option>
+                      ))}
+                    {alertForm.targetType === "TEAM" &&
+                      alertRecipientTeams.map((t) => (
+                        <option key={t.teamId} value={t.teamId}>
+                          {t.teamName}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+              )}
 
               <div className="form-group">
                 <label>Alert Type</label>

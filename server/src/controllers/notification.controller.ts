@@ -21,6 +21,21 @@ export const sendAlert = async (req: Request, res: Response) => {
       return res.status(403).json({ error: 'Access denied' });
     }
 
+    const senderContext = await prisma.organization.findUnique({
+      where: { id: organizationId },
+      select: {
+        name: true,
+        members: {
+          where: { role: 'ADMIN' },
+          include: { user: { select: { id: true, email: true } } }
+        }
+      }
+    });
+
+    if (!senderContext) {
+      return res.status(404).json({ error: 'Organization not found' });
+    }
+
     if (membership.role === 'MEMBER') {
       if (targetType !== 'INDIVIDUAL') {
         return res.status(403).json({ error: 'Members can only send alerts to an admin or their team lead' });
@@ -46,6 +61,77 @@ export const sendAlert = async (req: Request, res: Response) => {
       if (!canAlertTarget) {
         return res.status(403).json({ error: 'Members can only send alerts to an admin or their team lead' });
       }
+    }
+
+    if (membership.role === 'TEAM_LEAD') {
+      if (targetType === 'ADMINS') {
+        if (senderContext.members.length === 0) {
+          return res.status(400).json({ error: 'No admins found for this organization' });
+        }
+      } else if (targetType === 'TEAM') {
+        if (!membership.teamId || targetId !== membership.teamId) {
+          return res.status(403).json({ error: 'Team leads can only send team alerts to their own team' });
+        }
+      } else if (targetType === 'INDIVIDUAL') {
+        const targetMembership = await prisma.organizationMember.findUnique({
+          where: {
+            userId_organizationId: {
+              userId: targetId,
+              organizationId
+            }
+          }
+        });
+
+        if (targetMembership?.role !== 'ADMIN') {
+          return res.status(403).json({ error: 'Team leads can only send individual alerts to admins' });
+        }
+      } else {
+        return res.status(403).json({ error: 'Team leads can only send alerts to admins or their own team' });
+      }
+    }
+
+    if (targetType === 'ADMINS') {
+      const adminRecipients = senderContext.members;
+      const notifications = await prisma.$transaction(
+        adminRecipients.map((admin) =>
+          prisma.notification.create({
+            data: {
+              organizationId,
+              senderId,
+              targetType: 'INDIVIDUAL',
+              targetId: admin.userId,
+              type,
+              message
+            },
+            include: {
+              sender: { select: { name: true, email: true } },
+              organization: { select: { name: true } }
+            }
+          })
+        )
+      );
+
+      const notification = notifications[0];
+      const subject = `Alert: ${type.replace('_', ' ')}`;
+      const html = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 10px;">
+          <h2 style="color: #2563eb;">Notification Alert</h2>
+          <p><strong>From:</strong> ${notification.sender.name || notification.sender.email}</p>
+          <p><strong>Org:</strong> ${notification.organization.name}</p>
+          <div style="background-color: #f4f4f4; padding: 15px; border-radius: 5px; margin: 20px 0;">
+            <p style="margin: 0;">${message}</p>
+          </div>
+          <p style="color: #666; font-size: 12px;">This is an automated alert from Apraizal.</p>
+        </div>
+      `;
+
+      await Promise.all(adminRecipients.map((admin) => sendEmail(admin.user.email, subject, html)));
+
+      return res.status(201).json({
+        message: 'Alert sent successfully',
+        count: notifications.length,
+        notification
+      });
     }
 
     // Create notification record
