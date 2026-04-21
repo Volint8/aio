@@ -5593,28 +5593,26 @@ const DashboardPage = () => {
                                 kr.id,
                               );
                               return (
-                                <label
+                                <button
                                   key={kr.id}
+                                  type="button"
                                   className={`task-kr-option ${selected ? "selected" : ""}`}
+                                  aria-pressed={selected}
+                                  onClick={() =>
+                                    setNewTask({
+                                      ...newTask,
+                                      okrId: okr.id,
+                                      keyResultIds: toggleTaskKeyResult(
+                                        newTask.keyResultIds,
+                                        kr.id,
+                                      ),
+                                    })
+                                  }
                                 >
-                                  <input
-                                    type="checkbox"
-                                    checked={selected}
-                                    onChange={() =>
-                                      setNewTask({
-                                        ...newTask,
-                                        okrId: okr.id,
-                                        keyResultIds: toggleTaskKeyResult(
-                                          newTask.keyResultIds,
-                                          kr.id,
-                                        ),
-                                      })
-                                    }
-                                  />
                                   <span className="task-kr-option-label">
                                     {kr.isGeneral ? "General" : kr.title}
                                   </span>
-                                </label>
+                                </button>
                               );
                             })}
                           </div>
