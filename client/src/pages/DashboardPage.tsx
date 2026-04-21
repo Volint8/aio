@@ -5576,90 +5576,62 @@ const DashboardPage = () => {
               )}
               <div className="form-group">
                 <label>OKR Key Results</label>
+                <div className="task-kr-toolbar">
+                  <span className="task-kr-count-pill">
+                    {newTask.keyResultIds.length} selected
+                  </span>
+                </div>
                 {newTask.assigneeId ? (
                   newTaskLinkableOkrs.length > 0 ? (
-                    <div
-                      style={{
-                        display: "flex",
-                        flexDirection: "column",
-                        gap: 12,
-                        maxHeight: 220,
-                        overflowY: "auto",
-                        padding: 12,
-                        border: "1px solid var(--border-color)",
-                        borderRadius: 12,
-                        background: "#fff",
-                      }}
-                    >
+                    <div className="task-kr-picker">
                       {newTaskLinkableOkrs.map((okr) => (
-                        <div key={okr.id}>
-                          <div
-                            style={{
-                              fontWeight: 600,
-                              marginBottom: 6,
-                              color: "var(--text-main)",
-                            }}
-                          >
-                            {okr.title}
-                          </div>
-                          <div
-                            style={{
-                              display: "flex",
-                              flexDirection: "column",
-                              gap: 8,
-                            }}
-                          >
-                            {(okr.keyResults || []).map((kr) => (
-                              <label
-                                key={kr.id}
-                                style={{
-                                  display: "flex",
-                                  alignItems: "flex-start",
-                                  gap: 8,
-                                  cursor: "pointer",
-                                }}
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={newTask.keyResultIds.includes(kr.id)}
-                                  onChange={() =>
-                                    setNewTask({
-                                      ...newTask,
-                                      okrId: okr.id,
-                                      keyResultIds: toggleTaskKeyResult(
-                                        newTask.keyResultIds,
-                                        kr.id,
-                                      ),
-                                    })
-                                  }
-                                  style={{ marginTop: 2 }}
-                                />
-                                <span>
-                                  {kr.isGeneral ? "General" : kr.title}
-                                </span>
-                              </label>
-                            ))}
+                        <div key={okr.id} className="task-kr-group">
+                          <div className="task-kr-group-title">{okr.title}</div>
+                          <div className="task-kr-options">
+                            {(okr.keyResults || []).map((kr) => {
+                              const selected = newTask.keyResultIds.includes(
+                                kr.id,
+                              );
+                              return (
+                                <label
+                                  key={kr.id}
+                                  className={`task-kr-option ${selected ? "selected" : ""}`}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={selected}
+                                    onChange={() =>
+                                      setNewTask({
+                                        ...newTask,
+                                        okrId: okr.id,
+                                        keyResultIds: toggleTaskKeyResult(
+                                          newTask.keyResultIds,
+                                          kr.id,
+                                        ),
+                                      })
+                                    }
+                                  />
+                                  <span className="task-kr-option-label">
+                                    {kr.isGeneral ? "General" : kr.title}
+                                  </span>
+                                </label>
+                              );
+                            })}
                           </div>
                         </div>
                       ))}
                     </div>
                   ) : (
-                    <div className="helper-text">
+                    <div className="task-kr-empty">
                       No key results found for this assignee.
                     </div>
                   )
                 ) : (
-                  <div className="helper-text">
+                  <div className="task-kr-empty">
                     Select an assignee first to load their key results.
                   </div>
                 )}
-                <small
-                  style={{
-                    color: "var(--text-muted)",
-                    display: "block",
-                    marginTop: 4,
-                  }}
-                >
+                <small className="modal-helper-text" style={{ marginTop: 8 }}>
                   {newTask.keyResultIds.length > 0
                     ? `This task will contribute to ${newTask.keyResultIds.length} selected key result${newTask.keyResultIds.length > 1 ? "s" : ""}`
                     : "Select one or more key results to link this task"}

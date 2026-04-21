@@ -423,17 +423,17 @@ const TaskTrackerView: React.FC<TaskTrackerViewProps> = ({
                           {onDelete &&
                             (userRole === "ADMIN" ||
                               task.createdByUserId === userId) && (
-                            <button
-                              className="task-action-item"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                closeMenu();
-                                onDelete(task.id);
-                              }}
-                            >
-                              Delete
-                            </button>
-                          )}
+                              <button
+                                className="task-action-item"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  closeMenu();
+                                  onDelete(task.id);
+                                }}
+                              >
+                                Delete
+                              </button>
+                            )}
                           <div
                             style={{
                               borderTop: "1px solid var(--border-color)",

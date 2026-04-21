@@ -424,21 +424,21 @@ const TeamTrackerView: React.FC<TeamTrackerViewProps> = ({
                           {onDelete &&
                             (userRole === "ADMIN" ||
                               task.createdByUserId === userId) && (
-                            <>
-                              <button
-                                type="button"
-                                className="task-action-item"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  closeMenu();
-                                  onDelete(task.id);
-                                }}
-                              >
-                                Delete
-                              </button>
-                              <div className="task-actions-divider" />
-                            </>
-                          )}
+                              <>
+                                <button
+                                  type="button"
+                                  className="task-action-item"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    closeMenu();
+                                    onDelete(task.id);
+                                  }}
+                                >
+                                  Delete
+                                </button>
+                                <div className="task-actions-divider" />
+                              </>
+                            )}
                           <button
                             type="button"
                             className="task-action-item"
