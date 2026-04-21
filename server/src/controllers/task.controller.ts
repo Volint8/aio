@@ -69,6 +69,60 @@ const notifyTaskAssignment = async (params: {
     }
 };
 
+const notifyTaskPendingApproval = async (params: {
+    taskId: string;
+    taskTitle: string;
+    organizationId: string;
+    actorUserId: string;
+}) => {
+    const { taskTitle, organizationId, actorUserId } = params;
+
+    try {
+        const actorMembership = await prisma.organizationMember.findUnique({
+            where: {
+                userId_organizationId: {
+                    userId: actorUserId,
+                    organizationId
+                }
+            },
+            select: { teamId: true }
+        });
+
+        const reviewers = await prisma.organizationMember.findMany({
+            where: {
+                organizationId,
+                OR: [
+                    { role: 'ADMIN' },
+                    ...(actorMembership?.teamId
+                        ? [{ role: 'TEAM_LEAD', teamId: actorMembership.teamId }]
+                        : [{ role: 'TEAM_LEAD' }])
+                ]
+            },
+            select: { userId: true }
+        });
+
+        const targetIds = Array.from(new Set(reviewers.map((reviewer) => reviewer.userId)))
+            .filter((targetId) => targetId !== actorUserId);
+
+        if (targetIds.length === 0) {
+            return;
+        }
+
+        await prisma.notification.createMany({
+            data: targetIds.map((targetId) => ({
+                organizationId,
+                senderId: actorUserId,
+                targetType: 'INDIVIDUAL',
+                targetId,
+                type: 'PRIORITY_ALERT',
+                message: `Task pending approval: ${taskTitle}`
+            }))
+        });
+    } catch (error) {
+        console.error('Task approval notification failed:', error);
+    }
+};
+
 const ensureTaskIsActive = (task: { deletedAt: Date | null }) => {
     return !task.deletedAt;
 };
@@ -558,7 +612,7 @@ export const updateTask = async (req: Request, res: Response) => {
     try {
         const userId = (req as any).user.userId;
         const id = req.params.id as string;
-        const { title, description, status, assigneeId, supporterId, dueDate, priority } = req.body;
+        const { title, description, status, assigneeId, supporterId, dueDate, priority, approvalAction, approvalNotes } = req.body;
         const hasAssigneeUpdate = assigneeId !== undefined;
         const normalizedAssigneeId = assigneeId === '' ? null : assigneeId;
         const hasSupporterUpdate = supporterId !== undefined;
@@ -583,6 +637,18 @@ export const updateTask = async (req: Request, res: Response) => {
 
         const isReviewer = ['ADMIN', 'TEAM_LEAD'].includes(membership.role);
         const nextApprovalPatch: any = {};
+        if (approvalAction) {
+            if (!isReviewer) {
+                return res.status(403).json({ error: 'Only admins or team leads can review completed tasks' });
+            }
+            if (!['APPROVE', 'REJECT'].includes(approvalAction)) {
+                return res.status(400).json({ error: 'Invalid approval action' });
+            }
+            if (task.status !== 'COMPLETED' || task.approvalStatus !== 'PENDING') {
+                return res.status(400).json({ error: 'Only completed tasks pending approval can be reviewed' });
+            }
+        }
+
         if (status) {
             if (status === 'COMPLETED') {
                 nextApprovalPatch.approvalStatus = isReviewer ? 'APPROVED' : 'PENDING';
@@ -595,6 +661,18 @@ export const updateTask = async (req: Request, res: Response) => {
                 nextApprovalPatch.approvedAt = null;
                 nextApprovalPatch.approvalNotes = null;
             }
+        }
+
+        if (approvalAction === 'APPROVE') {
+            nextApprovalPatch.approvalStatus = 'APPROVED';
+            nextApprovalPatch.approvedById = userId;
+            nextApprovalPatch.approvedAt = new Date();
+            nextApprovalPatch.approvalNotes = approvalNotes || null;
+        } else if (approvalAction === 'REJECT') {
+            nextApprovalPatch.approvalStatus = 'REJECTED';
+            nextApprovalPatch.approvedById = userId;
+            nextApprovalPatch.approvedAt = new Date();
+            nextApprovalPatch.approvalNotes = approvalNotes || null;
         }
 
 
@@ -623,7 +701,7 @@ export const updateTask = async (req: Request, res: Response) => {
                     ...(title && { title }),
                     ...(description !== undefined && { description }),
                     ...(status && { status }),
-                    ...(status && nextApprovalPatch),
+                    ...((status || approvalAction) && nextApprovalPatch),
                     ...(hasAssigneeUpdate && { assigneeId: normalizedAssigneeId }),
                     ...(hasSupporterUpdate && { supporterId: normalizedSupporterId }),
                     ...(dueDate !== undefined && { dueDate: dueDate ? new Date(dueDate) : null }),
@@ -639,6 +717,19 @@ export const updateTask = async (req: Request, res: Response) => {
                     action: 'STATUS_CHANGED',
                     description: `Status changed from ${task.status} to ${status}`,
                     metadata: { oldStatus: task.status, newStatus: status }
+                });
+            }
+
+            if (approvalAction) {
+                activityEntries.push({
+                    action: 'TASK_UPDATED',
+                    description: `Completion ${approvalAction === 'APPROVE' ? 'approved' : 'rejected'}`,
+                    metadata: {
+                        field: 'approvalStatus',
+                        oldApprovalStatus: task.approvalStatus,
+                        newApprovalStatus: nextApprovalPatch.approvalStatus,
+                        approvalNotes: approvalNotes || null
+                    }
                 });
             }
 
@@ -751,6 +842,19 @@ export const updateTask = async (req: Request, res: Response) => {
                 organizationName: updatedTask?.organization?.name || '',
                 dueDate: updatedTask?.dueDate,
                 priority: updatedTask?.priority
+            });
+        }
+
+        if (
+            status === 'COMPLETED' &&
+            !isReviewer &&
+            updatedTask?.approvalStatus === 'PENDING'
+        ) {
+            void notifyTaskPendingApproval({
+                taskId: updatedTask.id,
+                taskTitle: updatedTask.title,
+                organizationId: task.organizationId,
+                actorUserId: userId
             });
         }
 

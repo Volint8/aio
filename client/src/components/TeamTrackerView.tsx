@@ -22,6 +22,7 @@ interface Task {
   title: string;
   description: string | null;
   status: string;
+  approvalStatus?: string | null;
   priority: string;
   dueDate: string | null;
   createdByUserId?: string | null;
@@ -81,7 +82,7 @@ interface TeamTrackerViewProps {
     action: "APPROVE" | "REJECT",
     notes?: string,
   ) => void;
-  userRole?: "ADMIN" | "TEAM_LEAD" | "TEAM_LEAD" | "MEMBER";
+  userRole?: "ADMIN" | "TEAM_LEAD" | "MEMBER";
 }
 
 const TeamTrackerView: React.FC<TeamTrackerViewProps> = ({
@@ -98,6 +99,7 @@ const TeamTrackerView: React.FC<TeamTrackerViewProps> = ({
   onEdit,
   onDelete,
   onChangeStatus,
+  onApprovalAction,
   userRole = "MEMBER",
 }) => {
   const { user } = useAuth();
@@ -467,6 +469,46 @@ const TeamTrackerView: React.FC<TeamTrackerViewProps> = ({
                           >
                             Mark Completed
                           </button>
+                          {task.status === "COMPLETED" &&
+                            task.approvalStatus === "PENDING" &&
+                            (userRole === "ADMIN" ||
+                              userRole === "TEAM_LEAD") && (
+                              <>
+                                <div className="task-actions-divider" />
+                                <button
+                                  type="button"
+                                  className="task-action-item"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    closeMenu();
+                                    onApprovalAction &&
+                                      onApprovalAction(task.id, "APPROVE");
+                                  }}
+                                >
+                                  Approve
+                                </button>
+                                <button
+                                  type="button"
+                                  className="task-action-item"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    const notes =
+                                      window.prompt(
+                                        "Rejection notes (optional)",
+                                      ) || undefined;
+                                    closeMenu();
+                                    onApprovalAction &&
+                                      onApprovalAction(
+                                        task.id,
+                                        "REJECT",
+                                        notes,
+                                      );
+                                  }}
+                                >
+                                  Reject
+                                </button>
+                              </>
+                            )}
                         </div>
                       )}
                     </div>

@@ -905,6 +905,7 @@ const DashboardPage = () => {
     effectiveOrgRole === "ADMIN" || effectiveOrgRole === "TEAM_LEAD";
   const canReviewSubmissions =
     Boolean((organization as any)?.canReviewSubmissions) || isAdmin;
+  const canReviewTasks = isAdmin || isTeamLead;
   const canUseTrackerCharts = isAdmin || isTeamLead;
   const ledTeamMemberIds = useMemo(() => {
     if (!isTeamLead || !teamDistribution || !user?.id) return [] as string[];
@@ -4911,6 +4912,41 @@ const DashboardPage = () => {
                               </svg>
                               Attach Link
                             </button>
+                            {canReviewTasks &&
+                              selectedTask.status === "COMPLETED" &&
+                              selectedTask.approvalStatus === "PENDING" && (
+                                <>
+                                  <button
+                                    type="button"
+                                    className="btn-action success"
+                                    onClick={() =>
+                                      handleApprovalAction(
+                                        selectedTask.id,
+                                        "APPROVE",
+                                      )
+                                    }
+                                  >
+                                    Approve
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="btn-action danger"
+                                    onClick={() => {
+                                      const notes =
+                                        window.prompt(
+                                          "Rejection notes (optional)",
+                                        ) || undefined;
+                                      void handleApprovalAction(
+                                        selectedTask.id,
+                                        "REJECT",
+                                        notes,
+                                      );
+                                    }}
+                                  >
+                                    Reject
+                                  </button>
+                                </>
+                              )}
                             {canDeleteTask(selectedTask) && (
                               <button
                                 onClick={() =>
