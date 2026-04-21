@@ -9,6 +9,13 @@ interface QuoteRecord {
 }
 
 interface BoardViewProps {
+  stats?: {
+    pending: number;
+    ongoing: number;
+    completed: number;
+    overdue: number;
+    total: number;
+  } | null;
   memberStats: Array<{
     userId: string;
     name: string;
@@ -55,6 +62,7 @@ interface BoardViewProps {
 }
 
 const BoardView: React.FC<BoardViewProps> = ({
+  stats,
   memberStats,
   teamDistribution,
   userRole,
@@ -112,7 +120,13 @@ const BoardView: React.FC<BoardViewProps> = ({
 
   // Calculate individual stats (current user)
   const currentUserStats = memberStats.find((m) => m.userId === user?.id) ||
-    memberStats[0] || {
+    (stats
+      ? {
+          userId: user?.id || "",
+          name: user?.name || "User",
+          stats,
+        }
+      : memberStats[0]) || {
       userId: "",
       name: "User",
       stats: { pending: 0, ongoing: 0, completed: 0, overdue: 0, total: 0 },

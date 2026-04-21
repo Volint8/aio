@@ -823,6 +823,9 @@ const DashboardPage = () => {
   });
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState("MEMBER");
+  const [inviteName, setInviteName] = useState("");
+  const [inviteTeamId, setInviteTeamId] = useState("");
+  const [inviteCategory, setInviteCategory] = useState("");
   const [inviting, setInviting] = useState(false);
   const [teamError, setTeamError] = useState("");
   const [clientFormName, setClientFormName] = useState("");
@@ -1484,6 +1487,7 @@ const DashboardPage = () => {
         );
       } else if (filter !== "all" && filter !== "recently_deleted") {
         const statusMap: Record<string, string> = {
+          pending: "CREATED",
           created: "CREATED",
           in_progress: "IN_PROGRESS",
           completed: "COMPLETED",
@@ -1988,11 +1992,17 @@ const DashboardPage = () => {
       setTeamError("");
       setInviting(true);
       await api.post(`/orgs/${orgId}/invites`, {
-        email: inviteEmail,
+        email: inviteEmail.trim(),
         role: inviteRole,
+        name: inviteName.trim() || undefined,
+        teamId: inviteTeamId || undefined,
+        category: inviteCategory.trim() || undefined,
       });
       setInviteEmail("");
       setInviteRole("MEMBER");
+      setInviteName("");
+      setInviteTeamId("");
+      setInviteCategory("");
       const invitesRes = await api.get(`/orgs/${orgId}/invites`);
       setInvites(invitesRes.data || []);
     } catch (error: any) {
@@ -2833,6 +2843,7 @@ const DashboardPage = () => {
       <div className="dashboard-container">
         {currentSection === "board" && (
           <BoardView
+            stats={stats}
             memberStats={memberStats}
             teamDistribution={teamDistribution}
             userRole={
@@ -3194,10 +3205,17 @@ const DashboardPage = () => {
                     className="team-invite-form"
                     onSubmit={handleInviteMember}
                   >
-                    <div className="team-invite-fields">
-                      <input
-                        type="email"
-                        value={inviteEmail}
+	                    <div className="team-invite-fields">
+	                      <input
+	                        type="text"
+	                        value={inviteName}
+	                        onChange={(e) => setInviteName(e.target.value)}
+	                        placeholder="Member name"
+	                        disabled={!isAdmin || inviting}
+	                      />
+	                      <input
+	                        type="email"
+	                        value={inviteEmail}
                         onChange={(e) => setInviteEmail(e.target.value)}
                         placeholder="team.member@company.com"
                         required
@@ -3208,10 +3226,29 @@ const DashboardPage = () => {
                         onChange={(e) => setInviteRole(e.target.value)}
                         disabled={!isAdmin || inviting}
                       >
-                        <option value="MEMBER">Member</option>
-                        <option value="TEAM_LEAD">Team Lead</option>
-                      </select>
-                    </div>
+	                        <option value="MEMBER">Member</option>
+	                        <option value="TEAM_LEAD">Team Lead</option>
+	                      </select>
+	                      <select
+	                        value={inviteTeamId}
+	                        onChange={(e) => setInviteTeamId(e.target.value)}
+	                        disabled={!isAdmin || inviting}
+	                      >
+	                        <option value="">No team</option>
+	                        {teams.map((team) => (
+	                          <option key={team.id} value={team.id}>
+	                            {team.name}
+	                          </option>
+	                        ))}
+	                      </select>
+	                      <input
+	                        type="text"
+	                        value={inviteCategory}
+	                        onChange={(e) => setInviteCategory(e.target.value)}
+	                        placeholder="Category"
+	                        disabled={!isAdmin || inviting}
+	                      />
+	                    </div>
                     <DebouncedButton
                       type="submit"
                       className="btn-primary"
@@ -4667,7 +4704,8 @@ const DashboardPage = () => {
                             whiteSpace: "pre-wrap",
                           }}
                         >
-                          {selectedTask.description || "No description provided."}
+                          {selectedTask.description ||
+                            "No description provided."}
                         </p>
                       </div>
 
@@ -5530,9 +5568,13 @@ const DashboardPage = () => {
                 >
                   Cancel
                 </button>
-                <button type="submit" className="btn-primary">
+                <DebouncedButton
+                  type="submit"
+                  className="btn-primary"
+                  debounceMs={1200}
+                >
                   Create Task
-                </button>
+                </DebouncedButton>
               </div>
             </form>
           </div>
@@ -6540,7 +6582,7 @@ const DashboardPage = () => {
 
       {showCreateAppraisalModal && (
         <div
-          className="modal-overlay"
+          className="modal-overlay no-scroll"
           onClick={() => setShowCreateAppraisalModal(false)}
         >
           <div className="modal" onClick={(e) => e.stopPropagation()}>

@@ -449,7 +449,13 @@ export const createInvite = async (req: Request, res: Response) => {
   try {
     const requesterUserId = (req as any).user.userId as string;
     const organizationId = req.params.id as string;
-    const { email, role, name } = req.body as { email?: string; role?: string; name?: string };
+    const { email, role, name, teamId, category } = req.body as {
+      email?: string;
+      role?: string;
+      name?: string;
+      teamId?: string;
+      category?: string;
+    };
 
     if (!email || !role) {
       return res.status(400).json({ error: 'Email and role are required' });
@@ -486,6 +492,21 @@ export const createInvite = async (req: Request, res: Response) => {
       }
     }
 
+    let normalizedTeamId: string | null = null;
+    if (teamId) {
+      const team = await prisma.team.findFirst({
+        where: {
+          id: teamId,
+          organizationId
+        },
+        select: { id: true }
+      });
+      if (!team) {
+        return res.status(400).json({ error: 'Selected team is invalid for this organization' });
+      }
+      normalizedTeamId = team.id;
+    }
+
     await prisma.invite.updateMany({
       where: {
         organizationId,
@@ -506,6 +527,8 @@ export const createInvite = async (req: Request, res: Response) => {
         organizationId,
         email: normalizedInviteEmail,
         role: normalizedRole,
+        teamId: normalizedTeamId,
+        category: category?.trim() || null,
         tokenHash,
         expiresAt,
         invitedByUserId: requesterUserId,
@@ -524,23 +547,23 @@ export const createInvite = async (req: Request, res: Response) => {
     const baseUrl = process.env.CLIENT_URL?.split(',')[0]?.trim() || 'http://localhost:5173';
     const inviteUrl = `${baseUrl}/accept-invite?token=${rawToken}`;
 
-    try {
-      await sendInviteEmail({
+    void sendInviteEmail({
         to: normalizedInviteEmail,
         organizationName: invite.organization.name,
         role: normalizedRole,
         inviteUrl,
         inviterName: invite.invitedBy.name || invite.invitedBy.email,
         inviteeName: name
-      });
-    } catch (emailError) {
+      }).catch((emailError) => {
       console.error('Failed to send invite email:', emailError);
-    }
+    });
 
     return res.status(201).json({
       id: invite.id,
       email: invite.email,
       role: invite.role,
+      teamId: invite.teamId,
+      category: invite.category,
       status: invite.status,
       expiresAt: invite.expiresAt,
       name: name || null
