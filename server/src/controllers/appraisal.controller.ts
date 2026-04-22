@@ -18,8 +18,10 @@ export const exportAppraisalCsv = async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Appraisal not found' });
     }
 
+    const subjectName = appraisal.subjectName || appraisal.subjectUser?.name || appraisal.subjectUser?.email || 'Appraisal Subject';
+    const subjectEmail = appraisal.subjectUser?.email || '';
     const header = 'Employee Name,Email,Organization,Cycle,Tasks Completed (%),Deadlines Met (%),OKR Impact Score (%),OKR Contribution,Overall Rating,Status,Created At,OKR Title,Objective Target,KR Title,Assigned User,Contribution Value,Contribution (%),Approval Status,Approved By,Metric Unit,Target,Actual,KR Achieved (%)\n';
-    const baseRowPrefix = `"${appraisal.subjectUser.name || ''}","${appraisal.subjectUser.email}","${appraisal.organization.name}","${appraisal.cycle}",${appraisal.tasksCompleted || 0},${appraisal.deadlinesMet || 0},${appraisal.okrImpactScore || 0},"${appraisal.okrContribution || ''}","${appraisal.overallRating || ''}","${appraisal.status}","${appraisal.createdAt.toISOString()}"`;
+    const baseRowPrefix = `"${subjectName}","${subjectEmail}","${appraisal.organization.name}","${appraisal.cycle}",${appraisal.tasksCompleted || 0},${appraisal.deadlinesMet || 0},${appraisal.okrImpactScore || 0},"${appraisal.okrContribution || ''}","${appraisal.overallRating || ''}","${appraisal.status}","${appraisal.createdAt.toISOString()}"`;
 
     const okrImpactSummary = (appraisal.okrImpactSummary || null) as any;
     const rows: string[] = [];

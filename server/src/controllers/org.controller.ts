@@ -3,6 +3,13 @@ import { Prisma, PrismaClient } from '@prisma/client';
 import { buildOrgNameSuggestions, makeUniqueOrgName, makeUniqueSlug, normalizeOrgName } from '../utils/org.utils';
 import { generateInviteToken, getEmailDomain, hashToken, isWorkEmail, normalizeEmail } from '../utils/auth.utils';
 import { sendInviteEmail, sendOkrNotificationEmail, sendKeyResultNotificationEmail } from '../services/email.service';
+import {
+  exportAppraisalBatchPdf,
+  exportAppraisalBatchZip,
+  generateAppraisalBatch,
+  listAppraisalReports,
+  previewAppraisalSetup
+} from '../services/appraisal-generation.service';
 import * as XLSX from 'xlsx';
 
 const prisma = new PrismaClient();
@@ -3008,7 +3015,7 @@ export const listAppraisals = async (req: Request, res: Response) => {
     });
 
     // Get team memberships for all subject users
-    const subjectUserIds = appraisals.map(a => a.subjectUserId);
+    const subjectUserIds = appraisals.map(a => a.subjectUserId).filter((id): id is string => Boolean(id));
     const memberships = await prisma.organizationMember.findMany({
       where: {
         organizationId,
@@ -3035,13 +3042,146 @@ export const listAppraisals = async (req: Request, res: Response) => {
       ...appraisal,
       subjectUser: appraisal.subjectUser ? {
         ...appraisal.subjectUser,
-        team: userTeamMap.get(appraisal.subjectUserId) || null
+        team: appraisal.subjectUserId ? userTeamMap.get(appraisal.subjectUserId) || null : null
       } : null
     }));
 
     return res.json(transformedAppraisals);
   } catch (error) {
     console.error('List appraisals error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+export const previewAppraisal = async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user.userId as string;
+    const organizationId = req.params.id as string;
+
+    const isAdmin = await requireAdmin(userId, organizationId);
+    if (!isAdmin) {
+      return res.status(403).json({ error: 'Only admins can preview appraisals' });
+    }
+
+    const preview = await previewAppraisalSetup({
+      organizationId,
+      scope: req.body.scope,
+      subjectIds: req.body.subjectIds,
+      periodStart: req.body.periodStart || req.body.fromDate,
+      periodEnd: req.body.periodEnd || req.body.toDate,
+      purposes: req.body.purposes,
+      customFocus: req.body.customFocus
+    });
+
+    return res.json(preview);
+  } catch (error: any) {
+    const message = typeof error?.message === 'string' ? error.message : 'Internal server error';
+    if (message !== 'Internal server error') {
+      return res.status(400).json({ error: message });
+    }
+    console.error('Preview appraisal error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+export const generateAdvancedAppraisal = async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user.userId as string;
+    const organizationId = req.params.id as string;
+
+    const isAdmin = await requireAdmin(userId, organizationId);
+    if (!isAdmin) {
+      return res.status(403).json({ error: 'Only admins can generate appraisals' });
+    }
+
+    const batch = await generateAppraisalBatch({
+      organizationId,
+      createdByUserId: userId,
+      scope: req.body.scope,
+      subjectIds: req.body.subjectIds || (req.body.subjectUserId ? [req.body.subjectUserId] : []),
+      outputFormat: req.body.outputFormat,
+      periodStart: req.body.periodStart || req.body.fromDate,
+      periodEnd: req.body.periodEnd || req.body.toDate,
+      purposes: req.body.purposes,
+      customFocus: req.body.customFocus,
+      selectedOkrIds: req.body.selectedOkrIds || req.body.okrIds
+    });
+
+    return res.status(201).json(batch);
+  } catch (error: any) {
+    const message = typeof error?.message === 'string' ? error.message : 'Internal server error';
+    if (message !== 'Internal server error') {
+      return res.status(400).json({ error: message });
+    }
+    console.error('Generate advanced appraisal error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+export const listAdvancedAppraisals = async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user.userId as string;
+    const organizationId = req.params.id as string;
+    const membership = await getMembership(userId, organizationId);
+
+    if (!membership) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const reports = await listAppraisalReports(organizationId);
+    return res.json(reports);
+  } catch (error) {
+    console.error('List advanced appraisals error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+export const exportAppraisalPdf = async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user.userId as string;
+    const organizationId = req.params.id as string;
+    const batchId = req.params.batchId as string;
+
+    const membership = await getMembership(userId, organizationId);
+    if (!membership) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const { filename, buffer } = await exportAppraisalBatchPdf(organizationId, batchId);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename=${filename}`);
+    return res.status(200).send(buffer);
+  } catch (error: any) {
+    const message = typeof error?.message === 'string' ? error.message : 'Internal server error';
+    if (message === 'Appraisal batch not found') {
+      return res.status(404).json({ error: message });
+    }
+    console.error('Export appraisal PDF error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+export const exportAppraisalZip = async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user.userId as string;
+    const organizationId = req.params.id as string;
+    const batchId = req.params.batchId as string;
+
+    const membership = await getMembership(userId, organizationId);
+    if (!membership) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const { filename, buffer } = await exportAppraisalBatchZip(organizationId, batchId);
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename=${filename}`);
+    return res.status(200).send(buffer);
+  } catch (error: any) {
+    const message = typeof error?.message === 'string' ? error.message : 'Internal server error';
+    if (message === 'Appraisal batch not found') {
+      return res.status(404).json({ error: message });
+    }
+    console.error('Export appraisal ZIP error:', error);
     return res.status(500).json({ error: 'Internal server error' });
   }
 };

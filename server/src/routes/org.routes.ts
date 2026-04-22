@@ -28,8 +28,11 @@ import {
     updateOkr,
     deleteOkr,
     reviewKeyResult,
-    generateAppraisal,
-    listAppraisals,
+    previewAppraisal,
+    generateAdvancedAppraisal,
+    listAdvancedAppraisals,
+    exportAppraisalPdf,
+    exportAppraisalZip,
     deleteAppraisal,
     getAudit,
     bulkInviteMembers,
@@ -94,8 +97,11 @@ router.patch('/:id/okrs/:okrId', authenticateToken, updateOkr);
 router.post('/:id/okrs/:okrId/key-results/:keyResultId/review', authenticateToken, reviewKeyResult);
 router.delete('/:id/okrs/:okrId', authenticateToken, deleteOkr);
 
-router.post('/:id/appraisals/generate', authenticateToken, generateAppraisal);
-router.get('/:id/appraisals', authenticateToken, listAppraisals);
+router.post('/:id/appraisals/preview', authenticateToken, previewAppraisal);
+router.post('/:id/appraisals/generate', authenticateToken, generateAdvancedAppraisal);
+router.get('/:id/appraisals', authenticateToken, listAdvancedAppraisals);
+router.get('/:id/appraisals/:batchId/export', authenticateToken, exportAppraisalPdf);
+router.get('/:id/appraisals/:batchId/export.zip', authenticateToken, exportAppraisalZip);
 router.delete('/:id/appraisals/:appraisalId', authenticateToken, deleteAppraisal);
 router.get('/:id/audit', authenticateToken, getAudit);
 

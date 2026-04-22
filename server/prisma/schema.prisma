@@ -37,6 +37,7 @@ model User {
   acceptedInvites           Invite[]             @relation("InviteAccepter")
   createdOkrs               Okr[]                @relation("OKRCreator")
   createdAppraisals         Appraisal[]          @relation("AppraisalCreator")
+  createdAppraisalBatches   AppraisalBatch[]     @relation("AppraisalBatchCreator")
   subjectAppraisals         Appraisal[]          @relation("AppraisalSubject")
   createdClients            Client[]             @relation("ClientCreator")
   workSubmissions           WorkSubmission[]
@@ -60,6 +61,7 @@ model Organization {
   invites        Invite[]
   okrs           Okr[]
   appraisals     Appraisal[]
+  appraisalBatches AppraisalBatch[]
   clients        Client[]
   notifications  Notification[]
   quotes         Quote[]
@@ -259,23 +261,63 @@ model OkrKeyResult {
 model Appraisal {
   id               String       @id @default(uuid())
   organizationId   String
-  subjectUserId    String
+  batchId          String?
+  subjectType      String       @default("INDIVIDUAL") // INDIVIDUAL, TEAM
+  subjectUserId    String?
+  subjectTeamId    String?
+  subjectName      String?
   createdByUserId  String
   cycle            String
   summary          String
+  periodStart      DateTime?
+  periodEnd        DateTime?
+  purposes         Json?
+  customFocus      String?
   tasksCompleted   Float? // Percentage
   deadlinesMet     Float? // Percentage
   okrContribution  String? // HIGH, MEDIUM, LOW
   okrImpactScore   Float? // Percentage
   okrImpactSummary Json?
   scoreBreakdown   Json?
+  reportSections   Json?
+  selectedOkrSnapshot Json?
+  aiMetadata       Json?
+  fallbackReason   String?
   overallRating    String? // EXCELLENT, GOOD, AVERAGE, POOR
   status           String       @default("GENERATED") // GENERATED, PUBLISHED
   createdAt        DateTime     @default(now())
   updatedAt        DateTime     @updatedAt
   organization     Organization @relation(fields: [organizationId], references: [id])
-  subjectUser      User         @relation("AppraisalSubject", fields: [subjectUserId], references: [id])
+  batch            AppraisalBatch? @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  subjectUser      User?        @relation("AppraisalSubject", fields: [subjectUserId], references: [id])
   createdByUser    User         @relation("AppraisalCreator", fields: [createdByUserId], references: [id])
+
+  @@index([batchId])
+  @@index([organizationId, createdAt])
+  @@index([subjectType, subjectUserId, subjectTeamId])
+}
+
+model AppraisalBatch {
+  id               String       @id @default(uuid())
+  organizationId   String
+  createdByUserId  String
+  scope            String // INDIVIDUALS, TEAMS, ORGANIZATION
+  outputFormat     String // SINGLE_PDF, SEPARATE_PDFS
+  periodStart      DateTime
+  periodEnd        DateTime
+  purposes         Json
+  customFocus      String?
+  selectedSubjects Json
+  selectedOkrIds   Json
+  setupSummary     String
+  status           String       @default("GENERATED")
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+  organization     Organization @relation(fields: [organizationId], references: [id])
+  createdByUser    User         @relation("AppraisalBatchCreator", fields: [createdByUserId], references: [id])
+  appraisals       Appraisal[]
+
+  @@index([organizationId, createdAt])
 }
 
 model TaskKrImpact {

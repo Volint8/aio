@@ -477,6 +477,31 @@ interface AppraisalOkrImpactSummary {
   };
 }
 
+interface AppraisalReportSections {
+  header?: {
+    name?: string;
+    role?: string | null;
+    team?: string | null;
+    appraisalPeriod?: string;
+    purpose?: string;
+  };
+  overviewSummary?: string;
+  okrPerformanceBreakdown?: Array<{
+    objective: string;
+    keyResults: string[];
+    owner: string;
+    timeline: string;
+    status: string;
+    performanceInsight: string;
+  }>;
+  strengths?: string[];
+  areasForImprovement?: string[];
+  skillsCapabilityInsights?: string[];
+  recommendations?: string[];
+  finalRating?: string;
+  nextSteps?: string[];
+}
+
 interface OkrKeyResultForm {
   title: string;
   assignedUserId: string | null;
@@ -486,14 +511,29 @@ interface OkrKeyResultForm {
 
 interface Appraisal {
   id: string;
+  batchId?: string | null;
+  subjectType?: "INDIVIDUAL" | "TEAM";
+  subjectTeamId?: string | null;
+  subjectName?: string | null;
   cycle: string;
   summary: string;
   status: string;
+  periodStart?: string | null;
+  periodEnd?: string | null;
+  purposes?: string[] | null;
+  customFocus?: string | null;
   tasksCompleted?: number | null;
   deadlinesMet?: number | null;
   okrContribution?: string | null;
   okrImpactScore?: number | null;
   okrImpactSummary?: AppraisalOkrImpactSummary | null;
+  reportSections?: AppraisalReportSections | null;
+  fallbackReason?: string | null;
+  batch?: {
+    id: string;
+    outputFormat: "SINGLE_PDF" | "SEPARATE_PDFS";
+    scope: string;
+  } | null;
   overallRating?: string | null;
   subjectUser?: {
     id: string;
@@ -818,12 +858,39 @@ const DashboardPage = () => {
     status: "OPEN",
   });
   const [newAppraisal, setNewAppraisal] = useState({
-    subjectUserId: "",
+    scope: "INDIVIDUALS",
+    subjectIds: [] as string[],
+    outputFormat: "SINGLE_PDF",
     periodStart: "",
     periodEnd: "",
-    summary: "",
+    purposes: ["Performance Review"] as string[],
+    otherPurpose: "",
+    customFocus: "",
   });
   const [selectedOkrIds, setSelectedOkrIds] = useState<string[]>([]);
+  const [appraisalPreview, setAppraisalPreview] = useState<{
+    subjects: Array<{
+      type: string;
+      id: string;
+      name: string;
+      role?: string | null;
+      teamName?: string | null;
+    }>;
+    okrs: Array<{
+      id: string;
+      title: string;
+      periodStart: string;
+      periodEnd: string;
+      status: string;
+      keyResultCount: number;
+    }>;
+    setupSummary: string;
+    selectedOkrIds: string[];
+  } | null>(null);
+  const [appraisalPreviewLoading, setAppraisalPreviewLoading] =
+    useState(false);
+  const [appraisalSelectionDirty, setAppraisalSelectionDirty] = useState(false);
+  const [generatingAppraisal, setGeneratingAppraisal] = useState(false);
   const [newLink, setNewLink] = useState({ taskId: "", url: "", fileName: "" });
   const [teamForm, setTeamForm] = useState({
     name: "",
@@ -1060,6 +1127,42 @@ const DashboardPage = () => {
   const assignableUsers = (organization?.members || []).filter(
     (member) => member.role !== "ADMIN",
   );
+  const appraisalPurposeOptions = [
+    "Promotion",
+    "Salary Review",
+    "Performance Review",
+    "Layoffs",
+    "Skills Gap Analysis",
+    "Other",
+  ];
+  const appraisalSubjects =
+    newAppraisal.scope === "TEAMS"
+      ? teams.map((team) => ({
+          id: team.id,
+          label: team.name,
+          meta: `${team.members?.length || 0} member${
+            (team.members?.length || 0) === 1 ? "" : "s"
+          }`,
+        }))
+      : assignableUsers.map((member) => ({
+          id: member.user.id,
+          label: member.user.name || member.user.email,
+          meta: [member.user.jobTitle || member.role, member.team?.name]
+            .filter(Boolean)
+            .join(" • "),
+        }));
+  const normalizedAppraisalPurposes = useMemo(
+    () =>
+      newAppraisal.purposes
+        .filter((purpose) => purpose !== "Other")
+        .concat(
+          newAppraisal.purposes.includes("Other") &&
+            newAppraisal.otherPurpose.trim()
+            ? [newAppraisal.otherPurpose.trim()]
+            : [],
+        ),
+    [newAppraisal.purposes, newAppraisal.otherPurpose],
+  );
 
   const currentOrgMember = (organization?.members || []).find(
     (member) => member.userId === user?.id,
@@ -1098,6 +1201,66 @@ const DashboardPage = () => {
   const teamLeadUsers = (organization?.members || []).filter(
     (member) => member.role === "TEAM_LEAD",
   );
+
+  useEffect(() => {
+    if (!showCreateAppraisalModal || !orgId) return;
+    if (!newAppraisal.periodStart || !newAppraisal.periodEnd) {
+      setAppraisalPreview(null);
+      setSelectedOkrIds([]);
+      return;
+    }
+    if (
+      newAppraisal.scope !== "ORGANIZATION" &&
+      newAppraisal.subjectIds.length === 0
+    ) {
+      setAppraisalPreview(null);
+      setSelectedOkrIds([]);
+      return;
+    }
+
+    let cancelled = false;
+    const loadPreview = async () => {
+      setAppraisalPreviewLoading(true);
+      try {
+        const res = await api.post(`/orgs/${orgId}/appraisals/preview`, {
+          scope: newAppraisal.scope,
+          subjectIds: newAppraisal.subjectIds,
+          periodStart: newAppraisal.periodStart,
+          periodEnd: newAppraisal.periodEnd,
+          purposes: normalizedAppraisalPurposes,
+          customFocus: newAppraisal.customFocus || undefined,
+        });
+        if (cancelled) return;
+        setAppraisalPreview(res.data);
+        if (!appraisalSelectionDirty) {
+          setSelectedOkrIds(res.data.selectedOkrIds || []);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setAppraisalPreview(null);
+          setSelectedOkrIds([]);
+          console.error("Failed to preview appraisal:", error);
+        }
+      } finally {
+        if (!cancelled) setAppraisalPreviewLoading(false);
+      }
+    };
+
+    loadPreview();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    showCreateAppraisalModal,
+    orgId,
+    newAppraisal.scope,
+    newAppraisal.subjectIds,
+    newAppraisal.periodStart,
+    newAppraisal.periodEnd,
+    newAppraisal.customFocus,
+    normalizedAppraisalPurposes,
+    appraisalSelectionDirty,
+  ]);
 
   useEffect(() => {
     if (selectedTaskId) {
@@ -1906,33 +2069,43 @@ const DashboardPage = () => {
 
   const handleCreateAppraisal = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (generatingAppraisal) return;
     try {
-      const start = new Date(newAppraisal.periodStart);
-      const end = new Date(newAppraisal.periodEnd);
-      const sameMonth =
-        start.getFullYear() === end.getFullYear() &&
-        start.getMonth() === end.getMonth();
-      const cycle = sameMonth
-        ? start.toLocaleDateString(undefined, {
-            month: "long",
-            year: "numeric",
-          })
-        : `${start.toLocaleDateString()} - ${end.toLocaleDateString()}`;
-
+      if (
+        newAppraisal.scope !== "ORGANIZATION" &&
+        newAppraisal.subjectIds.length === 0
+      ) {
+        showError("Validation Error", "Select at least one appraisal subject");
+        return;
+      }
+      if (!newAppraisal.periodStart || !newAppraisal.periodEnd) {
+        showError("Validation Error", "Select an appraisal date range");
+        return;
+      }
+      setGeneratingAppraisal(true);
       await api.post(`/orgs/${orgId}/appraisals/generate`, {
-        subjectUserId: newAppraisal.subjectUserId,
-        cycle,
-        fromDate: newAppraisal.periodStart || undefined,
-        toDate: newAppraisal.periodEnd || undefined,
-        okrIds: selectedOkrIds.length > 0 ? selectedOkrIds : undefined,
+        scope: newAppraisal.scope,
+        subjectIds: newAppraisal.subjectIds,
+        outputFormat: newAppraisal.outputFormat,
+        periodStart: newAppraisal.periodStart,
+        periodEnd: newAppraisal.periodEnd,
+        purposes: normalizedAppraisalPurposes,
+        customFocus: newAppraisal.customFocus || undefined,
+        selectedOkrIds,
       });
       setNewAppraisal({
-        subjectUserId: "",
+        scope: "INDIVIDUALS",
+        subjectIds: [],
+        outputFormat: "SINGLE_PDF",
         periodStart: "",
         periodEnd: "",
-        summary: "",
+        purposes: ["Performance Review"],
+        otherPurpose: "",
+        customFocus: "",
       });
       setSelectedOkrIds([]);
+      setAppraisalPreview(null);
+      setAppraisalSelectionDirty(false);
       setShowCreateAppraisalModal(false);
       await fetchData();
     } catch (error: any) {
@@ -1942,6 +2115,8 @@ const DashboardPage = () => {
         (typeof errorData === "object" ? errorData.message : errorData) ||
           "Failed to generate appraisal",
       );
+    } finally {
+      setGeneratingAppraisal(false);
     }
   };
 
@@ -3872,11 +4047,15 @@ const DashboardPage = () => {
                         }}
                       >
                         <h3 style={{ margin: 0, fontSize: "1.2em" }}>
-                          {appraisal.subjectUser?.name ||
+                          {appraisal.subjectName ||
+                            appraisal.reportSections?.header?.name ||
+                            appraisal.subjectUser?.name ||
                             appraisal.subjectUser?.email ||
-                            "Team Member"}
+                            "Appraisal Subject"}
                         </h3>
-                        {appraisal.subjectUser?.team && (
+                        {(appraisal.reportSections?.header?.team ||
+                          appraisal.subjectUser?.team ||
+                          appraisal.subjectType === "TEAM") && (
                           <span
                             style={{
                               background: "#E0F2FE",
@@ -3888,7 +4067,9 @@ const DashboardPage = () => {
                               textTransform: "uppercase",
                             }}
                           >
-                            {appraisal.subjectUser.team.name}
+                            {appraisal.reportSections?.header?.team ||
+                              appraisal.subjectUser?.team?.name ||
+                              "Team"}
                           </span>
                         )}
                       </div>
@@ -3909,7 +4090,8 @@ const DashboardPage = () => {
                                 : "#f97316",
                         }}
                       >
-                        {appraisal.overallRating}
+                        {appraisal.reportSections?.finalRating ||
+                          appraisal.overallRating}
                       </div>
                       <div
                         style={{
@@ -3988,8 +4170,41 @@ const DashboardPage = () => {
                       color: "#475569",
                     }}
                   >
-                    {appraisal.summary}
+                    {appraisal.reportSections?.overviewSummary ||
+                      appraisal.summary}
                   </p>
+
+                  {appraisal.reportSections && (
+                    <div className="appraisal-report-sections">
+                      {[
+                        ["Strengths", appraisal.reportSections.strengths],
+                        [
+                          "Areas for Improvement",
+                          appraisal.reportSections.areasForImprovement,
+                        ],
+                        [
+                          "Skills / Capability Insights",
+                          appraisal.reportSections.skillsCapabilityInsights,
+                        ],
+                        [
+                          "Recommendations",
+                          appraisal.reportSections.recommendations,
+                        ],
+                        ["Next Steps", appraisal.reportSections.nextSteps],
+                      ].map(([title, items]) => (
+                        <div key={title as string} className="appraisal-section">
+                          <h4>{title as string}</h4>
+                          <ul>
+                            {((items as string[] | undefined) || []).map(
+                              (item) => (
+                                <li key={item}>{item}</li>
+                              ),
+                            )}
+                          </ul>
+                        </div>
+                      ))}
+                    </div>
+                  )}
 
                   {appraisal.okrImpactSummary?.okrs &&
                     appraisal.okrImpactSummary.okrs.length > 0 && (
@@ -4068,12 +4283,14 @@ const DashboardPage = () => {
                       className="btn-secondary"
                       onClick={() =>
                         window.open(
-                          `${import.meta.env.VITE_API_URL || "http://localhost:3000"}/appraisals/${appraisal.id}/export?token=${localStorage.getItem("token")}`,
+                          appraisal.batchId
+                            ? `${import.meta.env.VITE_API_URL || "http://localhost:3000"}/orgs/${orgId}/appraisals/${appraisal.batchId}/${appraisal.batch?.outputFormat === "SEPARATE_PDFS" ? "export.zip" : "export"}?token=${localStorage.getItem("token")}`
+                            : `${import.meta.env.VITE_API_URL || "http://localhost:3000"}/appraisals/${appraisal.id}/export?token=${localStorage.getItem("token")}`,
                           "_blank",
                         )
                       }
                     >
-                      Export Report (CSV)
+                      {appraisal.batchId ? "Export Report" : "Export Report (CSV)"}
                     </button>
                     <button
                       className="btn-action danger"
@@ -6726,156 +6943,286 @@ const DashboardPage = () => {
           className="modal-overlay no-scroll"
           onClick={() => setShowCreateAppraisalModal(false)}
         >
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
+          <div
+            className="modal large appraisal-modal"
+            onClick={(e) => e.stopPropagation()}
+          >
             <h2>Generate Appraisal</h2>
             <form onSubmit={handleCreateAppraisal}>
               <div className="form-group">
-                <label>Team Member</label>
-                <select
-                  value={newAppraisal.subjectUserId}
-                  onChange={(e) =>
-                    setNewAppraisal({
-                      ...newAppraisal,
-                      subjectUserId: e.target.value,
-                    })
-                  }
-                  required
-                >
-                  <option value="">Select member</option>
-                  {(organization?.members || [])
-                    .filter((member) => member.role !== "ADMIN")
-                    .map((member) => (
-                      <option key={member.user.id} value={member.user.id}>
-                        {member.user.name || member.user.email}
-                      </option>
-                    ))}
-                </select>
+                <label>Appraisal Scope</label>
+                <div className="segmented-control">
+                  {[
+                    ["INDIVIDUALS", "Individuals"],
+                    ["TEAMS", "Teams"],
+                    ["ORGANIZATION", "Entire Organization"],
+                  ].map(([value, label]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      className={
+                        newAppraisal.scope === value ? "active" : undefined
+                      }
+                      onClick={() => {
+                        setNewAppraisal((prev) => ({
+                          ...prev,
+                          scope: value,
+                          subjectIds: [],
+                        }));
+                        setSelectedOkrIds([]);
+                        setAppraisalSelectionDirty(false);
+                      }}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
               </div>
-              <div
-                className="form-group"
-                style={{ display: "flex", gap: "16px" }}
-              >
-                <div style={{ flex: 1 }}>
+
+              {newAppraisal.scope !== "ORGANIZATION" && (
+                <div className="form-group">
+                  <div className="appraisal-field-header">
+                    <label>
+                      {newAppraisal.scope === "TEAMS"
+                        ? "Teams"
+                        : "Individuals"}
+                    </label>
+                    <button
+                      type="button"
+                      className="link-button"
+                      onClick={() => {
+                        const allIds = appraisalSubjects.map(
+                          (subject) => subject.id,
+                        );
+                        const allSelected =
+                          newAppraisal.subjectIds.length === allIds.length;
+                        setNewAppraisal((prev) => ({
+                          ...prev,
+                          subjectIds: allSelected ? [] : allIds,
+                        }));
+                        setSelectedOkrIds([]);
+                        setAppraisalSelectionDirty(false);
+                      }}
+                    >
+                      {newAppraisal.subjectIds.length ===
+                      appraisalSubjects.length
+                        ? "Clear All"
+                        : "Select All"}
+                    </button>
+                  </div>
+                  <div className="appraisal-picker">
+                    {appraisalSubjects.map((subject) => (
+                      <label key={subject.id} className="appraisal-check-row">
+                        <input
+                          type="checkbox"
+                          checked={newAppraisal.subjectIds.includes(
+                            subject.id,
+                          )}
+                          onChange={(e) => {
+                            const checked = e.target.checked;
+                            setNewAppraisal((prev) => ({
+                              ...prev,
+                              subjectIds: checked
+                                ? [...prev.subjectIds, subject.id]
+                                : prev.subjectIds.filter(
+                                    (id) => id !== subject.id,
+                                  ),
+                            }));
+                            setSelectedOkrIds([]);
+                            setAppraisalSelectionDirty(false);
+                          }}
+                        />
+                        <span>
+                          <strong>{subject.label}</strong>
+                          {subject.meta && <small>{subject.meta}</small>}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="form-group">
+                <label>Output Format</label>
+                <div className="segmented-control">
+                  {[
+                    ["SINGLE_PDF", "Single File"],
+                    ["SEPARATE_PDFS", "Separate Files"],
+                  ].map(([value, label]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      className={
+                        newAppraisal.outputFormat === value
+                          ? "active"
+                          : undefined
+                      }
+                      onClick={() =>
+                        setNewAppraisal((prev) => ({
+                          ...prev,
+                          outputFormat: value,
+                        }))
+                      }
+                      title="Single file combines all appraisals into one document. Separate files generate individual reports per selected entity."
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <p className="modal-helper-text">
+                  Single file combines all appraisals into one document.
+                  Separate files generate individual reports per selected
+                  entity.
+                </p>
+              </div>
+
+              <div className="form-row">
+                <div className="form-group">
                   <label>Start Date</label>
                   <input
                     type="date"
                     value={newAppraisal.periodStart}
-                    onChange={(e) =>
-                      setNewAppraisal({
-                        ...newAppraisal,
+                    onChange={(e) => {
+                      setNewAppraisal((prev) => ({
+                        ...prev,
                         periodStart: e.target.value,
-                      })
-                    }
+                      }));
+                      setSelectedOkrIds([]);
+                      setAppraisalSelectionDirty(false);
+                    }}
                     required
                   />
                 </div>
-                <div style={{ flex: 1 }}>
+                <div className="form-group">
                   <label>End Date</label>
                   <input
                     type="date"
                     value={newAppraisal.periodEnd}
-                    onChange={(e) =>
-                      setNewAppraisal({
-                        ...newAppraisal,
+                    onChange={(e) => {
+                      setNewAppraisal((prev) => ({
+                        ...prev,
                         periodEnd: e.target.value,
-                      })
-                    }
+                      }));
+                      setSelectedOkrIds([]);
+                      setAppraisalSelectionDirty(false);
+                    }}
                     required
                   />
                 </div>
               </div>
+
               <div className="form-group">
-                <label>Summary</label>
+                <label>Purpose of Appraisal</label>
+                <div className="appraisal-purpose-grid">
+                  {appraisalPurposeOptions.map((purpose) => (
+                    <label key={purpose} className="appraisal-check-row">
+                      <input
+                        type="checkbox"
+                        checked={newAppraisal.purposes.includes(purpose)}
+                        onChange={(e) => {
+                          const checked = e.target.checked;
+                          setNewAppraisal((prev) => ({
+                            ...prev,
+                            purposes: checked
+                              ? [...prev.purposes, purpose]
+                              : prev.purposes.filter((item) => item !== purpose),
+                          }));
+                        }}
+                      />
+                      <span>{purpose}</span>
+                    </label>
+                  ))}
+                </div>
+                {newAppraisal.purposes.includes("Other") && (
+                  <input
+                    type="text"
+                    value={newAppraisal.otherPurpose}
+                    onChange={(e) =>
+                      setNewAppraisal((prev) => ({
+                        ...prev,
+                        otherPurpose: e.target.value,
+                      }))
+                    }
+                    placeholder="Specify appraisal purpose"
+                  />
+                )}
+              </div>
+
+              <div className="form-group">
+                <label>Custom Focus</label>
                 <textarea
                   rows={3}
-                  value={newAppraisal.summary}
+                  value={newAppraisal.customFocus}
                   onChange={(e) =>
-                    setNewAppraisal({
-                      ...newAppraisal,
-                      summary: e.target.value,
-                    })
+                    setNewAppraisal((prev) => ({
+                      ...prev,
+                      customFocus: e.target.value,
+                    }))
                   }
-                  placeholder="Optional summary"
+                  placeholder="What would you like this appraisal to focus on?"
                 />
               </div>
+
               <div className="form-group">
-                <label>OKRs (Optional)</label>
-                <div
-                  style={{
-                    maxHeight: 150,
-                    overflowY: "auto",
-                    border: "1px solid var(--border-color)",
-                    borderRadius: 8,
-                    padding: 8,
-                  }}
-                >
-                  {okrs.length > 0 ? (
-                    [...okrs]
-                      .sort(
-                        (a, b) =>
-                          new Date(b.periodStart).getTime() -
-                          new Date(a.periodStart).getTime(),
-                      )
-                      .map((okr) => (
-                        <label
-                          key={okr.id}
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 8,
-                            padding: "6px 0",
-                            cursor: "pointer",
+                <div className="appraisal-field-header">
+                  <label>Relevant OKRs</label>
+                  {appraisalPreviewLoading && (
+                    <small className="modal-helper-text">Fetching OKRs...</small>
+                  )}
+                </div>
+                <div className="appraisal-picker okr-picker">
+                  {(appraisalPreview?.okrs || []).length > 0 ? (
+                    appraisalPreview?.okrs.map((okr) => (
+                      <label key={okr.id} className="appraisal-check-row">
+                        <input
+                          type="checkbox"
+                          checked={selectedOkrIds.includes(okr.id)}
+                          onChange={(e) => {
+                            const checked = e.target.checked;
+                            setAppraisalSelectionDirty(true);
+                            setSelectedOkrIds((prev) =>
+                              checked
+                                ? [...prev, okr.id]
+                                : prev.filter((id) => id !== okr.id),
+                            );
                           }}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={selectedOkrIds.includes(okr.id)}
-                            onChange={(e) => {
-                              const checked = e.target.checked;
-                              setSelectedOkrIds((prev) =>
-                                checked
-                                  ? [...prev, okr.id]
-                                  : prev.filter((id) => id !== okr.id),
-                              );
-                            }}
-                          />
-                          <span>
-                            {okr.title} (
+                        />
+                        <span>
+                          <strong>{okr.title}</strong>
+                          <small>
                             {new Date(okr.periodStart).toLocaleDateString()} -{" "}
-                            {new Date(okr.periodEnd).toLocaleDateString()})
-                          </span>
-                        </label>
-                      ))
+                            {new Date(okr.periodEnd).toLocaleDateString()} ·{" "}
+                            {okr.keyResultCount} KR
+                            {okr.keyResultCount === 1 ? "" : "s"}
+                          </small>
+                        </span>
+                      </label>
+                    ))
                   ) : (
-                    <p
-                      style={{
-                        fontSize: "0.85em",
-                        color: "var(--text-muted)",
-                        margin: "8px 0",
-                      }}
-                    >
-                      No OKRs available
+                    <p className="modal-helper-text">
+                      Select scope, subjects, and date range to fetch matching
+                      OKRs.
                     </p>
                   )}
                 </div>
-                {selectedOkrIds.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => setSelectedOkrIds([])}
-                    style={{
-                      marginTop: "8px",
-                      fontSize: "0.8em",
-                      color: "var(--text-muted)",
-                      background: "none",
-                      border: "none",
-                      cursor: "pointer",
-                      textDecoration: "underline",
-                    }}
-                  >
-                    Clear OKR Selection
-                  </button>
-                )}
               </div>
+
+              <div className="form-group">
+                <label>Auto Summary</label>
+                <div className="appraisal-summary-preview">
+                  {appraisalPreview?.setupSummary ||
+                    "The setup summary will appear once scope, subjects, and date range are selected."}
+                </div>
+              </div>
+
+              {appraisalPreview?.subjects &&
+                appraisalPreview.subjects.length > 0 && (
+                  <div className="modal-helper-text">
+                    {appraisalPreview.subjects.length} appraisal subject
+                    {appraisalPreview.subjects.length === 1 ? "" : "s"} ready
+                    for generation.
+                  </div>
+                )}
               <div className="modal-actions">
                 <button
                   type="button"
@@ -6884,8 +7231,14 @@ const DashboardPage = () => {
                 >
                   Cancel
                 </button>
-                <button type="submit" className="btn-primary">
-                  Generate
+                <button
+                  type="submit"
+                  className="btn-primary"
+                  disabled={generatingAppraisal}
+                >
+                  {generatingAppraisal
+                    ? "Generating..."
+                    : "Confirm & Generate Appraisal"}
                 </button>
               </div>
             </form>
