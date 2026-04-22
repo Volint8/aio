@@ -2169,19 +2169,33 @@ export const listOkrs = async (req: Request, res: Response) => {
 
     // Enrich assignments with team data
     const okrsWithOwnerUsers = await enrichOkrOwnerUsers(okrs);
-    const enrichedOkrs = await Promise.all(okrsWithOwnerUsers.map(async (okr) => {
-      const enrichedAssignments = await Promise.all(okr.assignments.map(async (assignment) => {
+
+    // Avoid N+1 queries by preloading all team names for TEAM assignments in one query.
+    const teamTargetIds = Array.from(new Set(
+      okrsWithOwnerUsers.flatMap((okr) =>
+        (okr.assignments || [])
+          .filter((assignment) => assignment.targetType === 'TEAM' && assignment.targetId)
+          .map((assignment) => assignment.targetId)
+      )
+    ));
+
+    const teams = teamTargetIds.length > 0
+      ? await prisma.team.findMany({
+        where: { id: { in: teamTargetIds } },
+        select: { id: true, name: true }
+      })
+      : [];
+    const teamsById = new Map(teams.map((team) => [team.id, team]));
+
+    const enrichedOkrs = okrsWithOwnerUsers.map((okr) => {
+      const enrichedAssignments = (okr.assignments || []).map((assignment) => {
         if (assignment.targetType === 'TEAM') {
-          const team = await prisma.team.findUnique({
-            where: { id: assignment.targetId },
-            select: { id: true, name: true }
-          });
-          return { ...assignment, team };
+          return { ...assignment, team: teamsById.get(assignment.targetId) || null };
         }
         return assignment;
-      }));
+      });
       return { ...okr, assignments: enrichedAssignments };
-    }));
+    });
 
     return res.json(enrichedOkrs);
   } catch (error) {
