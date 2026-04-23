@@ -592,6 +592,7 @@ type TaskFilter =
   | "pending"
   | "ongoing"
   | "completed"
+  | "pending_approval"
   | "overdue"
   | "created"
   | "in_progress"
@@ -792,6 +793,12 @@ const DashboardPage = () => {
   };
 
   const [showEditTaskModal, setShowEditTaskModal] = useState(false);
+  const [taskReviewDialog, setTaskReviewDialog] = useState<{
+    taskId: string;
+    taskTitle: string;
+    action: "REJECT";
+  } | null>(null);
+  const [taskReviewNotes, setTaskReviewNotes] = useState("");
   const [showCreateClientModal, setShowCreateClientModal] = useState(false);
   const [editingClient, setEditingClient] = useState<ClientRecord | null>(null);
   const [showEditOkrModal, setShowEditOkrModal] = useState(false);
@@ -1057,6 +1064,32 @@ const DashboardPage = () => {
   const editTaskLinkableOkrs = editTask.assigneeId
     ? linkableOkrsByUserId[editTask.assigneeId] || []
     : [];
+
+  const findTaskOkrDateViolation = (
+    dueDate: string,
+    selectedKeyResultIds: string[],
+    linkableOkrs: Okr[],
+  ) => {
+    if (!dueDate || selectedKeyResultIds.length === 0) return null;
+
+    for (const okr of linkableOkrs) {
+      const selectedInOkr = (okr.keyResults || []).some((kr) =>
+        selectedKeyResultIds.includes(kr.id),
+      );
+      if (!selectedInOkr) continue;
+
+      const periodStart = okr.periodStart?.slice(0, 10);
+      const periodEnd = okr.periodEnd?.slice(0, 10);
+      const isBeforePeriod = periodStart ? dueDate < periodStart : false;
+      const isAfterPeriod = periodEnd ? dueDate > periodEnd : false;
+
+      if (isBeforePeriod || isAfterPeriod) {
+        return `Task due date must be within "${okr.title}" (${periodStart || "unknown"} to ${periodEnd || "unknown"}).`;
+      }
+    }
+
+    return null;
+  };
 
   const toggleTaskKeyResult = (selectedIds: string[], keyResultId: string) =>
     selectedIds.includes(keyResultId)
@@ -1695,6 +1728,11 @@ const DashboardPage = () => {
         filteredTasks = filteredTasks.filter(
           (t: Task) => t.status !== "COMPLETED" && isDueDateOverdue(t.dueDate),
         );
+      } else if (filter === "pending_approval") {
+        filteredTasks = filteredTasks.filter(
+          (t: Task) =>
+            t.status === "COMPLETED" && t.approvalStatus === "PENDING",
+        );
       } else if (filter !== "all" && filter !== "recently_deleted") {
         const statusMap: Record<string, string> = {
           pending: "CREATED",
@@ -1788,6 +1826,15 @@ const DashboardPage = () => {
         );
         return;
       }
+      const okrDateViolation = findTaskOkrDateViolation(
+        newTask.dueDate,
+        newTask.keyResultIds,
+        newTaskLinkableOkrs,
+      );
+      if (okrDateViolation) {
+        showError("Validation Error", okrDateViolation);
+        return;
+      }
 
       setCreatingTask(true);
       const createResponse = await api.post("/tasks", {
@@ -1868,6 +1915,15 @@ const DashboardPage = () => {
         "Validation Error",
         "Supporter cannot be the same as primary assignee",
       );
+      return;
+    }
+    const okrDateViolation = findTaskOkrDateViolation(
+      editTask.dueDate,
+      editTask.keyResultIds,
+      editTaskLinkableOkrs,
+    );
+    if (okrDateViolation) {
+      showError("Validation Error", okrDateViolation);
       return;
     }
     try {
@@ -2130,6 +2186,9 @@ const DashboardPage = () => {
 
     try {
       await api.delete(`/orgs/${orgId}/appraisals/${appraisalId}`);
+      setAppraisals((prev) =>
+        prev.filter((appraisal) => appraisal.id !== appraisalId),
+      );
       await fetchData();
     } catch (error: any) {
       showError(
@@ -2951,11 +3010,26 @@ const DashboardPage = () => {
     action: "APPROVE" | "REJECT",
     notes?: string,
   ) => {
+    if (action === "REJECT" && notes === undefined) {
+      const task =
+        tasks.find((item) => item.id === taskId) ||
+        allTasks.find((item) => item.id === taskId);
+      setTaskReviewDialog({
+        taskId,
+        taskTitle: task?.title || "this task",
+        action: "REJECT",
+      });
+      setTaskReviewNotes("");
+      return;
+    }
+
     try {
       await api.put(`/tasks/${taskId}`, {
         approvalAction: action,
         approvalNotes: notes || null,
       });
+      setTaskReviewDialog(null);
+      setTaskReviewNotes("");
       await fetchData();
     } catch {
       showError("Error", "Failed to perform approval action");
@@ -3106,7 +3180,7 @@ const DashboardPage = () => {
         {currentSection === "task-tracker" && (
           <TaskTrackerView
             tasks={
-              isTeamLead
+              isTeamLead && filter !== "pending_approval"
                 ? tasks.filter((t) => t.assignee?.id === user?.id)
                 : tasks
             }
@@ -3119,13 +3193,15 @@ const DashboardPage = () => {
                     ? "created"
                     : f === "ongoing"
                       ? "in_progress"
-                      : f === "completed"
-                        ? "completed"
-                        : f === "overdue"
-                          ? "overdue"
-                          : f === "supporting"
-                            ? "supporting"
-                            : "my",
+                        : f === "completed"
+                          ? "completed"
+                          : f === "pending_approval"
+                            ? "pending_approval"
+                            : f === "overdue"
+                              ? "overdue"
+                              : f === "supporting"
+                                ? "supporting"
+                                : "my",
               )
             }
             onTaskClick={(task) => setSelectedTaskId(task.id)}
@@ -3200,13 +3276,15 @@ const DashboardPage = () => {
                     ? "created"
                     : f === "ongoing"
                       ? "in_progress"
-                      : f === "completed"
-                        ? "completed"
-                        : f === "overdue"
-                          ? "overdue"
-                          : f === "supporting"
-                            ? "supporting"
-                            : "my",
+                        : f === "completed"
+                          ? "completed"
+                          : f === "pending_approval"
+                            ? "pending_approval"
+                            : f === "overdue"
+                              ? "overdue"
+                              : f === "supporting"
+                                ? "supporting"
+                                : "my",
               )
             }
             onTaskClick={(task) => setSelectedTaskId(task.id)}
@@ -4519,6 +4597,15 @@ const DashboardPage = () => {
                   >
                     Completed
                   </button>
+                  {canReviewTasks && (
+                    <button
+                      type="button"
+                      className={`btn-filter ${filter === "pending_approval" ? "active" : ""}`}
+                      onClick={() => handleFilterClick("pending_approval")}
+                    >
+                      Pending Approval
+                    </button>
+                  )}
                   <button
                     type="button"
                     className={`btn-filter overdue ${filter === "overdue" ? "active" : ""}`}
@@ -5217,17 +5304,12 @@ const DashboardPage = () => {
                                   <button
                                     type="button"
                                     className="btn-action danger"
-                                    onClick={() => {
-                                      const notes =
-                                        window.prompt(
-                                          "Rejection notes (optional)",
-                                        ) || undefined;
-                                      void handleApprovalAction(
+                                    onClick={() =>
+                                      handleApprovalAction(
                                         selectedTask.id,
                                         "REJECT",
-                                        notes,
-                                      );
-                                    }}
+                                      )
+                                    }
                                   >
                                     Reject
                                   </button>
@@ -5827,6 +5909,10 @@ const DashboardPage = () => {
                             <div className="task-kr-group-title">
                               {okr.title}
                             </div>
+                            <div className="helper-text">
+                              {okr.periodStart?.slice(0, 10)} to{" "}
+                              {okr.periodEnd?.slice(0, 10)}
+                            </div>
                             <div className="task-kr-options">
                               {(okr.keyResults || []).map((kr) => {
                                 const selected = newTask.keyResultIds.includes(
@@ -6041,6 +6127,10 @@ const DashboardPage = () => {
                               }}
                             >
                               {okr.title}
+                            </div>
+                            <div className="helper-text">
+                              {okr.periodStart?.slice(0, 10)} to{" "}
+                              {okr.periodEnd?.slice(0, 10)}
                             </div>
                             <div
                               style={{
@@ -7552,6 +7642,62 @@ const DashboardPage = () => {
               </button>
               <button className="btn-logout" onClick={confirmTaskDelete}>
                 Move
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {taskReviewDialog && (
+        <div
+          className="modal-overlay"
+          onClick={() => {
+            setTaskReviewDialog(null);
+            setTaskReviewNotes("");
+          }}
+        >
+          <div
+            className="modal task-review-dialog"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2>Reject Task?</h2>
+            <p className="review-dialog-copy">
+              Add a short note for <strong>{taskReviewDialog.taskTitle}</strong>{" "}
+              so the assignee knows what to fix.
+            </p>
+            <div className="form-group">
+              <label>Rejection Notes</label>
+              <textarea
+                value={taskReviewNotes}
+                onChange={(e) => setTaskReviewNotes(e.target.value)}
+                rows={4}
+                placeholder="Explain what needs to change before approval."
+                autoFocus
+              />
+            </div>
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => {
+                  setTaskReviewDialog(null);
+                  setTaskReviewNotes("");
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn-action danger"
+                onClick={() =>
+                  handleApprovalAction(
+                    taskReviewDialog.taskId,
+                    taskReviewDialog.action,
+                    taskReviewNotes.trim(),
+                  )
+                }
+              >
+                Reject Task
               </button>
             </div>
           </div>

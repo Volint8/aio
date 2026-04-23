@@ -4,6 +4,34 @@ import { sendEmail } from '../services/email.service';
 
 const prisma = new PrismaClient();
 
+const getNotificationAudienceWhere = (params: {
+  organizationId: string;
+  userId: string;
+  teamId?: string | null;
+}) => ({
+  organizationId: params.organizationId,
+  dismissedBy: { not: { array_contains: [params.userId] } },
+  OR: [
+    { targetType: 'INDIVIDUAL', targetId: params.userId },
+    ...(params.teamId ? [{ targetType: 'TEAM', targetId: params.teamId }] : [])
+  ]
+});
+
+const asDismissedByList = (value: unknown) => Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+
+const dismissNotificationsForUser = async (notifications: Array<{ id: string; dismissedBy: unknown }>, userId: string) => {
+  await prisma.$transaction(
+    notifications.map((notification) => {
+      const dismissedBy = asDismissedByList(notification.dismissedBy);
+      const nextDismissedBy = dismissedBy.includes(userId) ? dismissedBy : [...dismissedBy, userId];
+      return prisma.notification.update({
+        where: { id: notification.id },
+        data: { dismissedBy: nextDismissedBy }
+      });
+    })
+  );
+};
+
 export const sendAlert = async (req: Request, res: Response) => {
   try {
     const senderId = (req as any).user.userId;
@@ -202,13 +230,11 @@ export const getNotifications = async (req: Request, res: Response) => {
     });
 
     const notifications = await prisma.notification.findMany({
-      where: {
+      where: getNotificationAudienceWhere({
         organizationId: organizationId as string,
-        OR: [
-          { targetType: 'INDIVIDUAL', targetId: userId },
-          ...(membership?.teamId ? [{ targetType: 'TEAM', targetId: membership.teamId }] : [])
-        ]
-      },
+        userId,
+        teamId: membership?.teamId
+      }),
       include: {
         sender: { select: { name: true, email: true } }
       },
@@ -225,13 +251,105 @@ export const getNotifications = async (req: Request, res: Response) => {
 
 export const markAsRead = async (req: Request, res: Response) => {
   try {
+    const userId = (req as any).user.userId;
     const { notificationId } = req.params;
-    await prisma.notification.update({
-      where: { id: Array.isArray(notificationId) ? notificationId[0] : notificationId },
-      data: { isRead: true }
+    const id = Array.isArray(notificationId) ? notificationId[0] : notificationId;
+
+    const notification = await prisma.notification.findUnique({
+      where: { id },
+      select: { organizationId: true }
     });
+    if (!notification) {
+      return res.status(404).json({ error: 'Notification not found' });
+    }
+
+    const membership = await prisma.organizationMember.findUnique({
+      where: { userId_organizationId: { userId, organizationId: notification.organizationId } }
+    });
+    const visible = await prisma.notification.findFirst({
+      where: {
+        id,
+        ...getNotificationAudienceWhere({
+          organizationId: notification.organizationId,
+          userId,
+          teamId: membership?.teamId
+        })
+      }
+    });
+
+    if (!visible) {
+      return res.status(404).json({ error: 'Notification not found' });
+    }
+
+    await prisma.notification.update({ where: { id }, data: { isRead: true } });
     return res.json({ success: true });
   } catch (error) {
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+export const markAllAsRead = async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user.userId;
+    const { organizationId } = req.body;
+
+    if (!organizationId) {
+      return res.status(400).json({ error: 'Organization ID is required' });
+    }
+
+    const membership = await prisma.organizationMember.findUnique({
+      where: { userId_organizationId: { userId, organizationId } }
+    });
+
+    if (!membership) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const result = await prisma.notification.updateMany({
+      where: {
+        ...getNotificationAudienceWhere({ organizationId, userId, teamId: membership.teamId }),
+        isRead: false
+      },
+      data: { isRead: true }
+    });
+
+    return res.json({ success: true, count: result.count });
+  } catch (error) {
+    console.error('Mark all notifications as read error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+export const clearReadNotifications = async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user.userId;
+    const { organizationId } = req.query;
+
+    if (!organizationId || typeof organizationId !== 'string') {
+      return res.status(400).json({ error: 'Organization ID is required' });
+    }
+
+    const membership = await prisma.organizationMember.findUnique({
+      where: { userId_organizationId: { userId, organizationId } }
+    });
+
+    if (!membership) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const notifications = await prisma.notification.findMany({
+      where: {
+        ...getNotificationAudienceWhere({ organizationId, userId, teamId: membership.teamId }),
+        isRead: true
+      },
+      select: { id: true, dismissedBy: true }
+    });
+
+    await dismissNotificationsForUser(notifications, userId);
+
+    return res.json({ success: true, count: notifications.length });
+  } catch (error) {
+    console.error('Clear read notifications error:', error);
     return res.status(500).json({ error: 'Internal server error' });
   }
 };

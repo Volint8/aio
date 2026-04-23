@@ -80,6 +80,12 @@ type ReportSections = {
 
 const toDateOnly = (date: Date) => date.toISOString().slice(0, 10);
 
+const startOfToday = () => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return today;
+};
+
 const parseDateRange = (periodStart?: string, periodEnd?: string) => {
   if (!periodStart || !periodEnd) {
     throw new Error('periodStart and periodEnd are required');
@@ -329,11 +335,11 @@ const buildOkrImpact = async (params: {
     createdAt: { gte: from, lte: to }
   };
 
-  const now = new Date();
+  const overdueCutoff = startOfToday();
   const [allTasks, completedTasks, overdueTasks, generalTaskCount, completedGeneralTaskCount] = await Promise.all([
     prisma.task.count({ where: taskWhere }),
     prisma.task.count({ where: { ...taskWhere, status: 'COMPLETED' } }),
-    prisma.task.count({ where: { ...taskWhere, status: { not: 'COMPLETED' }, dueDate: { lt: now } } }),
+    prisma.task.count({ where: { ...taskWhere, status: { not: 'COMPLETED' }, dueDate: { lt: overdueCutoff } } }),
     prisma.task.count({ where: { ...taskWhere, krImpacts: { none: {} } } }),
     prisma.task.count({ where: { ...taskWhere, status: 'COMPLETED', krImpacts: { none: {} } } })
   ]);

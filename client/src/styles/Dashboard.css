@@ -1146,6 +1146,17 @@
     max-width: 720px;
 }
 
+.task-review-dialog {
+    width: min(100%, 520px);
+    border-radius: 16px;
+}
+
+.review-dialog-copy {
+    color: var(--text-muted);
+    line-height: 1.6;
+    margin: 8px 0 24px;
+}
+
 /* Disable internal scrollbar for specific modals that should not scroll */
 .modal.no-scroll {
     /* Allow scrolling but hide scrollbar visually */

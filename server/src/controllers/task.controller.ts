@@ -11,6 +11,49 @@ const resolveTaskView = (view: unknown): TaskView => {
     return view === 'deleted' ? 'deleted' : 'active';
 };
 
+const toDateKey = (value: Date | string | null | undefined) => {
+    if (!value) return null;
+    const date = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(date.getTime())) return null;
+    return date.toISOString().slice(0, 10);
+};
+
+const startOfToday = () => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return today;
+};
+
+const findTaskOkrDateViolation = (
+    dueDate: Date | string | null | undefined,
+    keyResults: Array<{
+        title?: string | null;
+        okr: {
+            title?: string | null;
+            periodStart?: Date | string | null;
+            periodEnd?: Date | string | null;
+        };
+    }>
+) => {
+    const dueDateKey = toDateKey(dueDate);
+    if (!dueDateKey) return null;
+
+    for (const keyResult of keyResults) {
+        const periodStartKey = toDateKey(keyResult.okr.periodStart);
+        const periodEndKey = toDateKey(keyResult.okr.periodEnd);
+        const isBeforePeriod = periodStartKey ? dueDateKey < periodStartKey : false;
+        const isAfterPeriod = periodEndKey ? dueDateKey > periodEndKey : false;
+
+        if (isBeforePeriod || isAfterPeriod) {
+            const okrTitle = keyResult.okr.title || 'selected OKR';
+            const periodLabel = `${periodStartKey || 'unknown'} to ${periodEndKey || 'unknown'}`;
+            return `Task due date (${dueDateKey}) must fall within the selected OKR period for "${okrTitle}" (${periodLabel}).`;
+        }
+    }
+
+    return null;
+};
+
 const notifyTaskAssignment = async (params: {
     assigneeId: string;
     assignerId: string;
@@ -104,19 +147,25 @@ const notifyTaskPendingApproval = async (params: {
         const targetIds = Array.from(new Set(reviewers.map((reviewer) => reviewer.userId)))
             .filter((targetId) => targetId !== actorUserId);
 
-        if (targetIds.length === 0) {
-            return;
-        }
-
         await prisma.notification.createMany({
-            data: targetIds.map((targetId) => ({
-                organizationId,
-                senderId: actorUserId,
-                targetType: 'INDIVIDUAL',
-                targetId,
-                type: 'PRIORITY_ALERT',
-                message: `Task pending approval: ${taskTitle}`
-            }))
+            data: [
+                {
+                    organizationId,
+                    senderId: actorUserId,
+                    targetType: 'INDIVIDUAL',
+                    targetId: actorUserId,
+                    type: 'PRIORITY_ALERT',
+                    message: `Task submitted and awaiting approval: ${taskTitle}`
+                },
+                ...targetIds.map((targetId) => ({
+                    organizationId,
+                    senderId: actorUserId,
+                    targetType: 'INDIVIDUAL',
+                    targetId,
+                    type: 'PRIORITY_ALERT',
+                    message: `Task pending approval: ${taskTitle}`
+                }))
+            ]
         });
     } catch (error) {
         console.error('Task approval notification failed:', error);
@@ -436,6 +485,34 @@ export const createTask = async (req: Request, res: Response) => {
             return res.status(403).json({ error: 'Access denied' });
         }
 
+        const taskDueDate = dueDate ? new Date(dueDate) : null;
+        const linkedKeyResult = keyResultId
+            ? await prisma.okrKeyResult.findUnique({
+                where: { id: keyResultId },
+                include: {
+                    okr: {
+                        select: {
+                            organizationId: true,
+                            title: true,
+                            periodStart: true,
+                            periodEnd: true
+                        }
+                    }
+                }
+            })
+            : null;
+
+        if (keyResultId && (!linkedKeyResult || linkedKeyResult.okr.organizationId !== organizationId)) {
+            return res.status(400).json({ error: 'Selected key result is invalid for this organization' });
+        }
+
+        const dateViolation = linkedKeyResult
+            ? findTaskOkrDateViolation(taskDueDate, [linkedKeyResult])
+            : null;
+        if (dateViolation) {
+            return res.status(400).json({ error: dateViolation });
+        }
+
         const { teamIds } = await resolveTaskTeamContext({
             organizationId,
             assigneeId: normalizedAssigneeId,
@@ -459,7 +536,7 @@ export const createTask = async (req: Request, res: Response) => {
                     createdByUserId: userId,
                     assigneeId: normalizedAssigneeId,
                     supporterId: normalizedSupporterId,
-                    dueDate: dueDate ? new Date(dueDate) : null,
+                    dueDate: taskDueDate,
                     priority: priority || 'LOW',
                     status: 'CREATED'
                 }
@@ -471,19 +548,14 @@ export const createTask = async (req: Request, res: Response) => {
                 });
             }
 
-            if (keyResultId) {
-                const keyResult = await tx.okrKeyResult.findUnique({
-                    where: { id: keyResultId }
+            if (linkedKeyResult) {
+                await tx.taskKrImpact.create({
+                    data: {
+                        taskId: created.id,
+                        okrKeyResultId: linkedKeyResult.id,
+                        actualValue: 0
+                    }
                 });
-                if (keyResult && keyResult.okrId) {
-                    await tx.taskKrImpact.create({
-                        data: {
-                            taskId: created.id,
-                            okrKeyResultId: keyResultId,
-                            actualValue: 0
-                        }
-                    });
-                }
             }
 
             return tx.task.findUnique({
@@ -726,6 +798,30 @@ export const updateTask = async (req: Request, res: Response) => {
         const nextSupporterId = hasSupporterUpdate ? normalizedSupporterId : task.supporterId;
         const shouldRecalculateTeams = hasAssigneeUpdate || hasSupporterUpdate;
         let teamIds: string[] | null = null;
+
+        if (dueDate !== undefined) {
+            const existingLinkedKeyResults = await prisma.okrKeyResult.findMany({
+                where: {
+                    impacts: { some: { taskId: id } }
+                },
+                include: {
+                    okr: {
+                        select: {
+                            title: true,
+                            periodStart: true,
+                            periodEnd: true
+                        }
+                    }
+                }
+            });
+            const dateViolation = findTaskOkrDateViolation(
+                dueDate ? new Date(dueDate) : null,
+                existingLinkedKeyResults
+            );
+            if (dateViolation) {
+                return res.status(400).json({ error: dateViolation });
+            }
+        }
 
         if (shouldRecalculateTeams) {
             if (!nextAssigneeId) {
@@ -1232,7 +1328,7 @@ export const getStats = async (req: Request, res: Response) => {
             };
         }
 
-        const now = new Date();
+        const overdueCutoff = startOfToday();
         const [pending, ongoing, completed, overdue, myTasks] = await Promise.all([
             prisma.task.count({ where: { ...where, status: 'CREATED' } }),
             prisma.task.count({ where: { ...where, status: 'IN_PROGRESS' } }),
@@ -1241,7 +1337,7 @@ export const getStats = async (req: Request, res: Response) => {
                 where: {
                     ...where,
                     status: { not: 'COMPLETED' },
-                    dueDate: { lt: now }
+                    dueDate: { lt: overdueCutoff }
                 }
             }),
             prisma.task.count({ where: { ...where, assigneeId: userId } })
@@ -1422,7 +1518,7 @@ export const getMemberStats = async (req: Request, res: Response) => {
         });
 
         const memberStats = await Promise.all(members.map(async (m) => {
-            const now = new Date();
+            const overdueCutoff = startOfToday();
             const [pending, ongoing, completed, overdue, okrLinkedTasks] = await Promise.all([
                 prisma.task.count({ where: { organizationId: organizationId as string, assigneeId: m.userId, status: 'CREATED', deletedAt: null } }),
                 prisma.task.count({ where: { organizationId: organizationId as string, assigneeId: m.userId, status: 'IN_PROGRESS', deletedAt: null } }),
@@ -1433,7 +1529,7 @@ export const getMemberStats = async (req: Request, res: Response) => {
                         assigneeId: m.userId,
                         deletedAt: null,
                         status: { not: 'COMPLETED' },
-                        dueDate: { lt: now }
+                        dueDate: { lt: overdueCutoff }
                     }
                 }),
                 prisma.taskKrImpact.count({
@@ -2037,11 +2133,25 @@ export const upsertTaskKrImpacts = async (req: Request, res: Response) => {
         const keyResults = krIds.length > 0
             ? await prisma.okrKeyResult.findMany({
                 where: { id: { in: krIds } },
-                include: { okr: { select: { organizationId: true } } }
+                include: {
+                    okr: {
+                        select: {
+                            organizationId: true,
+                            title: true,
+                            periodStart: true,
+                            periodEnd: true
+                        }
+                    }
+                }
             })
             : [];
         if (keyResults.length !== krIds.length || keyResults.some((kr) => kr.okr.organizationId !== task.organizationId)) {
             return res.status(400).json({ error: 'One or more key results are invalid for this task organization' });
+        }
+
+        const dateViolation = findTaskOkrDateViolation(task.dueDate, keyResults);
+        if (dateViolation) {
+            return res.status(400).json({ error: dateViolation });
         }
 
         const result = await prisma.$transaction(async (tx) => {

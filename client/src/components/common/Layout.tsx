@@ -33,6 +33,12 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [notificationCount, setNotificationCount] = useState(0);
+  const [notificationActionBusy, setNotificationActionBusy] = useState(false);
+
+  const syncNotificationState = (nextNotifications: Notification[]) => {
+    setNotifications(nextNotifications);
+    setNotificationCount(nextNotifications.filter((n) => !n.isRead).length);
+  };
 
   useEffect(() => {
     const orgId = localStorage.getItem("selectedOrgId");
@@ -65,10 +71,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         const res = await api.get("/notifications/", {
           params: { organizationId: orgId },
         });
-        setNotifications(res.data);
-        setNotificationCount(
-          res.data.filter((n: Notification) => !n.isRead).length,
-        );
+        syncNotificationState(res.data);
       } catch (error) {
         console.error("Failed to fetch notifications:", error);
       }
@@ -218,15 +221,55 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       ? teamLeadNavItems
       : memberNavItems;
 
+  const unreadNotifications = notifications.filter((n) => !n.isRead);
+  const readNotifications = notifications.filter((n) => n.isRead);
+
   const handleMarkAsRead = async (notificationId: string) => {
     try {
       await api.patch(`/notifications/${notificationId}/read`);
-      setNotifications((prev) =>
-        prev.map((n) => (n.id === notificationId ? { ...n, isRead: true } : n)),
+      syncNotificationState(
+        notifications.map((n) =>
+          n.id === notificationId ? { ...n, isRead: true } : n,
+        ),
       );
-      setNotificationCount((prev) => Math.max(0, prev - 1));
     } catch (error) {
       console.error("Failed to mark notification as read:", error);
+    }
+  };
+
+  const handleMarkAllNotificationsRead = async () => {
+    const orgId = localStorage.getItem("selectedOrgId");
+    if (!orgId || unreadNotifications.length === 0 || notificationActionBusy) {
+      return;
+    }
+
+    setNotificationActionBusy(true);
+    try {
+      await api.patch("/notifications/read-all", { organizationId: orgId });
+      syncNotificationState(notifications.map((n) => ({ ...n, isRead: true })));
+    } catch (error) {
+      console.error("Failed to mark notifications as read:", error);
+    } finally {
+      setNotificationActionBusy(false);
+    }
+  };
+
+  const handleClearReadNotifications = async () => {
+    const orgId = localStorage.getItem("selectedOrgId");
+    if (!orgId || readNotifications.length === 0 || notificationActionBusy) {
+      return;
+    }
+
+    setNotificationActionBusy(true);
+    try {
+      await api.delete("/notifications/read", {
+        params: { organizationId: orgId },
+      });
+      syncNotificationState(notifications.filter((n) => !n.isRead));
+    } catch (error) {
+      console.error("Failed to clear notifications:", error);
+    } finally {
+      setNotificationActionBusy(false);
     }
   };
 
@@ -480,23 +523,104 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                       display: "flex",
                       justifyContent: "space-between",
                       alignItems: "center",
+                      gap: 12,
                     }}
                   >
-                    <h3 style={{ margin: 0, fontSize: "1em", fontWeight: 600 }}>
-                      Notifications
-                    </h3>
-                    <button
-                      onClick={handleDismissNotifications}
+                    <div>
+                      <h3
+                        style={{ margin: 0, fontSize: "1em", fontWeight: 600 }}
+                      >
+                        Notifications
+                      </h3>
+                      {notifications.length > 0 && (
+                        <span
+                          style={{
+                            display: "block",
+                            marginTop: 4,
+                            fontSize: "0.75em",
+                            color: "#64748b",
+                          }}
+                        >
+                          {notificationCount} unread · {notifications.length}{" "}
+                          total
+                        </span>
+                      )}
+                    </div>
+                    <div
                       style={{
-                        background: "none",
-                        border: "none",
-                        cursor: "pointer",
-                        fontSize: "1.2em",
-                        color: "#64748b",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
                       }}
                     >
-                      ✕
-                    </button>
+                      {notifications.length > 0 && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={handleMarkAllNotificationsRead}
+                            disabled={
+                              notificationActionBusy ||
+                              unreadNotifications.length === 0
+                            }
+                            style={{
+                              background: "transparent",
+                              border: "none",
+                              cursor:
+                                notificationActionBusy ||
+                                unreadNotifications.length === 0
+                                  ? "not-allowed"
+                                  : "pointer",
+                              fontSize: "0.75em",
+                              fontWeight: 700,
+                              color:
+                                unreadNotifications.length === 0
+                                  ? "#94a3b8"
+                                  : "#2563eb",
+                            }}
+                          >
+                            Mark all read
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleClearReadNotifications}
+                            disabled={
+                              notificationActionBusy ||
+                              readNotifications.length === 0
+                            }
+                            style={{
+                              background: "transparent",
+                              border: "none",
+                              cursor:
+                                notificationActionBusy ||
+                                readNotifications.length === 0
+                                  ? "not-allowed"
+                                  : "pointer",
+                              fontSize: "0.75em",
+                              fontWeight: 700,
+                              color:
+                                readNotifications.length === 0
+                                  ? "#94a3b8"
+                                  : "#dc2626",
+                            }}
+                          >
+                            Clear read
+                          </button>
+                        </>
+                      )}
+                      <button
+                        onClick={handleDismissNotifications}
+                        aria-label="Close notifications"
+                        style={{
+                          background: "none",
+                          border: "none",
+                          cursor: "pointer",
+                          fontSize: "1.2em",
+                          color: "#64748b",
+                        }}
+                      >
+                        ✕
+                      </button>
+                    </div>
                   </div>
                   <div
                     style={{

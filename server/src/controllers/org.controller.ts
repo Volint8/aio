@@ -14,6 +14,12 @@ import * as XLSX from 'xlsx';
 
 const prisma = new PrismaClient();
 
+const startOfToday = () => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return today;
+};
+
 const getMembership = async (userId: string, organizationId: string) => {
   return prisma.organizationMember.findUnique({
     where: {
@@ -1338,6 +1344,7 @@ export const getTeams = async (req: Request, res: Response) => {
 
     const teamData = await Promise.all(teams.map(async (team) => {
       const now = new Date();
+      const overdueCutoff = startOfToday();
       const [pending, ongoing, completed, overdue] = await Promise.all([
         prisma.task.count({ where: { deletedAt: null, status: 'CREATED', taskTeams: { some: { teamId: team.id } } } }),
         prisma.task.count({ where: { deletedAt: null, status: 'IN_PROGRESS', taskTeams: { some: { teamId: team.id } } } }),
@@ -1347,7 +1354,7 @@ export const getTeams = async (req: Request, res: Response) => {
             deletedAt: null,
             status: { not: 'COMPLETED' },
             taskTeams: { some: { teamId: team.id } },
-            dueDate: { lt: now }
+            dueDate: { lt: overdueCutoff }
           }
         })
       ]);
@@ -1376,6 +1383,7 @@ export const getTeams = async (req: Request, res: Response) => {
       }
 
       const members = await Promise.all(team.members.map(async (member) => {
+        const overdueCutoff = startOfToday();
         const [mPending, mOngoing, mCompleted, mOverdue, mOkrTasks] = await Promise.all([
           prisma.task.count({ where: { deletedAt: null, assigneeId: member.userId, status: 'CREATED' } }),
           prisma.task.count({ where: { deletedAt: null, assigneeId: member.userId, status: 'IN_PROGRESS' } }),
@@ -1385,7 +1393,7 @@ export const getTeams = async (req: Request, res: Response) => {
               deletedAt: null,
               assigneeId: member.userId,
               status: { not: 'COMPLETED' },
-              dueDate: { lt: now }
+              dueDate: { lt: overdueCutoff }
             }
           }),
           // Count tasks associated with OKRs by TaskKrImpact for this user
@@ -2690,7 +2698,7 @@ export const generateAppraisal = async (req: Request, res: Response) => {
     }
 
     // Task performance calculations
-    const now = new Date();
+    const overdueCutoff = startOfToday();
     const [allTasks, completedTasks, overdueTasks] = await Promise.all([
       prisma.task.count({ where: taskWhere }),
       prisma.task.count({ where: { ...taskWhere, status: 'COMPLETED' } }),
@@ -2698,7 +2706,7 @@ export const generateAppraisal = async (req: Request, res: Response) => {
         where: {
           ...taskWhere,
           status: { not: 'COMPLETED' },
-          dueDate: { lt: now }
+          dueDate: { lt: overdueCutoff }
         }
       })
     ]);
@@ -3202,16 +3210,55 @@ export const deleteAppraisal = async (req: Request, res: Response) => {
         id: appraisalId,
         organizationId
       },
+      select: { id: true, batchId: true }
+    });
+
+    if (appraisal) {
+      const deleted = await prisma.$transaction(async (tx) => {
+        const siblingCount = appraisal.batchId
+          ? await tx.appraisal.count({
+            where: {
+              organizationId,
+              batchId: appraisal.batchId,
+              id: { not: appraisal.id }
+            }
+          })
+          : 0;
+
+        await tx.appraisal.delete({ where: { id: appraisal.id } });
+
+        if (appraisal.batchId && siblingCount === 0) {
+          await tx.appraisalBatch.delete({ where: { id: appraisal.batchId } });
+          return { reportId: appraisal.id, batchId: appraisal.batchId };
+        }
+
+        return { reportId: appraisal.id, batchId: null };
+      });
+
+      return res.json({
+        message: 'Appraisal deleted successfully',
+        deleted
+      });
+    }
+
+    const batch = await prisma.appraisalBatch.findFirst({
+      where: {
+        id: appraisalId,
+        organizationId
+      },
       select: { id: true }
     });
 
-    if (!appraisal) {
+    if (!batch) {
       return res.status(404).json({ error: 'Appraisal not found' });
     }
 
-    await prisma.appraisal.delete({ where: { id: appraisalId } });
+    await prisma.appraisalBatch.delete({ where: { id: batch.id } });
 
-    return res.json({ message: 'Appraisal deleted successfully' });
+    return res.json({
+      message: 'Appraisal batch deleted successfully',
+      deleted: { reportId: null, batchId: batch.id }
+    });
   } catch (error) {
     console.error('Delete appraisal error:', error);
     return res.status(500).json({ error: 'Internal server error' });

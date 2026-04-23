@@ -57,6 +57,7 @@ interface TeamTrackerViewProps {
     | "pending"
     | "ongoing"
     | "completed"
+    | "pending_approval"
     | "overdue"
     | "created"
     | "in_progress"
@@ -69,6 +70,7 @@ interface TeamTrackerViewProps {
       | "pending"
       | "ongoing"
       | "completed"
+      | "pending_approval"
       | "overdue",
   ) => void;
   onTaskClick: (task: Task) => void;
@@ -114,6 +116,7 @@ const TeamTrackerView: React.FC<TeamTrackerViewProps> = ({
       | "pending"
       | "ongoing"
       | "completed"
+      | "pending_approval"
       | "overdue";
     label: string;
   }> = (() => {
@@ -125,6 +128,7 @@ const TeamTrackerView: React.FC<TeamTrackerViewProps> = ({
         | "pending"
         | "ongoing"
         | "completed"
+        | "pending_approval"
         | "overdue";
       label: string;
     }> = [{ key: "all", label: "All Tasks" }];
@@ -137,6 +141,9 @@ const TeamTrackerView: React.FC<TeamTrackerViewProps> = ({
     arr.push({ key: "pending", label: "Pending" });
     arr.push({ key: "ongoing", label: "In Progress" });
     arr.push({ key: "completed", label: "Completed" });
+    if (userRole === "ADMIN" || userRole === "TEAM_LEAD") {
+      arr.push({ key: "pending_approval", label: "Pending Approval" });
+    }
     arr.push({ key: "overdue", label: "Overdue" });
 
     return arr;
@@ -167,6 +174,10 @@ const TeamTrackerView: React.FC<TeamTrackerViewProps> = ({
         if (task.status !== "IN_PROGRESS") return false;
       } else if (filter === "completed") {
         if (task.status !== "COMPLETED") return false;
+      } else if (filter === "pending_approval") {
+        if (task.status !== "COMPLETED" || task.approvalStatus !== "PENDING") {
+          return false;
+        }
       } else if (filter === "overdue") {
         if (task.status === "COMPLETED" || !isDueDateOverdue(task.dueDate)) {
           return false;
@@ -486,17 +497,9 @@ const TeamTrackerView: React.FC<TeamTrackerViewProps> = ({
                                   className="task-action-item"
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    const notes =
-                                      window.prompt(
-                                        "Rejection notes (optional)",
-                                      ) || undefined;
                                     closeMenu();
                                     onApprovalAction &&
-                                      onApprovalAction(
-                                        task.id,
-                                        "REJECT",
-                                        notes,
-                                      );
+                                      onApprovalAction(task.id, "REJECT");
                                   }}
                                 >
                                   Reject
