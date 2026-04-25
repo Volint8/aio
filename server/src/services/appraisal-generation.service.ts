@@ -4,7 +4,7 @@ import archiver from 'archiver';
 import { PrismaClient } from '@prisma/client';
 import {
   appraisalReportSchema,
-  appraisalSystemPrompt,
+  getAppraisalSystemPrompt,
   buildAppraisalPromptPayload
 } from './appraisal-prompt';
 
@@ -587,19 +587,21 @@ const generateSectionsWithOpenAI = async (input: {
     baseURL: process.env.OPENAI_BASE_URL || undefined,
     timeout: Number(process.env.OPENAI_TIMEOUT_MS || 30000)
   });
+  const systemPrompt = getAppraisalSystemPrompt(input.subject.type);
 
   try {
     if ((process.env.OPENAI_BASE_URL || '').includes('deepseek')) {
       const completion = await client.chat.completions.create({
         model,
         messages: [
-          { role: 'system', content: appraisalSystemPrompt },
+          { role: 'system', content: systemPrompt },
           {
             role: 'user',
             content: JSON.stringify({
               instruction: 'Return valid JSON matching the appraisal_report schema.',
               schema: appraisalReportSchema,
               payload: buildAppraisalPromptPayload({
+                subjectType: input.subject.type,
                 subject: input.subject,
                 appraisalPeriod: periodLabel(input.from, input.to),
                 purposes: input.purposes,
@@ -640,7 +642,7 @@ const generateSectionsWithOpenAI = async (input: {
           content: [
             {
               type: 'input_text',
-              text: appraisalSystemPrompt
+              text: systemPrompt
             }
           ]
         },
@@ -650,6 +652,7 @@ const generateSectionsWithOpenAI = async (input: {
             {
               type: 'input_text',
               text: JSON.stringify(buildAppraisalPromptPayload({
+                subjectType: input.subject.type,
                 subject: input.subject,
                 appraisalPeriod: periodLabel(input.from, input.to),
                 purposes: input.purposes,
@@ -865,7 +868,608 @@ const writeList = (doc: PDFKit.PDFDocument, items: string[]) => {
   }
 };
 
-const writeReportToPdf = (doc: PDFKit.PDFDocument, report: any, isFirst: boolean) => {
+const formatDisplayDate = (value?: string | Date | null) => {
+  if (!value) return 'No data recorded';
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return 'No data recorded';
+  return date
+    .toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+    .replace(/ /g, ' ');
+};
+
+const formatMetricNumber = (value: unknown) => {
+  if (value === null || value === undefined || value === '') return 'No data recorded';
+  const numeric = typeof value === 'number' ? value : Number(value);
+  if (Number.isNaN(numeric)) return String(value);
+  return Number.isInteger(numeric) ? `${numeric}` : `${Math.round(numeric * 100) / 100}`;
+};
+
+const formatPercent = (value: unknown) => {
+  if (value === null || value === undefined || value === '') return 'No data recorded';
+  const numeric = typeof value === 'number' ? value : Number(value);
+  if (Number.isNaN(numeric)) return String(value);
+  return `${Math.round(numeric * 100) / 100}%`;
+};
+
+const drawTemplatePageFrame = (doc: PDFKit.PDFDocument, pageNumber: number, footerLabel: string) => {
+  const width = doc.page.width;
+  const height = doc.page.height;
+  doc.save();
+  doc.lineWidth(2).strokeColor('#2F73B5').moveTo(52, 30).lineTo(width - 52, 30).stroke();
+  doc.font('Helvetica').fontSize(9).fillColor('#B2BCC8').text(footerLabel, 52, height - 36, { width: 240 });
+  doc.text(`Page ${pageNumber}`, width - 100, height - 36, { width: 48, align: 'right' });
+  doc.restore();
+};
+
+const drawStaffPageFrame = (doc: PDFKit.PDFDocument, pageNumber: number) =>
+  drawTemplatePageFrame(doc, pageNumber, 'Apraizal | Confidential');
+
+const drawTeamPageFrame = (doc: PDFKit.PDFDocument, pageNumber: number) =>
+  drawTemplatePageFrame(doc, pageNumber, 'Apraizal | Confidential | Team Appraisal');
+
+const drawSectionBar = (doc: PDFKit.PDFDocument, y: number, title: string) => {
+  doc.save();
+  doc.rect(52, y, doc.page.width - 104, 28).fill('#2F73B5');
+  doc.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(11).text(title, 64, y + 8);
+  doc.restore();
+};
+
+const drawStaffInfoField = (
+  doc: PDFKit.PDFDocument,
+  label: string,
+  value: string,
+  x: number,
+  y: number,
+  width: number
+) => {
+  doc.save();
+  doc.font('Helvetica-Bold').fontSize(9).fillColor('#1F6FB6').text(label, x, y, { width });
+  doc.font('Helvetica').fontSize(9).fillColor('#9AA9BC').text(value || 'No data recorded', x + 130, y, {
+    width: Math.max(0, width - 130)
+  });
+  doc.restore();
+};
+
+const drawStaffSummaryBox = (
+  doc: PDFKit.PDFDocument,
+  x: number,
+  y: number,
+  width: number,
+  label: string,
+  value: string
+) => {
+  doc.save();
+  doc.rect(x, y, width, 34).fill('#CFE5F7');
+  doc.rect(x, y + 34, width, 36).fillAndStroke('#F8FBFE', '#B9C5D2');
+  doc.fillColor('#1F6FB6').font('Helvetica-Bold').fontSize(8).text(label, x + 12, y + 11, { width: width - 24, align: 'center' });
+  doc.fillColor('#9AA9BC').font('Helvetica').fontSize(8).text(value || 'No data recorded', x + 10, y + 47, {
+    width: width - 20,
+    align: 'left'
+  });
+  doc.restore();
+};
+
+const drawStaffRecommendationsTable = (
+  doc: PDFKit.PDFDocument,
+  rows: Array<{ label: string; value: string }>
+) => {
+  const startX = 52;
+  const labelWidth = 170;
+  const valueWidth = doc.page.width - 104 - labelWidth;
+  let y = 130;
+
+  rows.forEach((row) => {
+    const valueHeight = Math.max(34, doc.heightOfString(row.value, { width: valueWidth - 16, align: 'left' }) + 16);
+    doc.save();
+    doc.rect(startX, y, labelWidth, valueHeight).fillAndStroke('#FFFFFF', '#C4CDD7');
+    doc.rect(startX + labelWidth, y, valueWidth, valueHeight).fillAndStroke('#FFFFFF', '#C4CDD7');
+    doc.fillColor('#1F6FB6').font('Helvetica-Bold').fontSize(9).text(row.label, startX + 10, y + 12, { width: labelWidth - 20 });
+    doc.fillColor('#7B8CA1').font('Helvetica').fontSize(9).text(row.value, startX + labelWidth + 10, y + 12, {
+      width: valueWidth - 20
+    });
+    doc.restore();
+    y += valueHeight;
+  });
+};
+
+const buildStaffRecommendationRows = (report: any, sections: ReportSections) => {
+  const recommendations = sections.recommendations || [];
+  const nextSteps = sections.nextSteps || [];
+  const skills = sections.skillsCapabilityInsights || [];
+  const areas = sections.areasForImprovement || [];
+  const purposes = Array.isArray(report.purposes) ? report.purposes.map(String) : [];
+  const finalRating = sections.finalRating || report.overallRating || 'No data recorded';
+
+  return [
+    {
+      label: '1. Manager Action',
+      value: recommendations[0] || nextSteps[0] || 'No data recorded. Manager review required.'
+    },
+    {
+      label: '2. OKR / Execution Focus',
+      value: recommendations[1] || areas[0] || 'No data recorded. Review execution gaps and blockers.'
+    },
+    {
+      label: '3. Development / Training',
+      value: recommendations[2] || skills[0] || 'No data recorded. Identify development priorities with the manager.'
+    },
+    {
+      label: '4. Milestone & Check-in Plan',
+      value: nextSteps[0] || nextSteps[1] || recommendations[3] || 'No data recorded. Set follow-up milestones and check-in dates.'
+    },
+    {
+      label: '5. Promotion / Salary Readiness',
+      value:
+        recommendations[4] ||
+        (purposes.some((purpose: string) => ['Promotion', 'Salary Review'].includes(purpose))
+          ? `Use ${finalRating} as decision support only and confirm with manager review.`
+          : `No data recorded. Use ${finalRating} as manager decision support.`)
+    }
+  ];
+};
+
+const buildTeamRecommendationRows = (report: any, sections: ReportSections) => {
+  const recommendations = sections.recommendations || [];
+  const nextSteps = sections.nextSteps || [];
+  const skills = sections.skillsCapabilityInsights || [];
+  const areas = sections.areasForImprovement || [];
+  const all = [...recommendations, ...nextSteps, ...skills, ...areas].filter(Boolean);
+
+  const leadRows = [
+    {
+      label: '1. OKR & Execution Focus',
+      value: all[0] || 'No data recorded. Team lead should review OKR execution priorities.'
+    },
+    {
+      label: '2. Milestone & Check-in Plan',
+      value: all[1] || 'No data recorded. Define a check-in cadence and milestone tracking plan.'
+    },
+    {
+      label: '3. Team Development',
+      value: all[2] || 'No data recorded. Review capability and process improvement opportunities.'
+    }
+  ];
+
+  const leadershipRows = all.slice(3).map((value, index) => ({
+    label: `${index + 1}. Leadership / HR Review`,
+    value
+  }));
+
+  return { leadRows, leadershipRows };
+};
+
+const drawStaffReportToPdf = (doc: PDFKit.PDFDocument, report: any, isFirst: boolean) => {
+  if (!isFirst) doc.addPage();
+  const sections = (report.reportSections || {}) as ReportSections;
+  const header = sections.header || {};
+  const scoreBreakdown = (report.scoreBreakdown || {}) as Record<string, any>;
+  const okrImpactSummary = (report.okrImpactSummary || {}) as Record<string, any>;
+  const okrRows = Array.isArray(okrImpactSummary.okrs) ? okrImpactSummary.okrs : [];
+  const pageWidth = doc.page.width;
+  const contentWidth = pageWidth - 104;
+
+  drawStaffPageFrame(doc, doc.bufferedPageRange().count);
+
+  doc.save();
+  doc.rect(52, 54, contentWidth, 86).fill('#132434');
+  doc.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(24).text('Staff Impact', 82, 92);
+  doc.font('Helvetica').fontSize(24).text('Appraisal Report', 232, 92);
+  doc.circle(pageWidth - 80, 100, 30).lineWidth(14).strokeColor('#2F7CC1').stroke();
+  doc.fillColor('#2F73B5').font('Helvetica-Bold').fontSize(14).text('SCORE', pageWidth - 104, 86, { width: 48, align: 'center' });
+  doc.font('Helvetica').fontSize(9).text(
+    `${formatMetricNumber(scoreBreakdown.performanceScore || report.okrImpactScore || 'No data recorded')}`,
+    pageWidth - 104,
+    108,
+    { width: 48, align: 'center' }
+  );
+  doc.rect(52, 140, contentWidth, 34).fill('#3A88C0');
+  doc.fillColor('#E8F3FB').font('Helvetica').fontSize(9).text(
+    `Purpose: ${header.purpose || 'Performance Review'}`,
+    70,
+    151,
+    { width: 270 }
+  );
+  doc.text(`Generated: ${formatDisplayDate(report.createdAt)}`, pageWidth - 260, 151, {
+    width: 180,
+    align: 'right'
+  });
+  doc.restore();
+
+  drawStaffInfoField(doc, 'EMPLOYEE / UNIT NAME', header.name || report.subjectName || report.subjectUser?.name || 'No data recorded', 54, 204, 250);
+  drawStaffInfoField(doc, 'TEAM', header.team || report.subjectUser?.team?.name || 'No data recorded', 342, 204, 200);
+  drawStaffInfoField(doc, 'TEAM LEAD / MANAGER', report.createdByUser?.name || report.createdByUser?.email || 'No data recorded', 54, 242, 250);
+  drawStaffInfoField(doc, 'APPRAISAL PERIOD', header.appraisalPeriod || report.cycle || 'No data recorded', 342, 242, 200);
+
+  const boxY = 286;
+  const boxWidth = contentWidth / 4;
+  drawStaffSummaryBox(doc, 52, boxY, boxWidth, 'OVERALL SCORE', `${formatMetricNumber(scoreBreakdown.performanceScore)} / 100`);
+  drawStaffSummaryBox(doc, 52 + boxWidth, boxY, boxWidth, 'RATING / VERDICT', sections.finalRating || report.overallRating || 'No data recorded');
+  const completedCount = scoreBreakdown.completedTaskCount ?? 'No data recorded';
+  const allCount = scoreBreakdown.allTaskCount ?? 'No data recorded';
+  const tasksCompletedPct = scoreBreakdown.tasksCompleted ?? report.tasksCompleted;
+  drawStaffSummaryBox(
+    doc,
+    52 + boxWidth * 2,
+    boxY,
+    boxWidth,
+    'TASKS COMPLETED',
+    completedCount === 'No data recorded' || allCount === 'No data recorded'
+      ? formatPercent(tasksCompletedPct)
+      : `${completedCount} of ${allCount} (${formatPercent(tasksCompletedPct)})`
+  );
+  drawStaffSummaryBox(doc, 52 + boxWidth * 3, boxY, boxWidth, 'DEADLINES MET', formatPercent(scoreBreakdown.deadlinesMet ?? report.deadlinesMet));
+
+  drawSectionBar(doc, 380, '01 | EXECUTIVE SUMMARY');
+  doc.fillColor('#3D454F').font('Helvetica').fontSize(10).text(
+    sections.overviewSummary || report.summary || 'No data recorded.',
+    64,
+    416,
+    { width: contentWidth - 24, lineGap: 3 }
+  );
+
+  drawSectionBar(doc, 490, '02 | OKR vs ACHIEVEMENT');
+  doc.fillColor('#3D454F').font('Helvetica').fontSize(9).text(
+    'Each objective is listed below with its key results, assigned owners, target values, actual achievement, and status.',
+    64,
+    527,
+    { width: contentWidth - 24, lineGap: 2 }
+  );
+  doc.text('The AI populates these rows from verified OKR data only.', 64, 546, { width: contentWidth - 24 });
+
+  const startX = 52;
+  const columns = [232, 84, 66, 66, 104];
+  const columnLabels = ['OBJECTIVE / KEY RESULT', 'OWNER', 'TARGET', 'ACHIEVED', 'STATUS'];
+  let y = 572;
+  doc.save();
+  let x = startX;
+  columnLabels.forEach((label, index) => {
+    doc.rect(x, y, columns[index], 30).fillAndStroke('#2F73B5', '#FFFFFF');
+    doc.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(8).text(label, x + 8, y + 10, {
+      width: columns[index] - 16,
+      align: 'center'
+    });
+    x += columns[index];
+  });
+  doc.restore();
+  y += 30;
+
+  const ensureSpaceForRow = (rowHeight: number) => {
+    if (y + rowHeight <= doc.page.height - 64) return;
+    doc.addPage();
+    drawStaffPageFrame(doc, doc.bufferedPageRange().count);
+    drawSectionBar(doc, 54, '02 | OKR vs ACHIEVEMENT');
+    let headerX = startX;
+    doc.save();
+    columnLabels.forEach((label, index) => {
+      doc.rect(headerX, 102, columns[index], 30).fillAndStroke('#2F73B5', '#FFFFFF');
+      doc.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(8).text(label, headerX + 8, 112, {
+        width: columns[index] - 16,
+        align: 'center'
+      });
+      headerX += columns[index];
+    });
+    doc.restore();
+    y = 132;
+  };
+
+  const writeTableRow = (values: string[], fill: string, bold = false) => {
+    const rowHeight = Math.max(
+      28,
+      ...values.map((value, index) =>
+        doc.heightOfString(value, { width: columns[index] - 16, align: 'left' }) + 12
+      )
+    );
+    ensureSpaceForRow(rowHeight);
+    let rowX = startX;
+    doc.save();
+    values.forEach((value, index) => {
+      doc.rect(rowX, y, columns[index], rowHeight).fillAndStroke(fill, '#C4CDD7');
+      doc.fillColor(fill === '#2F73B5' ? '#FFFFFF' : '#9AA9BC')
+        .font(bold ? 'Helvetica-Bold' : 'Helvetica')
+        .fontSize(8)
+        .text(value, rowX + 8, y + 8, { width: columns[index] - 16 });
+      rowX += columns[index];
+    });
+    doc.restore();
+    y += rowHeight;
+  };
+
+  if (okrRows.length === 0) {
+    writeTableRow(
+      ['No data recorded', 'No data recorded', 'No data recorded', 'No data recorded', 'Manager review required'],
+      '#FFFFFF'
+    );
+  } else {
+    okrRows.forEach((okr: any) => {
+      writeTableRow(
+        [
+          `Objective: ${okr.okrTitle || 'No data recorded'}`,
+          '-',
+          formatMetricNumber(okr.targetValueTotal ?? okr.objectiveTargetValue),
+          okr.achievedPct === null || okr.achievedPct === undefined ? 'No data recorded' : formatPercent(okr.achievedPct),
+          okr.status || 'No data recorded'
+        ],
+        '#D9ECFA',
+        true
+      );
+
+      const keyResults = Array.isArray(okr.keyResults) ? okr.keyResults : [];
+      if (keyResults.length === 0) {
+        writeTableRow(['No key results recorded', 'No data recorded', 'No data recorded', 'No data recorded', 'No data recorded'], '#FFFFFF');
+      } else {
+        keyResults.forEach((kr: any) => {
+          writeTableRow(
+            [
+              `KR: ${kr.krTitle || 'No data recorded'}`,
+              kr.assignedUserName || kr.assignedUserEmail || 'No data recorded',
+              kr.targetValue === null || kr.targetValue === undefined
+                ? 'No data recorded'
+                : `${formatMetricNumber(kr.targetValue)}${kr.metricUnit ? ` ${kr.metricUnit}` : ''}`,
+              kr.achievedPct === null || kr.achievedPct === undefined
+                ? `${formatMetricNumber(kr.actualValue)}`
+                : `${formatMetricNumber(kr.actualValue)} (${formatPercent(kr.achievedPct)})`,
+              kr.approvalStatus || 'No data recorded'
+            ],
+            '#FFFFFF'
+          );
+        });
+      }
+    });
+  }
+
+  doc.addPage();
+  drawStaffPageFrame(doc, doc.bufferedPageRange().count);
+  drawSectionBar(doc, 54, '03 | RECOMMENDATIONS & NEXT STEPS');
+  doc.fillColor('#3D454F').font('Helvetica').fontSize(10).text(
+    'The AI will generate evidence-based recommendations calibrated to the appraisal purpose. These are decision-support inputs and require manager review.',
+    64,
+    88,
+    { width: contentWidth - 24, lineGap: 3 }
+  );
+  drawStaffRecommendationsTable(doc, buildStaffRecommendationRows(report, sections));
+};
+
+const drawTeamInfoField = (
+  doc: PDFKit.PDFDocument,
+  label: string,
+  value: string,
+  x: number,
+  y: number,
+  width: number
+) => {
+  doc.save();
+  doc.font('Helvetica-Bold').fontSize(9).fillColor('#1F6FB6').text(label, x, y, { width });
+  doc.font('Helvetica').fontSize(9).fillColor('#9AA9BC').text(value || 'No data recorded', x + 150, y, {
+    width: Math.max(0, width - 150)
+  });
+  doc.restore();
+};
+
+const drawTeamRecommendationsTable = (
+  doc: PDFKit.PDFDocument,
+  y: number,
+  title: string,
+  rows: Array<{ label: string; value: string }>
+) => {
+  if (rows.length === 0) return y;
+
+  doc.fillColor('#1F6FB6').font('Helvetica-Bold').fontSize(10).text(title, 64, y);
+  y += 20;
+
+  const startX = 52;
+  const labelWidth = 170;
+  const valueWidth = doc.page.width - 104 - labelWidth;
+
+  rows.forEach((row) => {
+    const valueHeight = Math.max(34, doc.heightOfString(row.value, { width: valueWidth - 16 }) + 16);
+    doc.save();
+    doc.rect(startX, y, labelWidth, valueHeight).fillAndStroke('#FFFFFF', '#C4CDD7');
+    doc.rect(startX + labelWidth, y, valueWidth, valueHeight).fillAndStroke('#FFFFFF', '#C4CDD7');
+    doc.fillColor('#1F6FB6').font('Helvetica-Bold').fontSize(9).text(row.label, startX + 10, y + 11, { width: labelWidth - 20 });
+    doc.fillColor('#9AA9BC').font('Helvetica').fontSize(9).text(row.value, startX + labelWidth + 10, y + 11, {
+      width: valueWidth - 20
+    });
+    doc.restore();
+    y += valueHeight;
+  });
+
+  return y;
+};
+
+const drawTeamReportToPdf = (doc: PDFKit.PDFDocument, report: any, isFirst: boolean) => {
+  if (!isFirst) doc.addPage();
+  const sections = (report.reportSections || {}) as ReportSections;
+  const header = sections.header || {};
+  const scoreBreakdown = (report.scoreBreakdown || {}) as Record<string, any>;
+  const okrImpactSummary = (report.okrImpactSummary || {}) as Record<string, any>;
+  const okrRows = Array.isArray(okrImpactSummary.okrs) ? okrImpactSummary.okrs : [];
+  const pageWidth = doc.page.width;
+  const contentWidth = pageWidth - 104;
+
+  drawTeamPageFrame(doc, doc.bufferedPageRange().count);
+
+  doc.save();
+  doc.rect(52, 54, contentWidth, 86).fill('#132434');
+  doc.fillColor('#FFFFFF').font('Helvetica').fontSize(24).text('Team ', 82, 92);
+  doc.font('Helvetica-Bold').text('Impact', 137, 92);
+  doc.font('Helvetica').text(' Appraisal Report', 222, 92);
+  doc.circle(pageWidth - 80, 100, 30).lineWidth(14).strokeColor('#2F7CC1').stroke();
+  doc.fillColor('#2F73B5').font('Helvetica-Bold').fontSize(14).text('SCORE', pageWidth - 104, 86, { width: 48, align: 'center' });
+  doc.font('Helvetica').fontSize(9).text(
+    `${formatMetricNumber(scoreBreakdown.performanceScore || report.okrImpactScore || 'No data recorded')}`,
+    pageWidth - 104,
+    108,
+    { width: 48, align: 'center' }
+  );
+  doc.rect(52, 140, contentWidth, 40).fill('#3A88C0');
+  doc.fillColor('#E8F3FB').font('Helvetica').fontSize(9).text(
+    `Purpose: ${header.purpose || 'Performance Review'}`,
+    70,
+    150,
+    { width: 300 }
+  );
+  doc.text(`Generated: ${formatDisplayDate(report.createdAt)}`, pageWidth - 260, 156, {
+    width: 180,
+    align: 'right'
+  });
+  doc.restore();
+
+  drawTeamInfoField(doc, 'TEAM / UNIT NAME', header.name || report.subjectName || 'No data recorded', 54, 214, 460);
+  drawTeamInfoField(doc, 'TEAM LEAD / MANAGER', report.createdByUser?.name || report.createdByUser?.email || 'No data recorded', 54, 252, 290);
+  drawTeamInfoField(doc, 'APPRAISAL PERIOD', header.appraisalPeriod || report.cycle || 'No data recorded', 314, 252, 230);
+
+  const boxY = 292;
+  const boxWidth = contentWidth / 4;
+  drawStaffSummaryBox(doc, 52, boxY, boxWidth, 'OVERALL SCORE', `${formatMetricNumber(scoreBreakdown.performanceScore)} / 100`);
+  drawStaffSummaryBox(doc, 52 + boxWidth, boxY, boxWidth, 'RATING / VERDICT', sections.finalRating || report.overallRating || 'No data recorded');
+  const completedCount = scoreBreakdown.completedTaskCount ?? 'No data recorded';
+  const allCount = scoreBreakdown.allTaskCount ?? 'No data recorded';
+  const tasksCompletedPct = scoreBreakdown.tasksCompleted ?? report.tasksCompleted;
+  drawStaffSummaryBox(
+    doc,
+    52 + boxWidth * 2,
+    boxY,
+    boxWidth,
+    'TASKS COMPLETED',
+    completedCount === 'No data recorded' || allCount === 'No data recorded'
+      ? formatPercent(tasksCompletedPct)
+      : `${completedCount} of ${allCount} (${formatPercent(tasksCompletedPct)})`
+  );
+  drawStaffSummaryBox(doc, 52 + boxWidth * 3, boxY, boxWidth, 'DEADLINES MET', formatPercent(scoreBreakdown.deadlinesMet ?? report.deadlinesMet));
+
+  drawSectionBar(doc, 382, '01 | EXECUTIVE SUMMARY');
+  doc.fillColor('#3D454F').font('Helvetica').fontSize(10).text(
+    sections.overviewSummary || report.summary || 'No data recorded.',
+    64,
+    420,
+    { width: contentWidth - 24, lineGap: 3 }
+  );
+
+  drawSectionBar(doc, 490, '02 | OKR vs ACHIEVEMENT');
+  doc.fillColor('#3D454F').font('Helvetica').fontSize(9).text(
+    "Each objective is listed with its key results, ownership (team-level by default; member or sub-team where data explicitly supports it), targets, achievement, and status. Fields with no data are marked 'No data recorded' and flagged for team lead attention.",
+    64,
+    527,
+    { width: contentWidth - 24, lineGap: 2 }
+  );
+
+  const startX = 52;
+  const columns = [148, 70, 58, 50, 58, 126];
+  const labels = ['OBJECTIVE / KEY RESULT', 'OWNER\n(Team /\nMember)', 'TARGET', 'ACHIEVE\nD', 'STATUS', 'ASSESSMENT'];
+  let y = 584;
+
+  const drawHeaderRow = (headerY: number) => {
+    let x = startX;
+    doc.save();
+    labels.forEach((label, index) => {
+      doc.rect(x, headerY, columns[index], 44).fillAndStroke('#2F73B5', '#FFFFFF');
+      doc.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(8).text(label, x + 6, headerY + 11, {
+        width: columns[index] - 12,
+        align: 'center'
+      });
+      x += columns[index];
+    });
+    doc.restore();
+  };
+
+  drawHeaderRow(y);
+  y += 44;
+
+  const ensureRowSpace = (rowHeight: number) => {
+    if (y + rowHeight <= doc.page.height - 64) return;
+    doc.addPage();
+    drawTeamPageFrame(doc, doc.bufferedPageRange().count);
+    drawHeaderRow(52);
+    y = 96;
+  };
+
+  const writeTeamRow = (values: string[], fill: string, bold = false) => {
+    const rowHeight = Math.max(
+      32,
+      ...values.map((value, index) =>
+        doc.heightOfString(value, { width: columns[index] - 14 }) + 14
+      )
+    );
+    ensureRowSpace(rowHeight);
+    let x = startX;
+    doc.save();
+    values.forEach((value, index) => {
+      doc.rect(x, y, columns[index], rowHeight).fillAndStroke(fill, '#C4CDD7');
+      doc.fillColor(fill === '#2F73B5' ? '#FFFFFF' : '#9AA9BC')
+        .font(bold ? 'Helvetica-Bold' : 'Helvetica')
+        .fontSize(8)
+        .text(value, x + 6, y + 9, { width: columns[index] - 12 });
+      x += columns[index];
+    });
+    doc.restore();
+    y += rowHeight;
+  };
+
+  if (okrRows.length === 0) {
+    writeTeamRow(
+      ['No data recorded', 'No data recorded', 'No data recorded', 'No data recorded', 'No data recorded', 'Manager review required'],
+      '#FFFFFF'
+    );
+  } else {
+    okrRows.forEach((okr: any) => {
+      writeTeamRow(
+        [
+          `Objective: ${okr.okrTitle || 'No data recorded'}`,
+          '-',
+          formatMetricNumber(okr.targetValueTotal ?? okr.objectiveTargetValue),
+          okr.achievedPct === null || okr.achievedPct === undefined ? 'No data recorded' : formatPercent(okr.achievedPct),
+          okr.status || 'No data recorded',
+          okr.achievedPct === null || okr.achievedPct === undefined
+            ? 'No data recorded. Flag for team lead attention.'
+            : `Achievement and delivery patterns indicate ${Math.round(okr.achievedPct)}% objective execution.`
+        ],
+        '#D9ECFA',
+        true
+      );
+
+      const keyResults = Array.isArray(okr.keyResults) ? okr.keyResults : [];
+      if (keyResults.length === 0) {
+        writeTeamRow(['No key results recorded', 'No data recorded', 'No data recorded', 'No data recorded', 'No data recorded', ''], '#FFFFFF');
+      } else {
+        keyResults.forEach((kr: any) => {
+          writeTeamRow(
+            [
+              `KR: ${kr.krTitle || 'No data recorded'}`,
+              kr.assignedUserName || kr.assignedUserEmail || 'Team',
+              kr.targetValue === null || kr.targetValue === undefined
+                ? 'No data recorded'
+                : `${formatMetricNumber(kr.targetValue)}${kr.metricUnit ? ` ${kr.metricUnit}` : ''}`,
+              kr.achievedPct === null || kr.achievedPct === undefined
+                ? `${formatMetricNumber(kr.actualValue)}`
+                : `${formatMetricNumber(kr.actualValue)} (${formatPercent(kr.achievedPct)})`,
+              kr.approvalStatus || 'No data recorded',
+              ''
+            ],
+            '#FFFFFF'
+          );
+        });
+      }
+    });
+  }
+
+  doc.addPage();
+  drawTeamPageFrame(doc, doc.bufferedPageRange().count);
+  drawSectionBar(doc, 54, '03 | RECOMMENDATIONS & NEXT STEPS');
+  doc.fillColor('#3D454F').font('Helvetica').fontSize(10).text(
+    'Evidence-based recommendations calibrated to the stated appraisal purpose. Recommendations are decision-support inputs and require team lead or leadership review. Each item is tagged to indicate who should action it.',
+    64,
+    90,
+    { width: contentWidth - 24, lineGap: 3 }
+  );
+
+  const { leadRows, leadershipRows } = buildTeamRecommendationRows(report, sections);
+  let recommendationsY = drawTeamRecommendationsTable(doc, 148, 'TEAM LEAD ACTIONS', leadRows) + 24;
+  if (leadershipRows.length > 0) {
+    drawTeamRecommendationsTable(doc, recommendationsY, 'LEADERSHIP / HR ACTIONS', leadershipRows);
+  }
+};
+
+const writeGenericReportToPdf = (doc: PDFKit.PDFDocument, report: any, isFirst: boolean) => {
   if (!isFirst) doc.addPage();
   const sections = (report.reportSections || {}) as ReportSections;
   const header = sections.header || {};
@@ -920,7 +1524,17 @@ const renderReportsPdf = async (reports: any[]) => new Promise<Buffer>((resolve,
   doc.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
   doc.on('end', () => resolve(Buffer.concat(chunks)));
   doc.on('error', reject);
-  reports.forEach((report, index) => writeReportToPdf(doc, report, index === 0));
+  reports.forEach((report, index) => {
+    if (report.subjectType === 'INDIVIDUAL') {
+      drawStaffReportToPdf(doc, report, index === 0);
+      return;
+    }
+    if (report.subjectType === 'TEAM') {
+      drawTeamReportToPdf(doc, report, index === 0);
+      return;
+    }
+    writeGenericReportToPdf(doc, report, index === 0);
+  });
   doc.end();
 });
 
@@ -929,7 +1543,10 @@ export const exportAppraisalBatchPdf = async (organizationId: string, batchId: s
     where: { id: batchId, organizationId },
     include: {
       appraisals: {
-        include: { subjectUser: { select: { id: true, name: true, email: true } } },
+        include: {
+          subjectUser: { select: { id: true, name: true, email: true } },
+          createdByUser: { select: { id: true, name: true, email: true } }
+        },
         orderBy: { createdAt: 'asc' }
       }
     }
@@ -948,7 +1565,10 @@ export const exportAppraisalBatchZip = async (organizationId: string, batchId: s
     where: { id: batchId, organizationId },
     include: {
       appraisals: {
-        include: { subjectUser: { select: { id: true, name: true, email: true } } },
+        include: {
+          subjectUser: { select: { id: true, name: true, email: true } },
+          createdByUser: { select: { id: true, name: true, email: true } }
+        },
         orderBy: { createdAt: 'asc' }
       }
     }
