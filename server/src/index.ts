@@ -40,6 +40,8 @@ import notificationRoutes from './routes/notification.routes';
 import appraisalRoutes from './routes/appraisal.routes';
 import paymentRoutes from './routes/payment.routes';
 import subscriptionRoutes from './routes/subscription.routes';
+import internalProvisioningRoutes from './routes/internal-provisioning.routes';
+import internalReportRoutes from './routes/internal-report.routes';
 import { startTaskPurgeJob } from './jobs/taskPurge.job';
 import { startUserPurgeJob } from './jobs/userPurge.job';
 
@@ -56,6 +58,8 @@ app.use('/notifications', notificationRoutes);
 app.use('/appraisals', appraisalRoutes);
 app.use('/payments', paymentRoutes);
 app.use('/subscriptions', subscriptionRoutes);
+app.use('/internal/provisioning', internalProvisioningRoutes);
+app.use('/internal/reports', internalReportRoutes);
 
 // Create HTTP server and attach Socket.IO
 const server = http.createServer(app);
