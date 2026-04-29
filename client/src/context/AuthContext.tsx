@@ -1,75 +1,51 @@
-import { createContext, useState, useContext, useEffect } from "react";
+import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import api from "../services/api";
-
-interface User {
-  id: string;
-  email: string;
-  name: string | null;
-  jobTitle: string | null;
-  role: string;
-  orgRole: string | null;
-}
-
-interface AuthContextType {
-  user: User | null;
-  login: (email: string, pass: string) => Promise<void>;
-  adminSignupInit: (email: string, pass: string) => Promise<{ suggestions: string[] }>;
-  adminSignupComplete: (email: string, pass: string, organizationName: string) => Promise<void>;
-  inviteAcceptInit: (
-    token: string,
-    pass: string,
-    name?: string,
-  ) => Promise<{ mode: string; email: string }>;
-  inviteAcceptComplete: (token: string, pass: string) => Promise<void>;
-  verifyOtp: (email: string, otp: string) => Promise<void>;
-  resendOtp: (email: string) => Promise<{ message: string }>;
-  forgotPasswordInit: (email: string) => Promise<{ message: string }>;
-  forgotPasswordComplete: (
-    email: string,
-    otp: string,
-    newPassword: string,
-  ) => Promise<{ message: string; token: string; user: User }>;
-  logout: () => void;
-  loading: boolean;
-}
-
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+import { AuthContext, type User } from "./auth-context";
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
+  const initialToken = localStorage.getItem("token");
   const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(Boolean(initialToken));
 
   useEffect(() => {
     // Check if user is already logged in
-    const token = localStorage.getItem("token");
-    if (token) {
-      setLoading(true);
-      api.defaults.headers.common["Authorization"] = `Bearer ${token}`;
-      api
-        .get("/auth/me")
-        .then((res) => {
-          setUser(res.data);
-        })
-        .catch(() => {
-          localStorage.removeItem("token");
-          setUser(null);
-        })
-        .finally(() => {
-          setLoading(false);
-        });
-    } else {
-      setLoading(false);
+    if (!initialToken) {
+      return;
     }
-  }, []);
+
+    api.defaults.headers.common["Authorization"] = `Bearer ${initialToken}`;
+    api
+      .get("/auth/me")
+      .then((res) => {
+        setUser(res.data);
+      })
+      .catch(() => {
+        localStorage.removeItem("token");
+        setUser(null);
+      })
+      .finally(() => {
+        setLoading(false);
+      });
+  }, [initialToken]);
 
   const login = async (email: string, pass: string) => {
     const res = await api.post("/auth/login", { email, password: pass });
     setUser(res.data.user);
     localStorage.setItem("token", res.data.token);
     api.defaults.headers.common["Authorization"] = `Bearer ${res.data.token}`;
-    
+
     // Clear stale org selection on fresh login
+    localStorage.removeItem("selectedOrgId");
+    localStorage.removeItem("selectedOrgRole");
+    localStorage.removeItem("selectedOrgName");
+  };
+
+  const completeSsoLogin = async (ssoToken: string) => {
+    const res = await api.post("/auth/sso/exchange", { token: ssoToken });
+    setUser(res.data.user);
+    localStorage.setItem("token", res.data.token);
+    api.defaults.headers.common["Authorization"] = `Bearer ${res.data.token}`;
     localStorage.removeItem("selectedOrgId");
     localStorage.removeItem("selectedOrgRole");
     localStorage.removeItem("selectedOrgName");
@@ -83,7 +59,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     return { suggestions: res.data.suggestions || [] };
   };
 
-  const adminSignupComplete = async (email: string, pass: string, organizationName: string) => {
+  const adminSignupComplete = async (
+    email: string,
+    pass: string,
+    organizationName: string,
+  ) => {
     await api.post("/auth/admin-signup/complete", {
       email,
       password: pass,
@@ -162,6 +142,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       value={{
         user,
         login,
+        completeSsoLogin,
         adminSignupInit,
         adminSignupComplete,
         inviteAcceptInit,
@@ -177,10 +158,4 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       {children}
     </AuthContext.Provider>
   );
-};
-
-export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (!context) throw new Error("useAuth must be used within an AuthProvider");
-  return context;
 };

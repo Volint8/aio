@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { useAuth } from "../context/AuthContext";
+import { useAuth } from "../context/useAuth";
 import "../styles/BoardView.css";
 
 interface QuoteRecord {
@@ -79,11 +79,6 @@ const BoardView: React.FC<BoardViewProps> = ({
   const quoteCount = quotes.length;
   const [quoteIndex, setQuoteIndex] = useState(0);
 
-  // Reset index when number of quotes changes
-  useEffect(() => {
-    setQuoteIndex(0);
-  }, [quoteCount]);
-
   // Rotate quotes every 30s when there are multiple quotes
   useEffect(() => {
     if (quoteCount <= 1) return;
@@ -93,8 +88,10 @@ const BoardView: React.FC<BoardViewProps> = ({
     return () => clearInterval(interval);
   }, [quoteCount]);
 
+  const activeQuoteIndex = quoteCount > 0 ? quoteIndex % quoteCount : 0;
+
   // Use the currently indexed quote or fall back to default text
-  const displayQuote = quoteCount > 0 ? quotes[quoteIndex] : null;
+  const displayQuote = quoteCount > 0 ? quotes[activeQuoteIndex] : null;
 
   // Calculate team totals (for Team Lead/Admin)
   const teamTotals = memberStats.reduce(

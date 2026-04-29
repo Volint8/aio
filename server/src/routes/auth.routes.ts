@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import {
     login,
+    exchangeSso,
     signup,
     getMe,
     verifyOtp,
@@ -19,6 +20,7 @@ import { authenticateToken } from '../middleware/auth.middleware';
 const router = Router();
 
 router.post('/login', login);
+router.post('/sso/exchange', exchangeSso);
 router.post('/signup', signup);
 router.post('/admin-signup/init', adminSignupInit);
 router.post('/admin-signup/complete', adminSignupComplete);

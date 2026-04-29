@@ -1,412 +1,493 @@
-import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import api from '../services/api';
-import { useAuth } from '../context/AuthContext';
-import ErrorDialog from '../components/ErrorDialog';
-import '../styles/OrgSelection.css';
+import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import api from "../services/api";
+import { useAuth } from "../context/useAuth";
+import ErrorDialog from "../components/ErrorDialog";
+import "../styles/OrgSelection.css";
 
 interface Organization {
-    id: string;
-    name: string;
-    userRole: string;
-    createdAt: string;
+  id: string;
+  name: string;
+  userRole: string;
+  createdAt: string;
 }
 
 interface OrganizationMember {
+  id: string;
+  userId: string;
+  role: string;
+  joinedAt: string;
+  user: {
     id: string;
-    userId: string;
-    role: string;
-    joinedAt: string;
-    user: {
-        id: string;
-        email: string;
-        name: string | null;
-        signupSource?: string | null;
-        initialRole?: string | null;
-        createdAt: string;
-    };
+    email: string;
+    name: string | null;
+    signupSource?: string | null;
+    initialRole?: string | null;
+    createdAt: string;
+  };
 }
 
-const toUiOrgRole = (role: string | null | undefined) => (role === 'ADMIN' ? 'ADMIN' : 'MEMBER');
+const toUiOrgRole = (role: string | null | undefined) =>
+  role === "ADMIN" ? "ADMIN" : "MEMBER";
 
 const OrgSelectionPage = () => {
-    const [organizations, setOrganizations] = useState<Organization[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [showCreateModal, setShowCreateModal] = useState(false);
-    const [newOrgName, setNewOrgName] = useState('');
-    const [creating, setCreating] = useState(false);
-    
-    // Error dialog state
-    const [errorDialog, setErrorDialog] = useState<{
-        isOpen: boolean;
-        title: string;
-        message: string;
-    }>({ isOpen: false, title: '', message: '' });
+  const [organizations, setOrganizations] = useState<Organization[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [newOrgName, setNewOrgName] = useState("");
+  const [creating, setCreating] = useState(false);
 
-    const [selectedOrgForTeam, setSelectedOrgForTeam] = useState<Organization | null>(null);
-    const [teamMembers, setTeamMembers] = useState<OrganizationMember[]>([]);
-    const [loadingMembers, setLoadingMembers] = useState(false);
-    const [updatingMemberId, setUpdatingMemberId] = useState<string | null>(null);
-    const [teamError, setTeamError] = useState('');
-    const [inviteEmail, setInviteEmail] = useState('');
-    const [inviteRole, setInviteRole] = useState('MEMBER');
-    const [inviting, setInviting] = useState(false);
-    const [invites, setInvites] = useState<Array<{ id: string; email: string; role: string; status: string; expiresAt: string }>>([]);
+  // Error dialog state
+  const [errorDialog, setErrorDialog] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+  }>({ isOpen: false, title: "", message: "" });
 
-    const { user, logout } = useAuth();
-    const navigate = useNavigate();
+  const [selectedOrgForTeam, setSelectedOrgForTeam] =
+    useState<Organization | null>(null);
+  const [teamMembers, setTeamMembers] = useState<OrganizationMember[]>([]);
+  const [loadingMembers, setLoadingMembers] = useState(false);
+  const [updatingMemberId, setUpdatingMemberId] = useState<string | null>(null);
+  const [teamError, setTeamError] = useState("");
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteRole, setInviteRole] = useState("MEMBER");
+  const [inviting, setInviting] = useState(false);
+  const [invites, setInvites] = useState<
+    Array<{
+      id: string;
+      email: string;
+      role: string;
+      status: string;
+      expiresAt: string;
+    }>
+  >([]);
 
-    useEffect(() => {
-        fetchOrganizations();
-    }, []);
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
 
-    const fetchOrganizations = async () => {
-        try {
-            const res = await api.get('/orgs');
-            setOrganizations(res.data);
-        } catch (error) {
-            console.error('Failed to fetch organizations:', error);
-        } finally {
-            setLoading(false);
-        }
-    };
+  useEffect(() => {
+    fetchOrganizations();
+  }, []);
 
-    const handleCreateOrg = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!newOrgName.trim()) return;
-
-        setCreating(true);
-        try {
-            await api.post('/orgs', { name: newOrgName });
-            setNewOrgName('');
-            setShowCreateModal(false);
-            fetchOrganizations();
-        } catch (error: any) {
-            const errorData = error.response?.data?.error;
-            const message = typeof errorData === 'object' ? errorData.message : errorData;
-            setErrorDialog({
-                isOpen: true,
-                title: 'Error',
-                message: message || 'Failed to create organization'
-            });
-        } finally {
-            setCreating(false);
-        }
-    };
-
-    const selectOrganization = (orgId: string, userRole: string) => {
-        localStorage.setItem('selectedOrgId', orgId);
-        localStorage.setItem('selectedOrgRole', userRole);
-        navigate('/dashboard');
-    };
-
-    const openManageTeam = async (org: Organization) => {
-        try {
-            setTeamError('');
-            setLoadingMembers(true);
-            setSelectedOrgForTeam(org);
-
-            const res = await api.get(`/orgs/${org.id}`);
-            setTeamMembers(res.data.members || []);
-            const invitesRes = await api.get(`/orgs/${org.id}/invites`);
-            setInvites(invitesRes.data || []);
-        } catch (error: any) {
-            const errorData = error.response?.data?.error;
-            const message = typeof errorData === 'object' ? errorData.message : errorData;
-            setTeamError(message || 'Failed to load team members');
-        } finally {
-            setLoadingMembers(false);
-        }
-    };
-
-    const closeManageTeam = async () => {
-        setSelectedOrgForTeam(null);
-        setTeamMembers([]);
-        setInvites([]);
-        setInviteEmail('');
-        setInviteRole('MEMBER');
-        setTeamError('');
-        await fetchOrganizations();
-    };
-
-    const handleRoleChange = async (memberId: string, newRole: string) => {
-        if (!selectedOrgForTeam) return;
-
-        try {
-            setTeamError('');
-            setUpdatingMemberId(memberId);
-
-            const res = await api.patch(`/orgs/${selectedOrgForTeam.id}/members/${memberId}/role`, {
-                role: newRole
-            });
-
-            setTeamMembers((prev) =>
-                prev.map((member) => (member.id === memberId ? { ...member, role: res.data.role } : member))
-            );
-            await fetchOrganizations();
-
-            const changedMember = teamMembers.find((member) => member.id === memberId);
-            if (changedMember?.userId === user?.id && res.data.role !== 'ADMIN') {
-                await closeManageTeam();
-            }
-        } catch (error: any) {
-            const errorData = error.response?.data?.error;
-            const message = typeof errorData === 'object' ? errorData.message : errorData;
-            setTeamError(message || 'Failed to update role');
-        } finally {
-            setUpdatingMemberId(null);
-        }
-    };
-
-    const handleInviteMember = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!selectedOrgForTeam || !inviteEmail.trim()) return;
-
-        try {
-            setTeamError('');
-            setInviting(true);
-            await api.post(`/orgs/${selectedOrgForTeam.id}/invites`, {
-                email: inviteEmail,
-                role: inviteRole
-            });
-            setInviteEmail('');
-            setInviteRole('MEMBER');
-            const invitesRes = await api.get(`/orgs/${selectedOrgForTeam.id}/invites`);
-            setInvites(invitesRes.data || []);
-        } catch (error: any) {
-            const errorData = error.response?.data?.error;
-            const message = typeof errorData === 'object' ? errorData.message : errorData;
-            setTeamError(message || 'Failed to send invite');
-        } finally {
-            setInviting(false);
-        }
-    };
-
-    if (loading) {
-        return (
-            <div className="org-selection-page">
-                <div className="loading">Loading organizations...</div>
-            </div>
-        );
+  const fetchOrganizations = async () => {
+    try {
+      const res = await api.get("/orgs");
+      setOrganizations(res.data);
+    } catch (error) {
+      console.error("Failed to fetch organizations:", error);
+    } finally {
+      setLoading(false);
     }
+  };
 
+  const handleCreateOrg = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newOrgName.trim()) return;
+
+    setCreating(true);
+    try {
+      await api.post("/orgs", { name: newOrgName });
+      setNewOrgName("");
+      setShowCreateModal(false);
+      fetchOrganizations();
+    } catch (error: any) {
+      const errorData = error.response?.data?.error;
+      const message =
+        typeof errorData === "object" ? errorData.message : errorData;
+      setErrorDialog({
+        isOpen: true,
+        title: "Error",
+        message: message || "Failed to create organization",
+      });
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const selectOrganization = (orgId: string, userRole: string) => {
+    localStorage.setItem("selectedOrgId", orgId);
+    localStorage.setItem("selectedOrgRole", userRole);
+    navigate("/dashboard");
+  };
+
+  const openManageTeam = async (org: Organization) => {
+    try {
+      setTeamError("");
+      setLoadingMembers(true);
+      setSelectedOrgForTeam(org);
+
+      const res = await api.get(`/orgs/${org.id}`);
+      setTeamMembers(res.data.members || []);
+      const invitesRes = await api.get(`/orgs/${org.id}/invites`);
+      setInvites(invitesRes.data || []);
+    } catch (error: any) {
+      const errorData = error.response?.data?.error;
+      const message =
+        typeof errorData === "object" ? errorData.message : errorData;
+      setTeamError(message || "Failed to load team members");
+    } finally {
+      setLoadingMembers(false);
+    }
+  };
+
+  const closeManageTeam = async () => {
+    setSelectedOrgForTeam(null);
+    setTeamMembers([]);
+    setInvites([]);
+    setInviteEmail("");
+    setInviteRole("MEMBER");
+    setTeamError("");
+    await fetchOrganizations();
+  };
+
+  const handleRoleChange = async (memberId: string, newRole: string) => {
+    if (!selectedOrgForTeam) return;
+
+    try {
+      setTeamError("");
+      setUpdatingMemberId(memberId);
+
+      const res = await api.patch(
+        `/orgs/${selectedOrgForTeam.id}/members/${memberId}/role`,
+        {
+          role: newRole,
+        },
+      );
+
+      setTeamMembers((prev) =>
+        prev.map((member) =>
+          member.id === memberId ? { ...member, role: res.data.role } : member,
+        ),
+      );
+      await fetchOrganizations();
+
+      const changedMember = teamMembers.find(
+        (member) => member.id === memberId,
+      );
+      if (changedMember?.userId === user?.id && res.data.role !== "ADMIN") {
+        await closeManageTeam();
+      }
+    } catch (error: any) {
+      const errorData = error.response?.data?.error;
+      const message =
+        typeof errorData === "object" ? errorData.message : errorData;
+      setTeamError(message || "Failed to update role");
+    } finally {
+      setUpdatingMemberId(null);
+    }
+  };
+
+  const handleInviteMember = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedOrgForTeam || !inviteEmail.trim()) return;
+
+    try {
+      setTeamError("");
+      setInviting(true);
+      await api.post(`/orgs/${selectedOrgForTeam.id}/invites`, {
+        email: inviteEmail,
+        role: inviteRole,
+      });
+      setInviteEmail("");
+      setInviteRole("MEMBER");
+      const invitesRes = await api.get(
+        `/orgs/${selectedOrgForTeam.id}/invites`,
+      );
+      setInvites(invitesRes.data || []);
+    } catch (error: any) {
+      const errorData = error.response?.data?.error;
+      const message =
+        typeof errorData === "object" ? errorData.message : errorData;
+      setTeamError(message || "Failed to send invite");
+    } finally {
+      setInviting(false);
+    }
+  };
+
+  if (loading) {
     return (
-        <div className="org-selection-page">
-            <div className="org-selection-container">
-                <div className="org-header">
-                    <div>
-                        <h1>Select Organization</h1>
-                        <p className="welcome-text">Welcome, {user?.name || user?.email}</p>
-                    </div>
-                    <button onClick={logout} className="btn-logout">
-                        Logout
-                    </button>
-                </div>
+      <div className="org-selection-page">
+        <div className="loading">Loading organizations...</div>
+      </div>
+    );
+  }
 
-                <div className="org-grid">
-                    {organizations.map((org) => (
-                        <div
-                            key={org.id}
-                            className="org-card"
-                            onClick={() => selectOrganization(org.id, org.userRole)}
-                        >
-                            <div className="org-icon">
-                                {org.name.charAt(0).toUpperCase()}
-                            </div>
-                            <h3>{org.name}</h3>
-                            <span className={`role-badge ${org.userRole?.toLowerCase() || ''}`}>
-                                {org.userRole}
-                            </span>
+  return (
+    <div className="org-selection-page">
+      <div className="org-selection-container">
+        <div className="org-header">
+          <div>
+            <h1>Select Organization</h1>
+            <p className="welcome-text">Welcome, {user?.name || user?.email}</p>
+          </div>
+          <button onClick={logout} className="btn-logout">
+            Logout
+          </button>
+        </div>
 
-                            {org.userRole === 'ADMIN' && (
-                                <button
-                                    type="button"
-                                    className="btn-manage-team"
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        openManageTeam(org);
-                                    }}
-                                >
-                                    Manage Team
-                                </button>
-                            )}
-                        </div>
-                    ))}
+        <div className="org-grid">
+          {organizations.map((org) => (
+            <div
+              key={org.id}
+              className="org-card"
+              onClick={() => selectOrganization(org.id, org.userRole)}
+            >
+              <div className="org-icon">{org.name.charAt(0).toUpperCase()}</div>
+              <h3>{org.name}</h3>
+              <span
+                className={`role-badge ${org.userRole?.toLowerCase() || ""}`}
+              >
+                {org.userRole}
+              </span>
 
-                    {user?.role === 'ADMIN' && (
-                        <div
-                            className="org-card create-card"
-                            onClick={() => setShowCreateModal(true)}
-                        >
-                            <div className="org-icon create-icon">+</div>
-                            <h3>Create New</h3>
-                            <p>Start a new organization</p>
-                        </div>
-                    )}
-                </div>
+              {org.userRole === "ADMIN" && (
+                <button
+                  type="button"
+                  className="btn-manage-team"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openManageTeam(org);
+                  }}
+                >
+                  Manage Team
+                </button>
+              )}
+            </div>
+          ))}
 
-                {organizations.length === 0 && (
-                    <div className="empty-state">
-                        <p>You're not part of any organization yet.</p>
-                        <p>Create one to get started!</p>
-                    </div>
-                )}
+          {user?.role === "ADMIN" && (
+            <div
+              className="org-card create-card"
+              onClick={() => setShowCreateModal(true)}
+            >
+              <div className="org-icon create-icon">+</div>
+              <h3>Create New</h3>
+              <p>Start a new organization</p>
+            </div>
+          )}
+        </div>
+
+        {organizations.length === 0 && (
+          <div className="empty-state">
+            <p>You're not part of any organization yet.</p>
+            <p>Create one to get started!</p>
+          </div>
+        )}
+      </div>
+
+      {showCreateModal && (
+        <div
+          className="modal-overlay"
+          onClick={() => setShowCreateModal(false)}
+        >
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h2>Create Organization</h2>
+            <form onSubmit={handleCreateOrg}>
+              <div className="form-group">
+                <label>Organization Name</label>
+                <input
+                  type="text"
+                  value={newOrgName}
+                  onChange={(e) => setNewOrgName(e.target.value)}
+                  placeholder="e.g., Product Team, Client Project"
+                  required
+                  autoFocus
+                />
+              </div>
+              <div className="modal-actions">
+                <button
+                  type="button"
+                  onClick={() => setShowCreateModal(false)}
+                  className="btn-secondary"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={creating}
+                  className="btn-primary"
+                >
+                  {creating ? "Creating..." : "Create"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {selectedOrgForTeam && (
+        <div className="modal-overlay" onClick={closeManageTeam}>
+          <div
+            className="modal team-modal"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="team-modal-header">
+              <h2>Manage Team</h2>
+              <p>{selectedOrgForTeam.name}</p>
             </div>
 
-            {showCreateModal && (
-                <div className="modal-overlay" onClick={() => setShowCreateModal(false)}>
-                    <div className="modal" onClick={(e) => e.stopPropagation()}>
-                        <h2>Create Organization</h2>
-                        <form onSubmit={handleCreateOrg}>
-                            <div className="form-group">
-                                <label>Organization Name</label>
-                                <input
-                                    type="text"
-                                    value={newOrgName}
-                                    onChange={(e) => setNewOrgName(e.target.value)}
-                                    placeholder="e.g., Product Team, Client Project"
-                                    required
-                                    autoFocus
-                                />
-                            </div>
-                            <div className="modal-actions">
-                                <button
-                                    type="button"
-                                    onClick={() => setShowCreateModal(false)}
-                                    className="btn-secondary"
+            {teamError && <p className="team-error">{teamError}</p>}
+
+            {loadingMembers ? (
+              <div className="team-loading">Loading team members...</div>
+            ) : (
+              <div className="team-members-list">
+                {teamMembers.map((member) => (
+                  <div key={member.id} className="team-member-row">
+                    {(() => {
+                      const uiRole = toUiOrgRole(member.role);
+                      const uiInitialRole = toUiOrgRole(
+                        member.user.initialRole,
+                      );
+                      return (
+                        <>
+                          <div className="team-member-info">
+                            <strong>
+                              {member.user.name || member.user.email}
+                            </strong>
+                            <span>{member.user.email}</span>
+                            <span
+                              style={{
+                                fontSize: "0.8em",
+                                color: "var(--text-muted)",
+                                marginTop: "4px",
+                              }}
+                            >
+                              {member.user.signupSource === "ADMIN"
+                                ? "🏢 Founder"
+                                : member.user.signupSource === "INVITE"
+                                  ? "📧 Invited"
+                                  : "👤 Member"}
+                              {" • "}
+                              Joined{" "}
+                              {new Date(member.joinedAt).toLocaleDateString()}
+                            </span>
+                          </div>
+
+                          <div className="team-member-role">
+                            <span
+                              className={`role-badge ${uiRole.toLowerCase()}`}
+                            >
+                              {uiRole}
+                            </span>
+                            {member.user.initialRole &&
+                              uiRole !== uiInitialRole && (
+                                <span
+                                  className="role-badge"
+                                  style={{
+                                    background: "#f0f0f0",
+                                    color: "#666",
+                                  }}
                                 >
-                                    Cancel
-                                </button>
-                                <button type="submit" disabled={creating} className="btn-primary">
-                                    {creating ? 'Creating...' : 'Create'}
-                                </button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
+                                  Started: {uiInitialRole}
+                                </span>
+                              )}
+                            <select
+                              value={uiRole}
+                              disabled={updatingMemberId === member.id}
+                              onChange={(e) =>
+                                handleRoleChange(member.id, e.target.value)
+                              }
+                            >
+                              <option value="MEMBER">MEMBER</option>
+                              {uiRole === "ADMIN" && (
+                                <option value="ADMIN">ADMIN</option>
+                              )}
+                            </select>
+                          </div>
+                        </>
+                      );
+                    })()}
+                  </div>
+                ))}
+              </div>
             )}
 
-            {selectedOrgForTeam && (
-                <div className="modal-overlay" onClick={closeManageTeam}>
-                    <div className="modal team-modal" onClick={(e) => e.stopPropagation()}>
-                        <div className="team-modal-header">
-                            <h2>Manage Team</h2>
-                            <p>{selectedOrgForTeam.name}</p>
-                        </div>
+            <form onSubmit={handleInviteMember} style={{ marginTop: "18px" }}>
+              <div className="form-group">
+                <label>Invite by Work Email</label>
+                <input
+                  type="email"
+                  value={inviteEmail}
+                  onChange={(e) => setInviteEmail(e.target.value)}
+                  placeholder="new.member@company.com"
+                  required
+                />
+              </div>
+              <div className="form-group">
+                <label>Role</label>
+                <select
+                  value={inviteRole}
+                  onChange={(e) => setInviteRole(e.target.value)}
+                >
+                  <option value="MEMBER">MEMBER</option>
+                </select>
+              </div>
+              <div className="modal-actions">
+                <button
+                  type="submit"
+                  className="btn-primary"
+                  disabled={inviting}
+                >
+                  {inviting ? "Sending..." : "Send Invite"}
+                </button>
+              </div>
+            </form>
 
-                        {teamError && <p className="team-error">{teamError}</p>}
-
-                        {loadingMembers ? (
-                            <div className="team-loading">Loading team members...</div>
-                        ) : (
-                            <div className="team-members-list">
-                                {teamMembers.map((member) => (
-                                    <div key={member.id} className="team-member-row">
-                                        {(() => {
-                                            const uiRole = toUiOrgRole(member.role);
-                                            const uiInitialRole = toUiOrgRole(member.user.initialRole);
-                                            return (
-                                                <>
-                                                    <div className="team-member-info">
-                                                        <strong>{member.user.name || member.user.email}</strong>
-                                                        <span>{member.user.email}</span>
-                                                        <span style={{ fontSize: '0.8em', color: 'var(--text-muted)', marginTop: '4px' }}>
-                                                            {member.user.signupSource === 'ADMIN' ? '🏢 Founder' :
-                                                             member.user.signupSource === 'INVITE' ? '📧 Invited' : '👤 Member'}
-                                                            {' • '}
-                                                            Joined {new Date(member.joinedAt).toLocaleDateString()}
-                                                        </span>
-                                                    </div>
-
-                                                    <div className="team-member-role">
-                                                        <span className={`role-badge ${uiRole.toLowerCase()}`}>{uiRole}</span>
-                                                        {member.user.initialRole && uiRole !== uiInitialRole && (
-                                                            <span className="role-badge" style={{ background: '#f0f0f0', color: '#666' }}>
-                                                                Started: {uiInitialRole}
-                                                            </span>
-                                                        )}
-                                                        <select
-                                                            value={uiRole}
-                                                            disabled={updatingMemberId === member.id}
-                                                            onChange={(e) => handleRoleChange(member.id, e.target.value)}
-                                                        >
-                                                            <option value="MEMBER">MEMBER</option>
-                                                            {uiRole === 'ADMIN' && <option value="ADMIN">ADMIN</option>}
-                                                        </select>
-                                                    </div>
-                                                </>
-                                            );
-                                        })()}
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-
-                        <form onSubmit={handleInviteMember} style={{ marginTop: '18px' }}>
-                            <div className="form-group">
-                                <label>Invite by Work Email</label>
-                                <input
-                                    type="email"
-                                    value={inviteEmail}
-                                    onChange={(e) => setInviteEmail(e.target.value)}
-                                    placeholder="new.member@company.com"
-                                    required
-                                />
-                            </div>
-                            <div className="form-group">
-                                <label>Role</label>
-                                <select
-                                    value={inviteRole}
-                                    onChange={(e) => setInviteRole(e.target.value)}
-                                >
-                                    <option value="MEMBER">MEMBER</option>
-                                </select>
-                            </div>
-                            <div className="modal-actions">
-                                <button type="submit" className="btn-primary" disabled={inviting}>
-                                    {inviting ? 'Sending...' : 'Send Invite'}
-                                </button>
-                            </div>
-                        </form>
-
-                        {invites.length > 0 && (
-                            <div style={{ marginTop: '12px' }}>
-                                <h3 style={{ marginBottom: '8px' }}>Pending/Recent Invites</h3>
-                                <div className="team-members-list">
-                                    {invites.map((invite) => (
-                                        <div key={invite.id} className="team-member-row">
-                                            <div className="team-member-info">
-                                                <strong>{invite.email}</strong>
-                                                <span>Expires {new Date(invite.expiresAt).toLocaleDateString()}</span>
-                                            </div>
-                                            <div className="team-member-role">
-                                                <span className={`role-badge ${toUiOrgRole(invite.role).toLowerCase()}`}>{toUiOrgRole(invite.role)}</span>
-                                                <span className={`role-badge ${invite.status?.toLowerCase() || ''}`}>{invite.status}</span>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
-
-                        <div className="modal-actions">
-                            <button type="button" className="btn-secondary" onClick={closeManageTeam}>
-                                Close
-                            </button>
-                        </div>
+            {invites.length > 0 && (
+              <div style={{ marginTop: "12px" }}>
+                <h3 style={{ marginBottom: "8px" }}>Pending/Recent Invites</h3>
+                <div className="team-members-list">
+                  {invites.map((invite) => (
+                    <div key={invite.id} className="team-member-row">
+                      <div className="team-member-info">
+                        <strong>{invite.email}</strong>
+                        <span>
+                          Expires{" "}
+                          {new Date(invite.expiresAt).toLocaleDateString()}
+                        </span>
+                      </div>
+                      <div className="team-member-role">
+                        <span
+                          className={`role-badge ${toUiOrgRole(invite.role).toLowerCase()}`}
+                        >
+                          {toUiOrgRole(invite.role)}
+                        </span>
+                        <span
+                          className={`role-badge ${invite.status?.toLowerCase() || ""}`}
+                        >
+                          {invite.status}
+                        </span>
+                      </div>
                     </div>
+                  ))}
                 </div>
+              </div>
             )}
-            
-            {/* Error Dialog */}
-            <ErrorDialog
-                isOpen={errorDialog.isOpen}
-                title={errorDialog.title}
-                message={errorDialog.message}
-                onClose={() => setErrorDialog({ ...errorDialog, isOpen: false })}
-            />
+
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={closeManageTeam}
+              >
+                Close
+              </button>
+            </div>
+          </div>
         </div>
-    );
+      )}
+
+      {/* Error Dialog */}
+      <ErrorDialog
+        isOpen={errorDialog.isOpen}
+        title={errorDialog.title}
+        message={errorDialog.message}
+        onClose={() => setErrorDialog({ ...errorDialog, isOpen: false })}
+      />
+    </div>
+  );
 };
 
 export default OrgSelectionPage;

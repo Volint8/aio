@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import api from "../services/api";
-import { useAuth } from "../context/AuthContext";
+import { useAuth } from "../context/useAuth";
 import { connectSocket } from "../services/socket";
 import BoardView from "../components/BoardView";
 import TaskTrackerView from "../components/TaskTrackerView";
@@ -894,8 +894,7 @@ const DashboardPage = () => {
     setupSummary: string;
     selectedOkrIds: string[];
   } | null>(null);
-  const [appraisalPreviewLoading, setAppraisalPreviewLoading] =
-    useState(false);
+  const [appraisalPreviewLoading, setAppraisalPreviewLoading] = useState(false);
   const [appraisalSelectionDirty, setAppraisalSelectionDirty] = useState(false);
   const [generatingAppraisal, setGeneratingAppraisal] = useState(false);
   const [newLink, setNewLink] = useState({ taskId: "", url: "", fileName: "" });
@@ -3193,15 +3192,15 @@ const DashboardPage = () => {
                     ? "created"
                     : f === "ongoing"
                       ? "in_progress"
-                        : f === "completed"
-                          ? "completed"
-                          : f === "pending_approval"
-                            ? "pending_approval"
-                            : f === "overdue"
-                              ? "overdue"
-                              : f === "supporting"
-                                ? "supporting"
-                                : "my",
+                      : f === "completed"
+                        ? "completed"
+                        : f === "pending_approval"
+                          ? "pending_approval"
+                          : f === "overdue"
+                            ? "overdue"
+                            : f === "supporting"
+                              ? "supporting"
+                              : "my",
               )
             }
             onTaskClick={(task) => setSelectedTaskId(task.id)}
@@ -3276,15 +3275,15 @@ const DashboardPage = () => {
                     ? "created"
                     : f === "ongoing"
                       ? "in_progress"
-                        : f === "completed"
-                          ? "completed"
-                          : f === "pending_approval"
-                            ? "pending_approval"
-                            : f === "overdue"
-                              ? "overdue"
-                              : f === "supporting"
-                                ? "supporting"
-                                : "my",
+                      : f === "completed"
+                        ? "completed"
+                        : f === "pending_approval"
+                          ? "pending_approval"
+                          : f === "overdue"
+                            ? "overdue"
+                            : f === "supporting"
+                              ? "supporting"
+                              : "my",
               )
             }
             onTaskClick={(task) => setSelectedTaskId(task.id)}
@@ -4270,7 +4269,10 @@ const DashboardPage = () => {
                         ],
                         ["Next Steps", appraisal.reportSections.nextSteps],
                       ].map(([title, items]) => (
-                        <div key={title as string} className="appraisal-section">
+                        <div
+                          key={title as string}
+                          className="appraisal-section"
+                        >
                           <h4>{title as string}</h4>
                           <ul>
                             {((items as string[] | undefined) || []).map(
@@ -4368,7 +4370,9 @@ const DashboardPage = () => {
                         )
                       }
                     >
-                      {appraisal.batchId ? "Export Report" : "Export Report (CSV)"}
+                      {appraisal.batchId
+                        ? "Export Report"
+                        : "Export Report (CSV)"}
                     </button>
                     <button
                       className="btn-action danger"
@@ -7073,9 +7077,7 @@ const DashboardPage = () => {
                 <div className="form-group">
                   <div className="appraisal-field-header">
                     <label>
-                      {newAppraisal.scope === "TEAMS"
-                        ? "Teams"
-                        : "Individuals"}
+                      {newAppraisal.scope === "TEAMS" ? "Teams" : "Individuals"}
                     </label>
                     <button
                       type="button"
@@ -7105,9 +7107,7 @@ const DashboardPage = () => {
                       <label key={subject.id} className="appraisal-check-row">
                         <input
                           type="checkbox"
-                          checked={newAppraisal.subjectIds.includes(
-                            subject.id,
-                          )}
+                          checked={newAppraisal.subjectIds.includes(subject.id)}
                           onChange={(e) => {
                             const checked = e.target.checked;
                             setNewAppraisal((prev) => ({
@@ -7215,7 +7215,9 @@ const DashboardPage = () => {
                             ...prev,
                             purposes: checked
                               ? [...prev.purposes, purpose]
-                              : prev.purposes.filter((item) => item !== purpose),
+                              : prev.purposes.filter(
+                                  (item) => item !== purpose,
+                                ),
                           }));
                         }}
                       />
@@ -7257,7 +7259,9 @@ const DashboardPage = () => {
                 <div className="appraisal-field-header">
                   <label>Relevant OKRs</label>
                   {appraisalPreviewLoading && (
-                    <small className="modal-helper-text">Fetching OKRs...</small>
+                    <small className="modal-helper-text">
+                      Fetching OKRs...
+                    </small>
                   )}
                 </div>
                 <div className="appraisal-picker okr-picker">

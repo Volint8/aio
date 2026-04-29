@@ -26,6 +26,42 @@ const signAuthToken = (user: { id: string; email: string; role: string; orgRole?
   );
 };
 
+const getSuiteSsoSecret = () => {
+  return process.env.VOLINT_SUITE_SSO_SECRET || process.env.JWT_SSO_SECRET || 'volint-suite-sso-secret';
+};
+
+const getSuiteSsoIssuer = () => {
+  return process.env.VOLINT_SUITE_JWT_ISSUER || 'volint-suite-api';
+};
+
+const buildAuthResponse = async (user: {
+  id: string;
+  email: string;
+  name: string | null;
+  role: string;
+}) => {
+  await attachInviteMembershipIfPending(user.id);
+
+  const primaryMembership = await prisma.organizationMember.findFirst({
+    where: { userId: user.id },
+    orderBy: { joinedAt: 'asc' }
+  });
+
+  const orgRole = primaryMembership?.role || null;
+  const token = signAuthToken({ id: user.id, email: user.email, role: user.role, orgRole });
+
+  return {
+    token,
+    user: {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      role: user.role,
+      orgRole
+    }
+  };
+};
+
 const attachInviteMembershipIfPending = async (userId: string) => {
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user?.pendingInviteId) {
@@ -574,30 +610,53 @@ export const login = async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
-    await attachInviteMembershipIfPending(user.id);
-
-    // Fetch user's primary organization membership role
-    const primaryMembership = await prisma.organizationMember.findFirst({
-      where: { userId: user.id },
-      orderBy: { joinedAt: 'asc' }
-    });
-
-    const orgRole = primaryMembership?.role || null;
-
-    const token = signAuthToken({ id: user.id, email: user.email, role: user.role, orgRole });
-
-    return res.json({
-      token,
-      user: {
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        role: user.role,
-        orgRole
-      }
-    });
+    return res.json(await buildAuthResponse(user));
   } catch (error) {
     console.error('Login error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+export const exchangeSso = async (req: Request, res: Response) => {
+  try {
+    const { token } = req.body as { token?: string };
+
+    if (!token) {
+      return res.status(400).json({ error: 'SSO token is required' });
+    }
+
+    let payload: any;
+
+    try {
+      payload = jwt.verify(token, getSuiteSsoSecret(), {
+        issuer: getSuiteSsoIssuer(),
+        audience: 'apraizal'
+      });
+    } catch {
+      return res.status(401).json({ error: 'Invalid or expired SSO token' });
+    }
+
+    if (payload?.tokenType !== 'sso' || payload?.toolKey !== 'apraizal' || !payload?.toolUserId) {
+      return res.status(400).json({ error: 'Invalid SSO token payload' });
+    }
+
+    const user = await prisma.user.findUnique({ where: { id: String(payload.toolUserId) } });
+
+    if (!user || user.deletedAt) {
+      return res.status(404).json({ error: 'Provisioned Apraizal user not found' });
+    }
+
+    if (!user.isVerified) {
+      return res.status(403).json({ error: 'Apraizal account is not ready for SSO yet' });
+    }
+
+    if (payload.email && normalizeEmail(payload.email) !== user.email) {
+      return res.status(403).json({ error: 'SSO token does not match the provisioned Apraizal account' });
+    }
+
+    return res.json(await buildAuthResponse(user));
+  } catch (error) {
+    console.error('SSO exchange error:', error);
     return res.status(500).json({ error: 'Internal server error' });
   }
 };
