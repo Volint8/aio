@@ -1,9 +1,25 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import '../styles/LoginPage.css';
 
 type Step = 'email' | 'otp';
+
+type ApiLikeError = {
+    message?: string;
+    response?: {
+        data?: {
+            error?: string | { message?: string };
+        };
+    };
+};
+
+const getErrorMessage = (error: unknown, fallback: string): string => {
+    const apiError = error as ApiLikeError;
+    const errorData = apiError.response?.data?.error;
+    const message = typeof errorData === 'object' ? errorData?.message : errorData;
+    return message || apiError.message || fallback;
+};
 
 const ForgotPasswordPage = () => {
     const [step, setStep] = useState<Step>('email');
@@ -16,6 +32,15 @@ const ForgotPasswordPage = () => {
 
     const { forgotPasswordInit, forgotPasswordComplete } = useAuth();
     const navigate = useNavigate();
+    const [searchParams] = useSearchParams();
+    const onboardingEmail = searchParams.get('email') || '';
+    const onboardingSource = searchParams.get('source');
+
+    useEffect(() => {
+        if (onboardingEmail) {
+            setEmail(onboardingEmail);
+        }
+    }, [onboardingEmail]);
 
     const handleSendResetCode = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -26,10 +51,8 @@ const ForgotPasswordPage = () => {
             await forgotPasswordInit(email);
             setSuccess('Password reset code sent to your email');
             setStep('otp');
-        } catch (err: any) {
-            const errorData = err.response?.data?.error;
-            const message = typeof errorData === 'object' ? errorData.message : errorData;
-            setError(message || err.message || 'Failed to send reset code');
+        } catch (error: unknown) {
+            setError(getErrorMessage(error, 'Failed to send reset code'));
         } finally {
             setLoading(false);
         }
@@ -46,10 +69,8 @@ const ForgotPasswordPage = () => {
             setTimeout(() => {
                 navigate('/dashboard');
             }, 1500);
-        } catch (err: any) {
-            const errorData = err.response?.data?.error;
-            const message = typeof errorData === 'object' ? errorData.message : errorData;
-            setError(message || err.message || 'Failed to reset password');
+        } catch (error: unknown) {
+            setError(getErrorMessage(error, 'Failed to reset password'));
         } finally {
             setLoading(false);
         }
@@ -63,10 +84,8 @@ const ForgotPasswordPage = () => {
         try {
             await forgotPasswordInit(email);
             setSuccess('New reset code sent to your email');
-        } catch (err: any) {
-            const errorData = err.response?.data?.error;
-            const message = typeof errorData === 'object' ? errorData.message : errorData;
-            setError(message || err.message || 'Failed to resend code');
+        } catch (error: unknown) {
+            setError(getErrorMessage(error, 'Failed to resend code'));
         } finally {
             setLoading(false);
         }
@@ -87,7 +106,9 @@ const ForgotPasswordPage = () => {
                 {step === 'email' ? (
                     <>
                         <p className="otp-helper-text">
-                            Enter your email address and we'll send you a code to reset your password.
+                            {onboardingSource === 'volint-provisioning'
+                                ? 'Your Apraizal account is ready. Confirm your email below and we’ll help you set your password.'
+                                : "Enter your email address and we'll send you a code to reset your password."}
                         </p>
 
                         <form onSubmit={handleSendResetCode}>

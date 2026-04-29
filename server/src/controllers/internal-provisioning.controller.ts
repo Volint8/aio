@@ -2,6 +2,8 @@ import { Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import { makeUniqueOrgName, makeUniqueSlug, normalizeOrgName } from '../utils/org.utils';
+import { otpExpiryDate, randomOtp } from '../utils/auth.utils';
+import { sendProvisioningOnboardingEmail } from '../services/email.service';
 
 const prisma: PrismaClient = (global as any).prisma || new PrismaClient();
 
@@ -51,6 +53,11 @@ const parseRole = (value: unknown): string => {
     }
 
     return parsed;
+};
+
+const buildProvisioningSetupUrl = (email: string): string => {
+    const clientBaseUrl = (process.env.CLIENT_URL || 'http://localhost:5173').split(',')[0];
+    return `${clientBaseUrl.replace(/\/$/, '')}/forgot-password?email=${encodeURIComponent(email)}&source=volint-provisioning`;
 };
 
 export const lookupProvisioningUser = async (req: Request, res: Response) => {
@@ -168,6 +175,8 @@ export const createProvisioningUser = async (req: Request, res: Response) => {
         const role = parseRole(req.body.role);
         const toolOrganizationId = parseOptionalOrgId(req.body.toolOrganizationId);
         const organizationName = parseRequiredString(req.body.organizationName, 'organizationName');
+        const onboardingOtp = randomOtp();
+        const onboardingOtpExpiresAt = otpExpiryDate();
 
         if (role !== 'admin' && !toolOrganizationId) {
             return res.status(422).json({ success: false, message: 'toolOrganizationId is required for non-admin users' });
@@ -198,6 +207,8 @@ export const createProvisioningUser = async (req: Request, res: Response) => {
                     isVerified: true,
                     signupSource: 'SYSTEM',
                     initialRole: role === 'admin' ? 'ADMIN' : 'MEMBER',
+                    passwordResetOtp: onboardingOtp,
+                    passwordResetOtpExpiresAt: onboardingOtpExpiresAt,
                 },
             });
 
@@ -246,6 +257,18 @@ export const createProvisioningUser = async (req: Request, res: Response) => {
                 toolOrganizationId: organization.id,
             };
         });
+
+        try {
+            await sendProvisioningOnboardingEmail({
+                to: email,
+                otp: onboardingOtp,
+                organizationName,
+                recipientName: fullName,
+                setupUrl: buildProvisioningSetupUrl(email),
+            });
+        } catch (emailError) {
+            console.error('Failed to send provisioning onboarding email:', emailError);
+        }
 
         return res.status(201).json({ success: true, data: result });
     } catch (error) {

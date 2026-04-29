@@ -72,6 +72,58 @@ export const sendPasswordResetEmail = async (to: string, otp: string) => {
     return sendEmail(to, subject, html);
 };
 
+export const sendProvisioningOnboardingEmail = async (params: {
+    to: string;
+    otp: string;
+    organizationName: string;
+    recipientName?: string | null;
+    setupUrl?: string;
+}) => {
+    const {
+        to,
+        otp,
+        organizationName,
+        recipientName,
+        setupUrl,
+    } = params;
+
+    const subject = "Your Apraizal account is ready";
+    const clientBaseUrl = (process.env.CLIENT_URL || 'http://localhost:5173').split(',')[0];
+    const fallbackSetupUrl = `${clientBaseUrl.replace(/\/$/, '')}/forgot-password?email=${encodeURIComponent(to)}&source=volint-provisioning`;
+    const resolvedSetupUrl = setupUrl || fallbackSetupUrl;
+    const displayName = recipientName || to;
+
+    const html = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 10px;">
+            <div style="text-align: center; margin-bottom: 20px;">
+                <img src="${clientBaseUrl}/images/image.png" alt="Apraizal Logo" style="height: 40px;" />
+            </div>
+            <h2 style="color: #333; text-align: center;">Your account is ready</h2>
+            <p style="color: #666; font-size: 16px;">Hi ${displayName},</p>
+            <p style="color: #666; font-size: 16px;">
+                Your Apraizal account has been created through <strong>${organizationName}</strong> in Volint Suite.
+            </p>
+            <p style="color: #666; font-size: 16px;">
+                Use the reset code below to choose your password and complete onboarding.
+            </p>
+            <div style="background-color: #f4f4f4; padding: 15px; text-align: center; border-radius: 5px; margin: 20px 0;">
+                <span style="font-size: 24px; font-weight: bold; letter-spacing: 5px; color: #333;">${otp}</span>
+            </div>
+            <p style="text-align: center; margin: 24px 0;">
+                <a href="${resolvedSetupUrl}" style="display:inline-block;padding:12px 18px;background:#2563eb;color:#fff;text-decoration:none;border-radius:6px;">
+                    Set Your Password
+                </a>
+            </p>
+            <p style="color: #666; font-size: 14px;">This code expires in 15 minutes.</p>
+            <p style="color: #666; font-size: 14px;">If the button does not work, open: ${resolvedSetupUrl}</p>
+            <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
+            <p style="text-align: center; color: #999; font-size: 12px;">&copy; ${new Date().getFullYear()} Apraizal. All rights reserved.</p>
+        </div>
+    `;
+
+    return sendEmail(to, subject, html);
+};
+
 export const sendTaskAssignmentEmail = async (params: {
     to: string;
     assigneeName?: string | null;
