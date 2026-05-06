@@ -1,19 +1,20 @@
 import { Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { sendEmail } from '../services/email.service';
+import { getAccessibleTeamIds, getMembershipTeamIds, getMembershipWithTeams, uniqueIds } from '../utils/membership.utils';
 
 const prisma = new PrismaClient();
 
 const getNotificationAudienceWhere = (params: {
   organizationId: string;
   userId: string;
-  teamId?: string | null;
+  teamIds?: string[];
 }) => ({
   organizationId: params.organizationId,
   dismissedBy: { not: { array_contains: [params.userId] } },
   OR: [
     { targetType: 'INDIVIDUAL', targetId: params.userId },
-    ...(params.teamId ? [{ targetType: 'TEAM', targetId: params.teamId }] : [])
+    ...((params.teamIds || []).length > 0 ? [{ targetType: 'TEAM', targetId: { in: params.teamIds } }] : [])
   ]
 });
 
@@ -41,9 +42,7 @@ export const sendAlert = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'All fields are required' });
     }
 
-    const membership = await prisma.organizationMember.findUnique({
-      where: { userId_organizationId: { userId: senderId, organizationId } }
-    });
+    const membership = await getMembershipWithTeams(prisma, senderId, organizationId);
 
     if (!membership) {
       return res.status(403).json({ error: 'Access denied' });
@@ -64,26 +63,23 @@ export const sendAlert = async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Organization not found' });
     }
 
+    const membershipTeamIds = getMembershipTeamIds(membership);
+    const accessibleTeamIds = await getAccessibleTeamIds(prisma, membership);
+
     if (membership.role === 'MEMBER') {
       if (targetType !== 'INDIVIDUAL') {
         return res.status(403).json({ error: 'Members can only send alerts to an admin or their team lead' });
       }
 
-      const targetMembership = await prisma.organizationMember.findUnique({
-        where: {
-          userId_organizationId: {
-            userId: targetId,
-            organizationId
-          }
-        }
-      });
+      const targetMembership = await getMembershipWithTeams(prisma, targetId, organizationId);
+      const targetTeamIds = getMembershipTeamIds(targetMembership);
+      const sharesTeam = targetTeamIds.some((teamId) => membershipTeamIds.includes(teamId));
 
       const canAlertTarget =
         targetMembership?.role === 'ADMIN' ||
         (
           targetMembership?.role === 'TEAM_LEAD' &&
-          !!membership.teamId &&
-          targetMembership.teamId === membership.teamId
+          sharesTeam
         );
 
       if (!canAlertTarget) {
@@ -97,7 +93,7 @@ export const sendAlert = async (req: Request, res: Response) => {
           return res.status(400).json({ error: 'No admins found for this organization' });
         }
       } else if (targetType === 'TEAM') {
-        if (!membership.teamId || targetId !== membership.teamId) {
+        if (!accessibleTeamIds.includes(targetId)) {
           return res.status(403).json({ error: 'Team leads can only send team alerts to their own team' });
         }
       } else if (targetType === 'INDIVIDUAL') {
@@ -185,11 +181,19 @@ export const sendAlert = async (req: Request, res: Response) => {
       const user = await prisma.user.findUnique({ where: { id: targetId }, select: { email: true } });
       if (user) recipientEmails.push(user.email);
     } else if (targetType === 'TEAM') {
-      const members = await prisma.organizationMember.findMany({
-        where: { teamId: targetId, organizationId },
-        include: { user: { select: { email: true } } }
+      const members = await prisma.organizationMemberTeam.findMany({
+        where: { teamId: targetId, organizationMember: { organizationId } },
+        include: {
+          organizationMember: {
+            include: {
+              user: {
+                select: { email: true }
+              }
+            }
+          }
+        }
       });
-      recipientEmails = members.map(m => m.user.email);
+      recipientEmails = uniqueIds(members.map((member: any) => member.organizationMember?.user?.email));
     }
 
     // Send emails
@@ -225,15 +229,13 @@ export const getNotifications = async (req: Request, res: Response) => {
     }
 
     // Get user's team ID in this org
-    const membership = await prisma.organizationMember.findUnique({
-      where: { userId_organizationId: { userId, organizationId: organizationId as string } }
-    });
+    const membership = await getMembershipWithTeams(prisma, userId, organizationId as string);
 
     const notifications = await prisma.notification.findMany({
       where: getNotificationAudienceWhere({
         organizationId: organizationId as string,
         userId,
-        teamId: membership?.teamId
+        teamIds: await getAccessibleTeamIds(prisma, membership)
       }),
       include: {
         sender: { select: { name: true, email: true } }
@@ -263,16 +265,14 @@ export const markAsRead = async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Notification not found' });
     }
 
-    const membership = await prisma.organizationMember.findUnique({
-      where: { userId_organizationId: { userId, organizationId: notification.organizationId } }
-    });
+    const membership = await getMembershipWithTeams(prisma, userId, notification.organizationId);
     const visible = await prisma.notification.findFirst({
       where: {
         id,
         ...getNotificationAudienceWhere({
           organizationId: notification.organizationId,
           userId,
-          teamId: membership?.teamId
+          teamIds: await getAccessibleTeamIds(prisma, membership)
         })
       }
     });
@@ -297,9 +297,7 @@ export const markAllAsRead = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Organization ID is required' });
     }
 
-    const membership = await prisma.organizationMember.findUnique({
-      where: { userId_organizationId: { userId, organizationId } }
-    });
+    const membership = await getMembershipWithTeams(prisma, userId, organizationId);
 
     if (!membership) {
       return res.status(403).json({ error: 'Access denied' });
@@ -307,7 +305,7 @@ export const markAllAsRead = async (req: Request, res: Response) => {
 
     const result = await prisma.notification.updateMany({
       where: {
-        ...getNotificationAudienceWhere({ organizationId, userId, teamId: membership.teamId }),
+        ...getNotificationAudienceWhere({ organizationId, userId, teamIds: await getAccessibleTeamIds(prisma, membership) }),
         isRead: false
       },
       data: { isRead: true }
@@ -329,9 +327,7 @@ export const clearReadNotifications = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Organization ID is required' });
     }
 
-    const membership = await prisma.organizationMember.findUnique({
-      where: { userId_organizationId: { userId, organizationId } }
-    });
+    const membership = await getMembershipWithTeams(prisma, userId, organizationId);
 
     if (!membership) {
       return res.status(403).json({ error: 'Access denied' });
@@ -339,7 +335,7 @@ export const clearReadNotifications = async (req: Request, res: Response) => {
 
     const notifications = await prisma.notification.findMany({
       where: {
-        ...getNotificationAudienceWhere({ organizationId, userId, teamId: membership.teamId }),
+        ...getNotificationAudienceWhere({ organizationId, userId, teamIds: await getAccessibleTeamIds(prisma, membership) }),
         isRead: true
       },
       select: { id: true, dismissedBy: true }

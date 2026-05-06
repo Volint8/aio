@@ -88,6 +88,14 @@ interface OrganizationMember {
     id: string;
     name: string;
   } | null;
+  primaryTeam?: {
+    id: string;
+    name: string;
+  } | null;
+  teams?: Array<{
+    id: string;
+    name: string;
+  }>;
   joinedAt?: string | null;
   user: {
     id: string;
@@ -244,6 +252,24 @@ const TeamMultiDropdown = ({
     </div>
   );
 };
+
+const getMemberTeams = (member?: OrganizationMember | null) => {
+  if (!member) return [];
+  const teams = member.teams || [];
+  if (teams.length > 0) return teams;
+  if (member.primaryTeam) return [member.primaryTeam];
+  if (member.team) return [member.team];
+  return [];
+};
+
+const getMemberTeamIds = (member?: OrganizationMember | null) =>
+  getMemberTeams(member).map((team) => team.id);
+
+const getMemberTeamLabel = (member?: OrganizationMember | null) =>
+  getMemberTeams(member)
+    .map((team) => team.name)
+    .filter(Boolean)
+    .join(", ");
 
 type MemberOption = {
   id: string;
@@ -550,6 +576,10 @@ interface InviteRecord {
   role: string;
   status: string;
   expiresAt: string;
+  teamId?: string | null;
+  primaryTeamId?: string | null;
+  team?: string | null;
+  teams?: Array<{ id: string; name: string }>;
 }
 
 interface QuoteRecord {
@@ -906,7 +936,7 @@ const DashboardPage = () => {
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState("MEMBER");
   const [inviteName, setInviteName] = useState("");
-  const [inviteTeamId, setInviteTeamId] = useState("");
+  const [inviteTeamIds, setInviteTeamIds] = useState<string[]>([]);
   const [inviteCategory, setInviteCategory] = useState("");
   const [inviting, setInviting] = useState(false);
   const [teamError, setTeamError] = useState("");
@@ -1179,7 +1209,7 @@ const DashboardPage = () => {
       : assignableUsers.map((member) => ({
           id: member.user.id,
           label: member.user.name || member.user.email,
-          meta: [member.user.jobTitle || member.role, member.team?.name]
+          meta: [member.user.jobTitle || member.role, getMemberTeamLabel(member)]
             .filter(Boolean)
             .join(" • "),
         }));
@@ -1199,6 +1229,7 @@ const DashboardPage = () => {
   const currentOrgMember = (organization?.members || []).find(
     (member) => member.userId === user?.id,
   );
+  const currentOrgMemberTeamIds = getMemberTeamIds(currentOrgMember);
 
   const alertRecipientUsers = isMember
     ? (organization?.members || []).filter(
@@ -1206,8 +1237,9 @@ const DashboardPage = () => {
           member.userId !== user?.id &&
           (member.role === "ADMIN" ||
             (member.role === "TEAM_LEAD" &&
-              Boolean(currentOrgMember?.teamId) &&
-              member.teamId === currentOrgMember?.teamId)),
+              getMemberTeamIds(member).some((teamId) =>
+                currentOrgMemberTeamIds.includes(teamId),
+              ))),
       )
     : isTeamLead
       ? (organization?.members || []).filter(
@@ -1216,8 +1248,8 @@ const DashboardPage = () => {
       : assignableUsers;
 
   const alertRecipientTeams = isTeamLead
-    ? teamDistribution.filter(
-        (team) => team.teamId === currentOrgMember?.teamId,
+    ? teamDistribution.filter((team) =>
+        currentOrgMemberTeamIds.includes(team.teamId),
       )
     : teamDistribution;
 
@@ -1529,19 +1561,10 @@ const DashboardPage = () => {
       })
       .map((member) => {
         const stats = memberStats.find((m) => m.userId === member.userId);
-        const team =
-          member.team ||
-          teams.find(
-            (t) =>
-              t.id === member.teamId ||
-              (t.members &&
-                t.members.some((m) => (m.userId || m.id) === member.userId)) ||
-              (t.people && t.people.some((p) => p.userId === member.userId)),
-          );
         const roleLabel =
           member.user.initialRole?.trim() || formatRole(member.role);
         const category = formatMemberCategory(stats);
-        const teamName = team?.name || "No team";
+        const teamName = getMemberTeamLabel(member) || "No team";
         return { member, stats, teamName, category, roleLabel };
       });
   }, [organization, ownerFilter, memberStats, teams, user?.id]);
@@ -2281,13 +2304,14 @@ const DashboardPage = () => {
         email: inviteEmail.trim(),
         role: inviteRole,
         name: inviteName.trim() || undefined,
-        teamId: inviteTeamId || undefined,
+        teamIds: inviteTeamIds.length > 0 ? inviteTeamIds : undefined,
+        primaryTeamId: inviteTeamIds[0] || undefined,
         category: inviteCategory.trim() || undefined,
       });
       setInviteEmail("");
       setInviteRole("MEMBER");
       setInviteName("");
-      setInviteTeamId("");
+      setInviteTeamIds([]);
       setInviteCategory("");
       const invitesRes = await api.get(`/orgs/${orgId}/invites`);
       setInvites(invitesRes.data || []);
@@ -3248,7 +3272,7 @@ const DashboardPage = () => {
                 }
                 if (!urlTeamId) return true;
                 // match by explicit team relation or by searching teams data
-                if (m.team?.id === urlTeamId || m.teamId === urlTeamId)
+                if (getMemberTeamIds(m).includes(urlTeamId))
                   return true;
                 const teamObj = teams.find((t) => t.id === urlTeamId);
                 if (!teamObj) return false;
@@ -3551,18 +3575,12 @@ const DashboardPage = () => {
                         <option value="MEMBER">Member</option>
                         <option value="TEAM_LEAD">Team Lead</option>
                       </select>
-                      <select
-                        value={inviteTeamId}
-                        onChange={(e) => setInviteTeamId(e.target.value)}
-                        disabled={!isAdmin || inviting}
-                      >
-                        <option value="">No team</option>
-                        {teams.map((team) => (
-                          <option key={team.id} value={team.id}>
-                            {team.name}
-                          </option>
-                        ))}
-                      </select>
+                      <TeamMultiDropdown
+                        teams={teams}
+                        value={inviteTeamIds}
+                        onChange={setInviteTeamIds}
+                        emptyMessage="No teams available"
+                      />
                       <input
                         type="text"
                         value={inviteCategory}
@@ -3592,6 +3610,11 @@ const DashboardPage = () => {
                               <div>
                                 <strong>{invite.email}</strong>
                               </div>
+                              {invite.teams && invite.teams.length > 0 && (
+                                <div>
+                                  {invite.teams.map((team) => team.name).join(", ")}
+                                </div>
+                              )}
                             </div>
                             <div className="team-member-role">
                               {invite.status === "PENDING" && (

@@ -104,7 +104,7 @@ export const listInternalReportSubjects = async (req: Request, res: Response) =>
                             jobTitle: true,
                         },
                     },
-                    team: {
+                    primaryTeam: {
                         select: {
                             id: true,
                             name: true,
@@ -121,7 +121,7 @@ export const listInternalReportSubjects = async (req: Request, res: Response) =>
                 data: members.map((member) => ({
                     id: member.userId,
                     label: member.user.name || member.user.email,
-                    subtitle: [member.user.jobTitle || member.role, member.team?.name || null].filter(Boolean).join(' - '),
+                    subtitle: [member.user.jobTitle || member.role, member.primaryTeam?.name || null].filter(Boolean).join(' - '),
                 })),
             });
         }
@@ -138,8 +138,12 @@ export const listInternalReportSubjects = async (req: Request, res: Response) =>
                     },
                 },
                 members: {
-                    select: {
-                        userId: true,
+                    include: {
+                        organizationMember: {
+                            select: {
+                                userId: true,
+                            },
+                        },
                     },
                 },
             },

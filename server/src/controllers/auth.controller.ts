@@ -12,6 +12,7 @@ import {
   hashToken
 } from '../utils/auth.utils';
 import { makeUniqueOrgName, makeUniqueSlug, normalizeOrgName } from '../utils/org.utils';
+import { addTeamsToOrganizationMember, asTeamIdList, ensurePrimaryTeamId } from '../utils/membership.utils';
 
 const prisma = new PrismaClient();
 
@@ -83,15 +84,30 @@ const attachInviteMembershipIfPending = async (userId: string) => {
     }
   });
 
+  const inviteTeamIds = asTeamIdList(invite.teamIds);
+  const invitePrimaryTeamId = ensurePrimaryTeamId(inviteTeamIds, invite.primaryTeamId);
+
   await prisma.$transaction(async (tx) => {
     if (!existingMembership) {
-      await tx.organizationMember.create({
+      const membership = await tx.organizationMember.create({
         data: {
           userId,
           organizationId: invite.organizationId,
           role: invite.role,
-          teamId: invite.teamId
+          primaryTeamId: invitePrimaryTeamId
         }
+      });
+
+      await addTeamsToOrganizationMember(tx, {
+        organizationMemberId: membership.id,
+        teamIds: inviteTeamIds,
+        primaryTeamId: invitePrimaryTeamId
+      });
+    } else if (inviteTeamIds.length > 0) {
+      await addTeamsToOrganizationMember(tx, {
+        organizationMemberId: existingMembership.id,
+        teamIds: inviteTeamIds,
+        primaryTeamId: invitePrimaryTeamId
       });
     }
 
@@ -388,15 +404,30 @@ export const inviteAcceptComplete = async (req: Request, res: Response) => {
       }
     });
 
+    const inviteTeamIds = asTeamIdList(invite.teamIds);
+    const invitePrimaryTeamId = ensurePrimaryTeamId(inviteTeamIds, invite.primaryTeamId);
+
     await prisma.$transaction(async (tx) => {
       if (!existingMembership) {
-        await tx.organizationMember.create({
+        const membership = await tx.organizationMember.create({
           data: {
             userId: user.id,
             organizationId: invite.organizationId,
             role: invite.role,
-            teamId: invite.teamId
+            primaryTeamId: invitePrimaryTeamId
           }
+        });
+
+        await addTeamsToOrganizationMember(tx, {
+          organizationMemberId: membership.id,
+          teamIds: inviteTeamIds,
+          primaryTeamId: invitePrimaryTeamId
+        });
+      } else if (inviteTeamIds.length > 0) {
+        await addTeamsToOrganizationMember(tx, {
+          organizationMemberId: existingMembership.id,
+          teamIds: inviteTeamIds,
+          primaryTeamId: invitePrimaryTeamId
         });
       }
 
@@ -497,7 +528,7 @@ export const verifyOtp = async (req: Request, res: Response) => {
 
     // Fetch user's primary organization membership role
     const primaryMembership = await prisma.organizationMember.findFirst({
-      where: { id: verifiedUser.id },
+      where: { userId: verifiedUser.id },
       orderBy: { joinedAt: 'asc' }
     });
 

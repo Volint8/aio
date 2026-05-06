@@ -10,6 +10,19 @@ import {
   listAppraisalReports,
   previewAppraisalSetup
 } from '../services/appraisal-generation.service';
+import {
+  addTeamsToOrganizationMember,
+  asTeamIdList,
+  buildTeamsPayloadFromMembership,
+  ensurePrimaryTeamId,
+  getAccessibleTeamIds,
+  getMembershipTeamIds,
+  getMembershipWithTeams,
+  getMembershipTeams,
+  removeTeamFromOrganizationMembers,
+  syncOrganizationMemberTeams,
+  uniqueIds
+} from '../utils/membership.utils';
 import * as XLSX from 'xlsx';
 
 const prisma = new PrismaClient();
@@ -21,14 +34,7 @@ const startOfToday = () => {
 };
 
 const getMembership = async (userId: string, organizationId: string) => {
-  return prisma.organizationMember.findUnique({
-    where: {
-      userId_organizationId: {
-        userId,
-        organizationId
-      }
-    }
-  });
+  return getMembershipWithTeams(prisma, userId, organizationId);
 };
 
 const requireAdmin = async (userId: string, organizationId: string) => {
@@ -59,7 +65,7 @@ const normalizeInviteRole = (value: unknown): string | null => {
 };
 
 const validateTeamParticipants = async (tx: any, organizationId: string, leadUserId: string, memberUserIds: string[]) => {
-  const uniqueMemberIds = Array.from(new Set(memberUserIds));
+  const uniqueMemberIds = uniqueIds(memberUserIds);
 
   if (!uniqueMemberIds.includes(leadUserId)) {
     uniqueMemberIds.push(leadUserId);
@@ -87,6 +93,79 @@ const validateTeamParticipants = async (tx: any, organizationId: string, leadUse
   }
 
   return uniqueMemberIds;
+};
+
+const validateOrganizationTeamIds = async (tx: any, organizationId: string, teamIds: string[]) => {
+  const normalizedTeamIds = uniqueIds(teamIds);
+  if (normalizedTeamIds.length === 0) {
+    return [];
+  }
+
+  const teams = await tx.team.findMany({
+    where: {
+      organizationId,
+      id: { in: normalizedTeamIds }
+    },
+    select: { id: true }
+  });
+
+  if (teams.length !== normalizedTeamIds.length) {
+    throw new Error('One or more selected teams are invalid for this organization');
+  }
+
+  return normalizedTeamIds;
+};
+
+const includeMemberRelations = {
+  primaryTeam: {
+    select: {
+      id: true,
+      name: true
+    }
+  },
+  teamMemberships: {
+    include: {
+      team: {
+        select: {
+          id: true,
+          name: true
+        }
+      }
+    },
+    orderBy: {
+      team: {
+        name: 'asc'
+      }
+    }
+  },
+  user: {
+    select: {
+      id: true,
+      email: true,
+      name: true,
+      jobTitle: true,
+      signupSource: true,
+      initialRole: true,
+      createdAt: true
+    }
+  }
+} as const;
+
+const serializeOrganizationMember = (membership: any) => ({
+  ...membership,
+  ...buildTeamsPayloadFromMembership(membership)
+});
+
+const parseInviteTeamIds = (payload: { teamId?: string; teamIds?: string[] | unknown; primaryTeamId?: string | null }) => {
+  const teamIds = uniqueIds([
+    ...(Array.isArray(payload.teamIds) ? payload.teamIds as string[] : []),
+    payload.teamId
+  ]);
+
+  return {
+    teamIds,
+    primaryTeamId: ensurePrimaryTeamId(teamIds, payload.primaryTeamId || payload.teamId || null)
+  };
 };
 
 type OkrImpactKrSummary = {
@@ -221,26 +300,39 @@ const enrichOkrOwnerUsers = async <T extends { keyResults?: Array<{ ownerIds?: u
 // Key results no longer use category linkage
 
 const getAssigneeLeadMembership = async (organizationId: string, assignedUserId: string) => {
-  const assigneeMembership = await prisma.organizationMember.findUnique({
-    where: {
-      userId_organizationId: {
-        userId: assignedUserId,
-        organizationId
-      }
-    }
-  });
+  const assigneeMembership = await getMembership(assignedUserId, organizationId);
+  const teamIds = getMembershipTeamIds(assigneeMembership);
 
-  if (!assigneeMembership?.teamId) {
+  if (teamIds.length === 0) {
     return null;
   }
 
   return prisma.organizationMember.findFirst({
     where: {
       organizationId,
-      teamId: assigneeMembership.teamId,
-      role: 'TEAM_LEAD'
+      role: 'TEAM_LEAD',
+      OR: [
+        { teamMemberships: { some: { teamId: { in: teamIds } } } },
+        { user: { leadingTeams: { some: { id: { in: teamIds } } } } }
+      ]
     },
     include: {
+      primaryTeam: {
+        select: {
+          id: true,
+          name: true
+        }
+      },
+      teamMemberships: {
+        include: {
+          team: {
+            select: {
+              id: true,
+              name: true
+            }
+          }
+        }
+      },
       user: {
         select: {
           id: true,
@@ -405,32 +497,21 @@ export const getOrgById = async (req: Request, res: Response) => {
       return res.status(403).json({ error: 'Access denied' });
     }
 
-    // Limit members returned to the lead's team when the requester is a TEAM_LEAD
+    const accessibleTeamIds = await getAccessibleTeamIds(prisma, membership);
     const membersInclude: any = {
-      include: {
-        team: {
-          select: {
-            id: true,
-            name: true
-          }
-        },
-        user: {
-          select: {
-            id: true,
-            email: true,
-            name: true,
-            jobTitle: true,
-            signupSource: true,
-            initialRole: true,
-            createdAt: true
-          }
-        }
-      },
+      include: includeMemberRelations,
       orderBy: { joinedAt: 'asc' }
     };
 
-    if (membership.role === 'TEAM_LEAD' && membership.teamId) {
-      membersInclude.where = { teamId: membership.teamId };
+    if (membership.role === 'TEAM_LEAD') {
+      membersInclude.where = accessibleTeamIds.length > 0
+        ? {
+            OR: [
+              { teamMemberships: { some: { teamId: { in: accessibleTeamIds } } } },
+              { primaryTeamId: { in: accessibleTeamIds } }
+            ]
+          }
+        : { id: membership.id };
     }
 
     const organization = await prisma.organization.findUnique({
@@ -446,6 +527,7 @@ export const getOrgById = async (req: Request, res: Response) => {
 
     return res.json({
       ...organization,
+      members: (organization?.members || []).map(serializeOrganizationMember),
       userRole: membership.role,
       canReviewSubmissions: ['ADMIN', 'TEAM_LEAD'].includes(membership.role)
     });
@@ -465,11 +547,13 @@ export const createInvite = async (req: Request, res: Response) => {
   try {
     const requesterUserId = (req as any).user.userId as string;
     const organizationId = req.params.id as string;
-    const { email, role, name, teamId, category } = req.body as {
+    const { email, role, name, teamId, teamIds: requestedTeamIds, primaryTeamId, category } = req.body as {
       email?: string;
       role?: string;
       name?: string;
       teamId?: string;
+      teamIds?: string[];
+      primaryTeamId?: string | null;
       category?: string;
     };
 
@@ -503,25 +587,11 @@ export const createInvite = async (req: Request, res: Response) => {
         }
       });
 
-      if (existingMembership) {
-        return res.status(400).json({ error: 'User is already a member of this organization' });
-      }
     }
 
-    let normalizedTeamId: string | null = null;
-    if (teamId) {
-      const team = await prisma.team.findFirst({
-        where: {
-          id: teamId,
-          organizationId
-        },
-        select: { id: true }
-      });
-      if (!team) {
-        return res.status(400).json({ error: 'Selected team is invalid for this organization' });
-      }
-      normalizedTeamId = team.id;
-    }
+    const inviteTeams = parseInviteTeamIds({ teamId, teamIds: requestedTeamIds, primaryTeamId });
+    const normalizedTeamIds = await validateOrganizationTeamIds(prisma, organizationId, inviteTeams.teamIds);
+    const normalizedPrimaryTeamId = ensurePrimaryTeamId(normalizedTeamIds, inviteTeams.primaryTeamId);
 
     await prisma.invite.updateMany({
       where: {
@@ -543,7 +613,8 @@ export const createInvite = async (req: Request, res: Response) => {
         organizationId,
         email: normalizedInviteEmail,
         role: normalizedRole,
-        teamId: normalizedTeamId,
+        primaryTeamId: normalizedPrimaryTeamId,
+        teamIds: normalizedTeamIds,
         category: category?.trim() || null,
         tokenHash,
         expiresAt,
@@ -578,7 +649,9 @@ export const createInvite = async (req: Request, res: Response) => {
       id: invite.id,
       email: invite.email,
       role: invite.role,
-      teamId: invite.teamId,
+      teamId: invite.primaryTeamId,
+      teamIds: normalizedTeamIds,
+      primaryTeamId: normalizedPrimaryTeamId,
       category: invite.category,
       status: invite.status,
       expiresAt: invite.expiresAt,
@@ -650,6 +723,7 @@ export const bulkInviteMembers = async (req: Request, res: Response) => {
         const email = row['Email']?.toString()?.trim();
         const role = normalizeInviteRole(row['Role']);
         const teamName = row['Team']?.toString()?.trim();
+        const teamsCell = row['Teams']?.toString()?.trim();
         const category = row['Category']?.toString()?.trim();
         const name = row['Name']?.toString()?.trim();
 
@@ -673,47 +747,34 @@ export const bulkInviteMembers = async (req: Request, res: Response) => {
 
         // Check if user already exists in organization
         const existingUser = await prisma.user.findUnique({ where: { email: normalizedEmail } });
-        if (existingUser) {
-          const existingMembership = await prisma.organizationMember.findUnique({
-            where: {
-              userId_organizationId: {
-                userId: existingUser.id,
-                organizationId
-              }
-            }
-          });
+        const teamNames = uniqueIds([
+          ...(teamsCell ? teamsCell.split('|').map((part: string) => part.trim()) : []),
+          teamName
+        ]);
+        const resolvedTeamIds: string[] = [];
+        let failedTeamLookup = false;
 
-          if (existingMembership) {
-            results.failed.push({ row: rowNum, email, error: 'User is already a member of this organization' });
-            continue;
-          }
-        }
-
-        // Validate team if provided, or create it if it doesn't exist
-        let teamId: string | null = null;
-        if (teamName) {
-          const normalizedTeamName = normalizeOrgName(teamName);
+        for (const candidateTeamName of teamNames) {
+          const normalizedTeamName = normalizeOrgName(candidateTeamName);
           let team = teamNameMap.get(normalizedTeamName);
 
-          // Auto-create team if it doesn't exist
           if (!team) {
             try {
               const newTeam = await prisma.team.create({
                 data: {
                   organizationId,
-                  name: teamName,
-                  normalizedName: normalizeOrgName(teamName)
+                  name: candidateTeamName,
+                  normalizedName: normalizeOrgName(candidateTeamName)
                 }
               });
               teamNameMap.set(normalizedTeamName, newTeam);
               team = newTeam;
             } catch (createError: any) {
-              // If team creation fails, check if it was created by another concurrent request
               const existingTeam = await prisma.team.findFirst({
                 where: {
                   organizationId,
                   name: {
-                    equals: teamName,
+                    equals: candidateTeamName,
                     mode: 'insensitive'
                   }
                 }
@@ -722,12 +783,18 @@ export const bulkInviteMembers = async (req: Request, res: Response) => {
                 team = existingTeam;
                 teamNameMap.set(normalizedTeamName, existingTeam);
               } else {
-                results.failed.push({ row: rowNum, email, error: `Failed to create team "${teamName}": ${createError.message}` });
+                results.failed.push({ row: rowNum, email, error: `Failed to create team "${candidateTeamName}": ${createError.message}` });
+                failedTeamLookup = true;
                 continue;
               }
             }
           }
-          teamId = team.id;
+
+          resolvedTeamIds.push(team.id);
+        }
+
+        if (failedTeamLookup) {
+          continue;
         }
 
         // Revoke any existing pending invites for this email
@@ -750,7 +817,8 @@ export const bulkInviteMembers = async (req: Request, res: Response) => {
             organizationId,
             email: normalizedEmail,
             role,
-            teamId,
+            primaryTeamId: resolvedTeamIds[0] || null,
+            teamIds: uniqueIds(resolvedTeamIds),
             category: category || null,
             tokenHash,
             expiresAt,
@@ -759,8 +827,7 @@ export const bulkInviteMembers = async (req: Request, res: Response) => {
           },
           include: {
             organization: { select: { name: true } },
-            invitedBy: { select: { name: true, email: true } },
-            team: { select: { name: true } }
+            invitedBy: { select: { name: true, email: true } }
           }
         });
 
@@ -783,7 +850,8 @@ export const bulkInviteMembers = async (req: Request, res: Response) => {
           id: invite.id,
           email: invite.email,
           role: invite.role,
-          team: invite.team?.name || null,
+          team: teamNames[0] || null,
+          teams: teamNames,
           category: invite.category,
           status: invite.status
         });
@@ -839,15 +907,29 @@ export const listInvites = async (req: Request, res: Response) => {
         id: true,
         email: true,
         role: true,
-        team: { select: { name: true } },
+        primaryTeam: { select: { id: true, name: true } },
         category: true,
         status: true,
         expiresAt: true,
-        createdAt: true
+        createdAt: true,
+        teamIds: true,
+        primaryTeamId: true
       }
     });
 
-    return res.json(invites);
+    const teamsById = new Map(
+      (await prisma.team.findMany({
+        where: { organizationId },
+        select: { id: true, name: true }
+      })).map((team) => [team.id, team.name])
+    );
+
+    return res.json(invites.map((invite) => ({
+      ...invite,
+      team: invite.primaryTeam?.name || null,
+      teams: asTeamIdList(invite.teamIds).map((teamId) => ({ id: teamId, name: teamsById.get(teamId) || 'Unknown team' })),
+      teamId: invite.primaryTeamId
+    })));
   } catch (error) {
     console.error('List invites error:', error);
     return res.status(500).json({ error: 'Internal server error' });
@@ -1196,20 +1278,20 @@ export const updateMemberRole = async (req: Request, res: Response) => {
       where: { id: memberId },
       data: {
         role,
-        ...(role === 'ADMIN' ? { teamId: null } : {})
+        ...(role === 'ADMIN' ? { primaryTeamId: null } : {})
       },
       include: {
-        user: {
-          select: {
-            id: true,
-            email: true,
-            name: true
-          }
-        }
+        ...includeMemberRelations
       }
     });
 
-    return res.json(updatedMembership);
+    if (role === 'ADMIN') {
+      await prisma.organizationMemberTeam.deleteMany({
+        where: { organizationMemberId: updatedMembership.id }
+      });
+    }
+
+    return res.json(serializeOrganizationMember(updatedMembership));
   } catch (error) {
     console.error('Update member role error:', error);
     return res.status(500).json({ error: 'Internal server error' });
@@ -1273,13 +1355,20 @@ export const createTeam = async (req: Request, res: Response) => {
       });
 
       if (participantIds.length > 0) {
-        await tx.organizationMember.updateMany({
+        const memberships = await tx.organizationMember.findMany({
           where: {
             organizationId,
             userId: { in: participantIds }
-          },
-          data: { teamId: team.id }
+          }
         });
+
+        await Promise.all(memberships.map((membership: any) =>
+          addTeamsToOrganizationMember(tx, {
+            organizationMemberId: membership.id,
+            teamIds: [team.id],
+            primaryTeamId: membership.primaryTeamId || team.id
+          })
+        ));
       }
 
       return team;
@@ -1293,8 +1382,8 @@ export const createTeam = async (req: Request, res: Response) => {
         },
         members: {
           include: {
-            user: {
-              select: { id: true, name: true, email: true }
+            organizationMember: {
+              include: includeMemberRelations
             }
           }
         }
@@ -1333,8 +1422,22 @@ export const getTeams = async (req: Request, res: Response) => {
         },
         members: {
           include: {
-            user: {
-              select: { id: true, name: true, email: true }
+            organizationMember: {
+              include: {
+                user: {
+                  select: { id: true, name: true, email: true }
+                },
+                primaryTeam: {
+                  select: { id: true, name: true }
+                },
+                teamMemberships: {
+                  include: {
+                    team: {
+                      select: { id: true, name: true }
+                    }
+                  }
+                }
+              }
             }
           }
         }
@@ -1383,15 +1486,16 @@ export const getTeams = async (req: Request, res: Response) => {
       }
 
       const members = await Promise.all(team.members.map(async (member) => {
+        const orgMember = member.organizationMember;
         const overdueCutoff = startOfToday();
         const [mPending, mOngoing, mCompleted, mOverdue, mOkrTasks] = await Promise.all([
-          prisma.task.count({ where: { deletedAt: null, assigneeId: member.userId, status: 'CREATED' } }),
-          prisma.task.count({ where: { deletedAt: null, assigneeId: member.userId, status: 'IN_PROGRESS' } }),
-          prisma.task.count({ where: { deletedAt: null, assigneeId: member.userId, status: 'COMPLETED' } }),
+          prisma.task.count({ where: { deletedAt: null, assigneeId: orgMember.userId, status: 'CREATED' } }),
+          prisma.task.count({ where: { deletedAt: null, assigneeId: orgMember.userId, status: 'IN_PROGRESS' } }),
+          prisma.task.count({ where: { deletedAt: null, assigneeId: orgMember.userId, status: 'COMPLETED' } }),
           prisma.task.count({
             where: {
               deletedAt: null,
-              assigneeId: member.userId,
+              assigneeId: orgMember.userId,
               status: { not: 'COMPLETED' },
               dueDate: { lt: overdueCutoff }
             }
@@ -1399,7 +1503,7 @@ export const getTeams = async (req: Request, res: Response) => {
           // Count tasks associated with OKRs by TaskKrImpact for this user
           prisma.taskKrImpact.count({
             where: {
-              task: { assigneeId: member.userId, deletedAt: null }
+              task: { assigneeId: orgMember.userId, deletedAt: null }
             }
           })
         ]);
@@ -1419,10 +1523,12 @@ export const getTeams = async (req: Request, res: Response) => {
         }
 
         return {
-          id: member.user.id,
-          name: member.user.name,
-          email: member.user.email,
-          role: member.role,
+          id: orgMember.user.id,
+          userId: orgMember.user.id,
+          name: orgMember.user.name,
+          email: orgMember.user.email,
+          role: orgMember.role,
+          ...buildTeamsPayloadFromMembership(orgMember),
           stats: {
             pending: mPending,
             ongoing: mOngoing,
@@ -1504,18 +1610,42 @@ export const updateTeam = async (req: Request, res: Response) => {
         participantIds = memberUserIds;
       }
 
-      await tx.organizationMember.updateMany({
-        where: { organizationId, teamId },
-        data: { teamId: null }
-      });
-
-      await tx.organizationMember.updateMany({
+      const existingMemberships = await tx.organizationMember.findMany({
         where: {
           organizationId,
-          userId: { in: participantIds }
+          teamMemberships: { some: { teamId } }
         },
-        data: { teamId }
+        include: { teamMemberships: true }
       });
+
+      await Promise.all(existingMemberships.map(async (membership: any) => {
+        const nextTeamIds = membership.teamMemberships
+          .map((item: any) => item.teamId)
+          .filter((linkedTeamId: string) => linkedTeamId !== teamId);
+
+        await syncOrganizationMemberTeams(tx, {
+          organizationMemberId: membership.id,
+          teamIds: nextTeamIds,
+          primaryTeamId: membership.primaryTeamId === teamId ? null : membership.primaryTeamId
+        });
+      }));
+
+      if (participantIds.length > 0) {
+        const memberships = await tx.organizationMember.findMany({
+          where: {
+            organizationId,
+            userId: { in: participantIds }
+          }
+        });
+
+        await Promise.all(memberships.map((membership: any) =>
+          addTeamsToOrganizationMember(tx, {
+            organizationMemberId: membership.id,
+            teamIds: [teamId],
+            primaryTeamId: membership.primaryTeamId || teamId
+          })
+        ));
+      }
 
       await tx.team.update({
         where: { id: teamId },
@@ -1532,7 +1662,9 @@ export const updateTeam = async (req: Request, res: Response) => {
         leadUser: { select: { id: true, name: true, email: true } },
         members: {
           include: {
-            user: { select: { id: true, name: true, email: true } }
+            organizationMember: {
+              include: includeMemberRelations
+            }
           }
         }
       }
@@ -1569,10 +1701,7 @@ export const deleteTeam = async (req: Request, res: Response) => {
     }
 
     await prisma.$transaction(async (tx) => {
-      await tx.organizationMember.updateMany({
-        where: { organizationId, teamId },
-        data: { teamId: null }
-      });
+      await removeTeamFromOrganizationMembers(tx, { organizationId, teamId });
 
       await tx.taskTeam.deleteMany({ where: { teamId } });
       await tx.team.delete({ where: { id: teamId } });
@@ -2063,11 +2192,15 @@ export const createOkr = async (req: Request, res: Response) => {
                   include: {
                     members: {
                       include: {
-                        user: {
-                          select: {
-                            id: true,
-                            email: true,
-                            name: true
+                        organizationMember: {
+                          include: {
+                            user: {
+                              select: {
+                                id: true,
+                                email: true,
+                                name: true
+                              }
+                            }
                           }
                         }
                       }
@@ -2090,8 +2223,8 @@ export const createOkr = async (req: Request, res: Response) => {
                   for (const member of team.members) {
                     try {
                       await sendOkrNotificationEmail({
-                        to: member.user.email,
-                        recipientName: member.user.name,
+                        to: member.organizationMember.user.email,
+                        recipientName: member.organizationMember.user.name,
                         okrTitle: okr.title,
                         okrDescription: okr.description || null,
                         teamName: team.name,
@@ -2101,7 +2234,7 @@ export const createOkr = async (req: Request, res: Response) => {
                         periodEnd
                       });
                     } catch (memberNotifyErr) {
-                      console.error(`Failed to notify member ${member.user.email} about OKR:`, memberNotifyErr);
+                      console.error(`Failed to notify member ${member.organizationMember.user.email} about OKR:`, memberNotifyErr);
                     }
                   }
                 }
@@ -2157,13 +2290,14 @@ export const listOkrs = async (req: Request, res: Response) => {
     // For non-admin users, restrict to OKRs they are involved in (team/member/KR assignment).
     // Keep org-wide OKRs limited to OPEN and within period.
     if (membership.role === 'MEMBER' || membership.role === 'TEAM_LEAD') {
+      const membershipTeamIds = await getAccessibleTeamIds(prisma, membership);
       const assignmentScope: any[] = [
         { assignments: { some: { targetType: 'MEMBER', targetId: userId } } },
         { keyResults: { some: { assignedUserId: userId } } },
         { keyResults: { some: { ownerIds: { array_contains: [userId] } } } }
       ];
-      if (membership.teamId) {
-        assignmentScope.unshift({ assignments: { some: { targetType: 'TEAM', targetId: membership.teamId } } });
+      if (membershipTeamIds.length > 0) {
+        assignmentScope.unshift({ assignments: { some: { targetType: 'TEAM', targetId: { in: membershipTeamIds } } } });
       }
 
       assignmentScope.push({
@@ -2463,7 +2597,12 @@ export const updateOkr = async (req: Request, res: Response) => {
           where: {
             organizationId,
             OR: [
-              { teamId: { in: teamIds } },
+              {
+                OR: [
+                  { primaryTeamId: { in: teamIds } },
+                  { teamMemberships: { some: { teamId: { in: teamIds } } } }
+                ]
+              },
               { role: 'ADMIN' }
             ]
           },
@@ -3030,7 +3169,7 @@ export const listAppraisals = async (req: Request, res: Response) => {
         userId: { in: subjectUserIds }
       },
       include: {
-        team: {
+        primaryTeam: {
           select: {
             id: true,
             name: true
@@ -3042,7 +3181,7 @@ export const listAppraisals = async (req: Request, res: Response) => {
     // Create a map of userId to team
     const userTeamMap = new Map<string, { id: string; name: string } | null>();
     memberships.forEach(m => {
-      userTeamMap.set(m.userId, m.team);
+      userTeamMap.set(m.userId, m.primaryTeam);
     });
 
     // Transform to include team info in subjectUser
@@ -3394,13 +3533,14 @@ export const listUserOkrs = async (req: Request, res: Response) => {
     const where: any = { organizationId };
 
     if (membership.role === 'MEMBER' || membership.role === 'TEAM_LEAD') {
+      const membershipTeamIds = await getAccessibleTeamIds(prisma, membership);
       const assignmentScope: any[] = [
         { assignments: { some: { targetType: 'MEMBER', targetId: targetUserId } } },
         { keyResults: { some: { assignedUserId: targetUserId } } },
         { keyResults: { some: { ownerIds: { array_contains: [targetUserId] } } } }
       ];
-      if (membership.teamId) {
-        assignmentScope.unshift({ assignments: { some: { targetType: 'TEAM', targetId: membership.teamId } } });
+      if (membershipTeamIds.length > 0) {
+        assignmentScope.unshift({ assignments: { some: { targetType: 'TEAM', targetId: { in: membershipTeamIds } } } });
       }
 
       assignmentScope.push({

@@ -7,6 +7,7 @@ import {
   getAppraisalSystemPrompt,
   buildAppraisalPromptPayload
 } from './appraisal-prompt';
+import { buildTeamsPayloadFromMembership } from '../utils/membership.utils';
 
 const prisma = new PrismaClient();
 
@@ -152,19 +153,25 @@ const resolveSubjects = async (organizationId: string, scope: AppraisalScope, su
     where: { organizationId, role: { not: 'ADMIN' } },
     include: {
       user: { select: { id: true, name: true, email: true, jobTitle: true } },
-      team: { select: { id: true, name: true } }
+      primaryTeam: { select: { id: true, name: true } },
+      teamMemberships: {
+        include: {
+          team: { select: { id: true, name: true } }
+        }
+      }
     },
     orderBy: { joinedAt: 'asc' }
   });
 
   if (scope === 'ORGANIZATION') {
     return nonAdminMemberships.map((member) => ({
+      ...(buildTeamsPayloadFromMembership(member)),
       type: 'INDIVIDUAL',
       id: member.userId,
       name: member.user.name || member.user.email,
       role: member.user.jobTitle || member.role,
-      teamId: member.teamId,
-      teamName: member.team?.name || null,
+      teamId: member.primaryTeamId,
+      teamName: member.primaryTeam?.name || null,
       userIds: [member.userId]
     }));
   }
@@ -180,12 +187,13 @@ const resolveSubjects = async (organizationId: string, scope: AppraisalScope, su
       throw new Error('One or more selected members are invalid for this organization');
     }
     return subjects.map((member) => ({
+      ...(buildTeamsPayloadFromMembership(member!)),
       type: 'INDIVIDUAL',
       id: member!.userId,
       name: member!.user.name || member!.user.email,
       role: member!.user.jobTitle || member!.role,
-      teamId: member!.teamId,
-      teamName: member!.team?.name || null,
+      teamId: member!.primaryTeamId,
+      teamName: member!.primaryTeam?.name || null,
       userIds: [member!.userId]
     }));
   }
@@ -194,8 +202,14 @@ const resolveSubjects = async (organizationId: string, scope: AppraisalScope, su
     where: { organizationId, id: { in: Array.from(new Set(subjectIds)) } },
     include: {
       members: {
-        where: { role: { not: 'ADMIN' } },
-        include: { user: { select: { id: true, name: true, email: true } } }
+        where: { organizationMember: { role: { not: 'ADMIN' } } },
+        include: {
+          organizationMember: {
+            include: {
+              user: { select: { id: true, name: true, email: true } }
+            }
+          }
+        }
       }
     },
     orderBy: { name: 'asc' }
@@ -211,7 +225,7 @@ const resolveSubjects = async (organizationId: string, scope: AppraisalScope, su
     name: team.name,
     teamId: team.id,
     teamName: team.name,
-    userIds: team.members.map((member) => member.userId)
+    userIds: team.members.map((member) => member.organizationMember.userId)
   }));
 };
 
@@ -840,10 +854,10 @@ export const listAppraisalReports = async (organizationId: string) => {
   const memberships = userIds.length > 0
     ? await prisma.organizationMember.findMany({
       where: { organizationId, userId: { in: userIds } },
-      include: { team: { select: { id: true, name: true } } }
+      include: { primaryTeam: { select: { id: true, name: true } } }
     })
     : [];
-  const teamByUserId = new Map(memberships.map((membership) => [membership.userId, membership.team]));
+  const teamByUserId = new Map(memberships.map((membership) => [membership.userId, membership.primaryTeam]));
 
   return reports.map((report) => ({
     ...report,

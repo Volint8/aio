@@ -2,8 +2,14 @@ import { Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { sendTaskAssignmentEmail, sendTaskAlertEmail } from '../services/email.service';
 import { normalizeOrgName } from '../utils/org.utils';
+import { getAccessibleTeamIds, getMembershipTeamIds, getMembershipWithTeams, uniqueIds } from '../utils/membership.utils';
 
 const prisma = new PrismaClient();
+
+const getPrimaryTeamId = (membership: any) => {
+    const teamIds = getMembershipTeamIds(membership);
+    return membership?.primaryTeamId || teamIds[0] || null;
+};
 
 type TaskView = 'active' | 'deleted';
 
@@ -121,23 +127,22 @@ const notifyTaskPendingApproval = async (params: {
     const { taskTitle, organizationId, actorUserId } = params;
 
     try {
-        const actorMembership = await prisma.organizationMember.findUnique({
-            where: {
-                userId_organizationId: {
-                    userId: actorUserId,
-                    organizationId
-                }
-            },
-            select: { teamId: true }
-        });
+        const actorMembership = await getMembershipWithTeams(prisma, actorUserId, organizationId);
+        const actorTeamIds = getMembershipTeamIds(actorMembership);
 
         const reviewers = await prisma.organizationMember.findMany({
             where: {
                 organizationId,
                 OR: [
                     { role: 'ADMIN' },
-                    ...(actorMembership?.teamId
-                        ? [{ role: 'TEAM_LEAD', teamId: actorMembership.teamId }]
+                    ...(actorTeamIds.length > 0
+                        ? [{
+                            role: 'TEAM_LEAD',
+                            OR: [
+                                { primaryTeamId: { in: actorTeamIds } },
+                                { teamMemberships: { some: { teamId: { in: actorTeamIds } } } }
+                            ]
+                        }]
                         : [{ role: 'TEAM_LEAD' }])
                 ]
             },
@@ -183,14 +188,7 @@ const resolveTaskTeamContext = async (params: {
 }) => {
     const { organizationId, assigneeId, supporterId } = params;
 
-    const assigneeMembership = await prisma.organizationMember.findUnique({
-        where: {
-            userId_organizationId: {
-                userId: assigneeId,
-                organizationId
-            }
-        }
-    });
+    const assigneeMembership = await getMembershipWithTeams(prisma, assigneeId, organizationId);
 
     if (!assigneeMembership) {
         throw new Error('Assignee is not a member of this organization');
@@ -205,14 +203,7 @@ const resolveTaskTeamContext = async (params: {
             throw new Error('Supporter cannot be the same as primary assignee');
         }
 
-        supporterMembership = await prisma.organizationMember.findUnique({
-            where: {
-                userId_organizationId: {
-                    userId: supporterId,
-                    organizationId
-                }
-            }
-        });
+        supporterMembership = await getMembershipWithTeams(prisma, supporterId, organizationId);
 
         if (!supporterMembership) {
             throw new Error('Supporter is not a member of this organization');
@@ -222,23 +213,18 @@ const resolveTaskTeamContext = async (params: {
         }
     }
 
-    const teamIds: string[] = [];
-    if (assigneeMembership.teamId) {
-        teamIds.push(assigneeMembership.teamId);
-    }
-    if (supporterMembership?.teamId) {
-        teamIds.push(supporterMembership.teamId);
-    }
-
     return {
         assigneeMembership,
         supporterMembership,
-        teamIds: Array.from(new Set(teamIds))
+        teamIds: uniqueIds([
+            ...getMembershipTeamIds(assigneeMembership),
+            ...getMembershipTeamIds(supporterMembership)
+        ])
     };
 };
 
 const enforceMemberAssignmentScope = async (params: {
-    actorMembership: { role: string; teamId?: string | null; userId?: string | null };
+    actorMembership: any;
     actorUserId: string;
     organizationId: string;
     assigneeId: string;
@@ -250,14 +236,21 @@ const enforceMemberAssignmentScope = async (params: {
         return;
     }
 
+    const actorTeamIds = getMembershipTeamIds(actorMembership);
+
     const allowedMemberships = await prisma.organizationMember.findMany({
         where: {
             organizationId,
-            OR: actorMembership.teamId
+            OR: actorTeamIds.length > 0
                 ? [
                     { userId: actorUserId },
-                    { teamId: actorMembership.teamId, role: 'MEMBER' },
-                    { teamId: actorMembership.teamId, role: 'TEAM_LEAD' }
+                    {
+                        role: { in: ['MEMBER', 'TEAM_LEAD'] },
+                        OR: [
+                            { primaryTeamId: { in: actorTeamIds } },
+                            { teamMemberships: { some: { teamId: { in: actorTeamIds } } } }
+                        ]
+                    }
                 ]
                 : [{ userId: actorUserId }]
         },
@@ -276,19 +269,12 @@ const enforceMemberAssignmentScope = async (params: {
 };
 
 const ensureMembershipOrAssignment = async (userId: string, organizationId: string, task?: { assigneeId?: string | null; supporterId?: string | null }) => {
-    const membership = await prisma.organizationMember.findUnique({
-        where: {
-            userId_organizationId: {
-                userId,
-                organizationId
-            }
-        }
-    });
+    const membership = await getMembershipWithTeams(prisma, userId, organizationId);
 
     if (!membership) {
         // Allow access if the user is explicitly the assignee or supporter on the task
         if (task && (userId === task.assigneeId || userId === task.supporterId)) {
-            return { role: 'MEMBER', teamId: null } as any;
+            return { role: 'MEMBER', primaryTeamId: null, teamMemberships: [] } as any;
         }
         return null;
     }
@@ -312,17 +298,10 @@ export const getTasks = async (req: Request, res: Response) => {
         const taskView = resolveTaskView(view);
 
         const where: any = {};
-        let membership: { role: string; teamId: string | null } | null = null;
+        let membership: any = null;
 
         if (organizationId) {
-            membership = await prisma.organizationMember.findUnique({
-                where: {
-                    userId_organizationId: {
-                        userId,
-                        organizationId: organizationId as string
-                    }
-                }
-            });
+            membership = await getMembershipWithTeams(prisma, userId, organizationId as string);
 
             if (!membership) {
                 return res.status(403).json({ error: 'Access denied' });
@@ -334,11 +313,12 @@ export const getTasks = async (req: Request, res: Response) => {
 
             where.organizationId = organizationId;
 
+            const accessibleTeamIds = await getAccessibleTeamIds(prisma, membership);
             if (taskView === 'active' && ['TEAM_LEAD', 'MEMBER'].includes(membership.role)) {
                 where.OR = [
                     { assigneeId: userId },
                     { supporterId: userId },
-                    ...(membership.teamId ? [{ taskTeams: { some: { teamId: membership.teamId } } }] : [])
+                    ...(accessibleTeamIds.length > 0 ? [{ taskTeams: { some: { teamId: { in: accessibleTeamIds } } } }] : [])
                 ];
             }
         } else {
@@ -1288,17 +1268,10 @@ export const getStats = async (req: Request, res: Response) => {
         const { organizationId, clientId } = req.query;
 
         let where: any = { deletedAt: null };
-        let membership: { role: string; teamId: string | null } | null = null;
+        let membership: any = null;
 
         if (organizationId) {
-            membership = await prisma.organizationMember.findUnique({
-                where: {
-                    userId_organizationId: {
-                        userId,
-                        organizationId: organizationId as string
-                    }
-                }
-            });
+            membership = await getMembershipWithTeams(prisma, userId, organizationId as string);
 
             if (!membership) {
                 return res.status(403).json({ error: 'Access denied' });
@@ -1306,11 +1279,12 @@ export const getStats = async (req: Request, res: Response) => {
 
             where.organizationId = organizationId;
 
+            const accessibleTeamIds = await getAccessibleTeamIds(prisma, membership);
             if (['TEAM_LEAD', 'MEMBER'].includes(membership.role)) {
                 where.OR = [
                     { assigneeId: userId },
                     { supporterId: userId },
-                    ...(membership.teamId ? [{ taskTeams: { some: { teamId: membership.teamId } } }] : [])
+                    ...(accessibleTeamIds.length > 0 ? [{ taskTeams: { some: { teamId: { in: accessibleTeamIds } } } }] : [])
                 ];
             }
         } else {
@@ -1435,14 +1409,7 @@ export const addLinkAttachment = async (req: Request, res: Response) => {
             return res.status(400).json({ error: 'Task is in Recently Deleted' });
         }
 
-        const membership = await prisma.organizationMember.findUnique({
-            where: {
-                userId_organizationId: {
-                    userId,
-                    organizationId: task.organizationId
-                }
-            }
-        });
+        const membership = await getMembershipWithTeams(prisma, userId, task.organizationId);
 
         if (!membership) {
             return res.status(403).json({ error: 'Access denied' });
@@ -1484,27 +1451,28 @@ export const getMemberStats = async (req: Request, res: Response) => {
             return res.status(400).json({ error: 'Organization ID is required' });
         }
 
-        const membership = await prisma.organizationMember.findUnique({
-            where: {
-                userId_organizationId: {
-                    userId,
-                    organizationId: organizationId as string
-                }
-            }
-        });
+        const membership = await getMembershipWithTeams(prisma, userId, organizationId as string);
 
         if (!membership || (membership.role !== 'ADMIN' && membership.role !== 'TEAM_LEAD')) {
             return res.status(403).json({ error: 'Only admins and team leads can access team statistics' });
         }
 
-        if (membership.role === 'TEAM_LEAD' && !membership.teamId) {
+        const accessibleTeamIds = await getAccessibleTeamIds(prisma, membership);
+        if (membership.role === 'TEAM_LEAD' && accessibleTeamIds.length === 0) {
             return res.json([]);
         }
 
         const members = await prisma.organizationMember.findMany({
             where: {
                 organizationId: organizationId as string,
-                ...(membership.role === 'TEAM_LEAD' ? { teamId: membership.teamId as string } : {})
+                ...(membership.role === 'TEAM_LEAD'
+                    ? {
+                        OR: [
+                            { primaryTeamId: { in: accessibleTeamIds } },
+                            { teamMemberships: { some: { teamId: { in: accessibleTeamIds } } } }
+                        ]
+                    }
+                    : {})
             },
             include: {
                 user: {
@@ -1588,27 +1556,21 @@ export const getTeamDistribution = async (req: Request, res: Response) => {
             return res.status(400).json({ error: 'Organization ID is required' });
         }
 
-        const membership = await prisma.organizationMember.findUnique({
-            where: {
-                userId_organizationId: {
-                    userId,
-                    organizationId: organizationId as string
-                }
-            }
-        });
+        const membership = await getMembershipWithTeams(prisma, userId, organizationId as string);
 
         if (!membership || (membership.role !== 'ADMIN' && membership.role !== 'TEAM_LEAD')) {
             return res.status(403).json({ error: 'Only admins and team leads can access team distribution' });
         }
 
-        if (membership.role === 'TEAM_LEAD' && !membership.teamId) {
+        const accessibleTeamIds = await getAccessibleTeamIds(prisma, membership);
+        if (membership.role === 'TEAM_LEAD' && accessibleTeamIds.length === 0) {
             return res.json([]);
         }
 
         const teams = await prisma.team.findMany({
             where: {
                 organizationId: organizationId as string,
-                ...(membership.role === 'TEAM_LEAD' ? { id: membership.teamId as string } : {})
+                ...(membership.role === 'TEAM_LEAD' ? { id: { in: accessibleTeamIds } } : {})
             },
             include: {
                 leadUser: {
@@ -1616,8 +1578,12 @@ export const getTeamDistribution = async (req: Request, res: Response) => {
                 },
                 members: {
                     include: {
-                        user: {
-                            select: { id: true, name: true, email: true }
+                        organizationMember: {
+                            include: {
+                                user: {
+                                    select: { id: true, name: true, email: true }
+                                }
+                            }
                         }
                     }
                 }
@@ -1633,16 +1599,17 @@ export const getTeamDistribution = async (req: Request, res: Response) => {
             ]);
 
             const people = await Promise.all(team.members.map(async (member) => {
+                const orgMember = member.organizationMember;
                 const [mCreated, mInProgress, mCompleted] = await Promise.all([
-                    prisma.task.count({ where: { organizationId: organizationId as string, deletedAt: null, assigneeId: member.userId, status: 'CREATED' } }),
-                    prisma.task.count({ where: { organizationId: organizationId as string, deletedAt: null, assigneeId: member.userId, status: 'IN_PROGRESS' } }),
-                    prisma.task.count({ where: { organizationId: organizationId as string, deletedAt: null, assigneeId: member.userId, status: 'COMPLETED' } })
+                    prisma.task.count({ where: { organizationId: organizationId as string, deletedAt: null, assigneeId: orgMember.userId, status: 'CREATED' } }),
+                    prisma.task.count({ where: { organizationId: organizationId as string, deletedAt: null, assigneeId: orgMember.userId, status: 'IN_PROGRESS' } }),
+                    prisma.task.count({ where: { organizationId: organizationId as string, deletedAt: null, assigneeId: orgMember.userId, status: 'COMPLETED' } })
                 ]);
 
                 return {
-                    userId: member.user.id,
-                    name: member.user.name || member.user.email,
-                    role: member.role,
+                    userId: orgMember.user.id,
+                    name: orgMember.user.name || orgMember.user.email,
+                    role: orgMember.role,
                     stats: {
                         created: mCreated,
                         inProgress: mInProgress,
