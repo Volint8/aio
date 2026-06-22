@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "../context/useAuth";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import "../styles/LoginPage.css";
+import { PasswordInput } from "../components/common/PasswordInput";
 
 type Mode = "login" | "admin_signup";
 
@@ -140,8 +141,7 @@ const LoginPage = () => {
 
           <div className="form-group">
             <label>Password</label>
-            <input
-              type="password"
+            <PasswordInput
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••"

@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/useAuth";
 import "../styles/LoginPage.css";
+import { PasswordInput } from "../components/common/PasswordInput";
 
 const InviteAcceptPage = () => {
   const [name, setName] = useState("");
@@ -81,8 +82,7 @@ const InviteAcceptPage = () => {
 
           <div className="form-group">
             <label>Password</label>
-            <input
-              type="password"
+            <PasswordInput
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••"

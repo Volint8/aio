@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useAuth } from "../context/useAuth";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import "../styles/LoginPage.css";
+import { PasswordInput } from "../components/common/PasswordInput";
 
 type Step = "email" | "otp";
 
@@ -175,8 +176,7 @@ const ForgotPasswordPage = () => {
 
               <div className="form-group">
                 <label>New Password</label>
-                <input
-                  type="password"
+                <PasswordInput
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
                   placeholder="••••••••"

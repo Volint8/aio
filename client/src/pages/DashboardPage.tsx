@@ -11,6 +11,7 @@ import OkrView from "../components/OkrView";
 import SubscriptionPage from "./SubscriptionPage";
 import ErrorDialog from "../components/ErrorDialog";
 import DebouncedButton from "../components/common/DebouncedButton";
+import { PasswordInput } from "../components/common/PasswordInput";
 import * as XLSX from "xlsx";
 import "../styles/Dashboard.css";
 
@@ -34,6 +35,11 @@ interface Task {
   priority: string;
   dueDate: string | null;
   createdByUserId?: string | null;
+  createdBy?: {
+    id: string;
+    name: string | null;
+    email: string;
+  } | null;
   assignee: {
     id: string;
     name: string | null;
@@ -621,6 +627,7 @@ type TaskFilter =
   | "supporting"
   | "pending"
   | "ongoing"
+  | "in_review"
   | "completed"
   | "pending_approval"
   | "overdue"
@@ -697,11 +704,13 @@ const isDueDateOverdue = (dueDateValue: string | null | undefined) => {
 
 const DashboardPage = () => {
   const location = useLocation();
+  const { user } = useAuth();
   const requestedFilter = (new URLSearchParams(location.search).get("filter") ||
     "all") as TaskFilter;
 
   const [tasks, setTasks] = useState<Task[]>([]);
   const [allTasks, setAllTasks] = useState<Task[]>([]);
+  const [tasksLoading, setTasksLoading] = useState(false);
   const [stats, setStats] = useState<Stats | null>(null);
   const [organization, setOrganization] = useState<Organization | null>(null);
   const [okrs, setOkrs] = useState<Okr[]>([]);
@@ -831,6 +840,7 @@ const DashboardPage = () => {
   const [taskReviewNotes, setTaskReviewNotes] = useState("");
   const [showCreateClientModal, setShowCreateClientModal] = useState(false);
   const [editingClient, setEditingClient] = useState<ClientRecord | null>(null);
+  const [createMore, setCreateMore] = useState(false);
   const [showEditOkrModal, setShowEditOkrModal] = useState(false);
   const [editingOkr, setEditingOkr] = useState<Okr | null>(null);
   const [selectedMemberDetail, setSelectedMemberDetail] =
@@ -841,11 +851,12 @@ const DashboardPage = () => {
     description: "",
     priority: "LOW",
     dueDate: "",
-    assigneeId: "",
+    assigneeId: user?.id || "",
     supporterId: "",
     alertTeamLead: false,
     okrId: "",
     keyResultIds: [] as string[],
+    status: "TODO",
   });
 
   const [editTask, setEditTask] = useState({
@@ -859,6 +870,7 @@ const DashboardPage = () => {
     alertTeamLead: false,
     okrId: "",
     keyResultIds: [] as string[],
+    status: "TODO",
   });
 
   const [newOkr, setNewOkr] = useState({
@@ -999,7 +1011,6 @@ const DashboardPage = () => {
     setErrorDialog({ isOpen: true, title, message });
   };
 
-  const { user } = useAuth();
   const navigate = useNavigate();
   const requestedSection = (new URLSearchParams(location.search).get(
     "section",
@@ -1189,6 +1200,52 @@ const DashboardPage = () => {
   const assignableUsers = (organization?.members || []).filter(
     (member) => member.role !== "ADMIN",
   );
+
+  const taskAssignableUsers = useMemo(() => {
+    const myMember = (organization?.members || []).find((m) => m.userId === user?.id);
+    if (!myMember) return [];
+
+    const myTeamIds = getMemberTeamIds(myMember);
+
+    // Get OKR IDs where the current user is assigned
+    const myOkrIds = okrs
+      .filter((okr) => {
+        const teamAssigned = okr.assignments?.some(
+          (assign) => assign.targetType === "TEAM" && myTeamIds.includes(assign.targetId)
+        );
+        const krAssigned = okr.keyResults?.some(
+          (kr) => kr.assignedUserId === user?.id || kr.assignedUser?.id === user?.id
+        );
+        return teamAssigned || krAssigned;
+      })
+      .map((okr) => okr.id);
+
+    return assignableUsers.filter((member) => {
+      // Always allow assigning to self
+      if (member.userId === user?.id) return true;
+
+      // Check if they share any team
+      const memberTeamIds = getMemberTeamIds(member);
+      const sharesTeam = memberTeamIds.some((id) => myTeamIds.includes(id));
+      if (sharesTeam) return true;
+
+      // Check if they share any OKR
+      const memberOkrIds = okrs
+        .filter((okr) => {
+          const teamAssigned = okr.assignments?.some(
+            (assign) => assign.targetType === "TEAM" && memberTeamIds.includes(assign.targetId)
+          );
+          const krAssigned = okr.keyResults?.some(
+            (kr) => kr.assignedUserId === member.userId || kr.assignedUser?.id === member.userId
+          );
+          return teamAssigned || krAssigned;
+        })
+        .map((okr) => okr.id);
+
+      const sharesOkr = memberOkrIds.some((id) => myOkrIds.includes(id));
+      return sharesOkr;
+    });
+  }, [assignableUsers, organization?.members, user?.id, okrs]);
   const appraisalPurposeOptions = [
     "Promotion",
     "Salary Review",
@@ -1336,6 +1393,18 @@ const DashboardPage = () => {
     }
   }, [selectedTaskId]);
 
+  useEffect(() => {
+    if (showCreateTaskModal && user?.id) {
+      setNewTask((prev) => {
+        if (!prev.assigneeId) {
+          void loadLinkableOkrs(user.id);
+          return { ...prev, assigneeId: user.id };
+        }
+        return prev;
+      });
+    }
+  }, [showCreateTaskModal, user?.id]);
+
   // Close menu when clicking outside
   useEffect(() => {
     const handleClickOutside = () => {
@@ -1455,6 +1524,7 @@ const DashboardPage = () => {
     }
 
     // Validate that the selected org still exists and user has access
+    setTasksLoading(true);
     api
       .get(`/orgs/${orgId}`)
       .then(() => {
@@ -1478,6 +1548,7 @@ const DashboardPage = () => {
         } else {
           // Stop reloading to prevent infinite loop
           sessionStorage.removeItem("orgReloadCount");
+          setTasksLoading(false);
           setLoading(false);
           setErrorDialog({
             isOpen: true,
@@ -1797,6 +1868,7 @@ const DashboardPage = () => {
         error.response?.data?.error || error.message || "Failed to load data";
       showError("Dashboard Error", `Error loading dashboard: ${errorMessage}`);
     } finally {
+      setTasksLoading(false);
       setLoading(false);
     }
   };
@@ -1869,6 +1941,7 @@ const DashboardPage = () => {
         supporterId: newTask.supporterId,
         alertTeamLead: newTask.alertTeamLead,
         organizationId: orgId,
+        status: newTask.status,
       });
 
       if (newTask.keyResultIds.length > 0 && createResponse.data?.id) {
@@ -1885,13 +1958,16 @@ const DashboardPage = () => {
         description: "",
         priority: "LOW",
         dueDate: "",
-        assigneeId: "",
+        assigneeId: user?.id || "",
         supporterId: "",
         alertTeamLead: false,
         okrId: "",
         keyResultIds: [],
+        status: "TODO",
       });
-      setShowCreateTaskModal(false);
+      if (!createMore) {
+        setShowCreateTaskModal(false);
+      }
       await fetchData();
     } catch (error: any) {
       const errorData = error.response?.data?.error;
@@ -1919,11 +1995,34 @@ const DashboardPage = () => {
       keyResultIds: (task.krImpacts || []).map(
         (impact) => impact.okrKeyResult.id,
       ),
+      status: task.status || "TODO",
     });
     if (task.assignee?.id) {
       void loadLinkableOkrs(task.assignee.id);
     }
     setShowEditTaskModal(true);
+  };
+
+  const handleDuplicateTask = (task: Task) => {
+    const isDelegated = task.assignee?.id ? task.assignee.id !== user?.id : false;
+    setNewTask({
+      title: `${task.title} (Copy)`,
+      description: task.description || "",
+      priority: task.priority,
+      dueDate: task.dueDate ? task.dueDate.slice(0, 10) : "",
+      assigneeId: task.assignee?.id || "",
+      supporterId: task.supporter?.id || "",
+      alertTeamLead: task.alertTeamLead || isDelegated,
+      okrId: (task as any).okrId || "",
+      keyResultIds: (task.krImpacts || []).map(
+        (impact) => impact.okrKeyResult.id,
+      ),
+      status: task.status || "TODO",
+    });
+    if (task.assignee?.id) {
+      void loadLinkableOkrs(task.assignee.id);
+    }
+    setShowCreateTaskModal(true);
   };
 
   const handleUpdateTask = async (e: React.FormEvent) => {
@@ -1957,6 +2056,7 @@ const DashboardPage = () => {
         assigneeId: editTask.assigneeId,
         supporterId: editTask.supporterId || null,
         alertTeamLead: editTask.alertTeamLead,
+        status: editTask.status,
       });
 
       await api.put(`/tasks/${editTask.id}/kr-impacts`, {
@@ -2769,8 +2869,7 @@ const DashboardPage = () => {
 
               <div className="form-group">
                 <label>Current Password</label>
-                <input
-                  type="password"
+                <PasswordInput
                   value={passwordForm.currentPassword}
                   onChange={(e) =>
                     setPasswordForm({
@@ -2784,8 +2883,7 @@ const DashboardPage = () => {
               </div>
               <div className="form-group">
                 <label>New Password</label>
-                <input
-                  type="password"
+                <PasswordInput
                   value={passwordForm.newPassword}
                   onChange={(e) =>
                     setPasswordForm({
@@ -2799,8 +2897,7 @@ const DashboardPage = () => {
               </div>
               <div className="form-group">
                 <label>Confirm New Password</label>
-                <input
-                  type="password"
+                <PasswordInput
                   value={passwordForm.confirmPassword}
                   onChange={(e) =>
                     setPasswordForm({
@@ -3173,6 +3270,735 @@ const DashboardPage = () => {
     }
   };
 
+  const renderTaskDetailPanelInner = () => {
+    return selectedTask ? (
+      <div className="task-detail-content" key={selectedTask.id}>
+        <div className="task-detail-header">
+          <div className="task-detail-header-top">
+            <button
+              type="button"
+              className="btn-icon-close"
+              onClick={() => setSelectedTaskId(null)}
+              title="Close"
+            >
+              ×
+            </button>
+            <div className="task-badges">
+              <span
+                className={`priority-badge ${selectedTask.priority?.toLowerCase() || ""}`}
+              >
+                {selectedTask.priority}
+              </span>
+              {selectedTask.approvalStatus &&
+                selectedTask.approvalStatus !==
+                  "NOT_SUBMITTED" && (
+                  <span
+                    className="priority-badge"
+                    style={{
+                      background:
+                        selectedTask.approvalStatus === "APPROVED"
+                          ? "#dcfce7"
+                          : selectedTask.approvalStatus ===
+                              "REJECTED"
+                            ? "#fee2e2"
+                            : "#fef3c7",
+                      color:
+                        selectedTask.approvalStatus === "APPROVED"
+                          ? "#166534"
+                          : selectedTask.approvalStatus ===
+                              "REJECTED"
+                            ? "#b91c1c"
+                            : "#92400e",
+                      borderColor:
+                        selectedTask.approvalStatus === "APPROVED"
+                          ? "#86efac"
+                          : selectedTask.approvalStatus ===
+                              "REJECTED"
+                            ? "#fecaca"
+                            : "#fde68a",
+                    }}
+                    title="Approval status"
+                  >
+                    {selectedTask.approvalStatus === "PENDING"
+                      ? "Awaiting approval"
+                      : selectedTask.approvalStatus}
+                  </span>
+                )}
+            </div>
+          </div>
+          <h3>{selectedTask.title}</h3>
+
+          {/* Status Dropdown - Linear style */}
+          {!isDeletedView && (
+            <div
+              className="task-status-selector"
+              style={{ marginTop: "12px" }}
+            >
+              <label
+                style={{
+                  fontSize: "0.75em",
+                  fontWeight: 600,
+                  color: "#64748b",
+                  marginBottom: "4px",
+                  display: "block",
+                }}
+              >
+                Status
+              </label>
+              <select
+                value={
+                  selectedTask.status === "CREATED"
+                    ? "TODO"
+                    : selectedTask.status === "COMPLETED"
+                      ? "DONE"
+                      : selectedTask.status
+                }
+                onChange={(e) =>
+                  handleUpdateTaskStatus(
+                    selectedTask.id,
+                    e.target.value,
+                  )
+                }
+                style={{
+                  width: "100%",
+                  padding: "8px 12px",
+                  borderRadius: "6px",
+                  border: "1px solid #e2e8f0",
+                  fontSize: "0.9em",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  background:
+                    selectedTask.status === "CREATED" || selectedTask.status === "TODO"
+                      ? "#f1f5f9"
+                      : selectedTask.status === "IN_PROGRESS"
+                        ? "#dbeafe"
+                        : selectedTask.status === "IN_REVIEW"
+                          ? "#fef3c7"
+                          : selectedTask.status === "DONE" || selectedTask.status === "COMPLETED"
+                            ? "#dcfce7"
+                            : "#fee2e2",
+                  color:
+                    selectedTask.status === "CREATED" || selectedTask.status === "TODO"
+                      ? "#475569"
+                      : selectedTask.status === "IN_PROGRESS"
+                        ? "#1d4ed8"
+                        : selectedTask.status === "IN_REVIEW"
+                          ? "#b45309"
+                          : selectedTask.status === "DONE" || selectedTask.status === "COMPLETED"
+                            ? "#166534"
+                            : "#b91c1c",
+                }}
+              >
+                <option value="TODO">To Do</option>
+                <option value="IN_PROGRESS">In Progress</option>
+                <option value="IN_REVIEW">In Review</option>
+                <option value="DONE">Done</option>
+                <option value="CANCELLED">Cancelled</option>
+              </select>
+            </div>
+          )}
+        </div>
+
+        <div
+          className="task-description-section"
+          style={{
+            marginTop: "16px",
+            padding: "12px",
+            background: "#f8fafc",
+            borderRadius: "8px",
+            border: "1px solid #e2e8f0",
+          }}
+        >
+          <label
+            style={{
+              fontSize: "0.75em",
+              fontWeight: 600,
+              color: "#64748b",
+              marginBottom: "8px",
+              display: "block",
+            }}
+          >
+            Description
+          </label>
+          <p
+            style={{
+              margin: 0,
+              fontSize: "0.9em",
+              color: selectedTask.description
+                ? "#0f172a"
+                : "#64748b",
+              lineHeight: "1.6",
+              whiteSpace: "pre-wrap",
+            }}
+          >
+            {selectedTask.description ||
+              "No description provided."}
+          </p>
+        </div>
+
+        <div
+          className="task-description-section"
+          style={{
+            marginTop: "12px",
+            padding: "12px",
+            background: "#f8fafc",
+            borderRadius: "8px",
+            border: "1px solid #e2e8f0",
+          }}
+        >
+          <label
+            style={{
+              fontSize: "0.75em",
+              fontWeight: 600,
+              color: "#64748b",
+              marginBottom: "8px",
+              display: "block",
+            }}
+          >
+            Linked OKRs
+          </label>
+          {selectedTask.krImpacts &&
+          selectedTask.krImpacts.length > 0 ? (
+            <div
+              style={{
+                display: "grid",
+                gap: "8px",
+              }}
+            >
+              {selectedTask.krImpacts.map((impact) => (
+                <div
+                  key={impact.id}
+                  style={{
+                    padding: "10px",
+                    borderRadius: "6px",
+                    background: "#fff",
+                    border: "1px solid #e2e8f0",
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: "0.85em",
+                      fontWeight: 700,
+                      color: "#0f172a",
+                      lineHeight: 1.4,
+                    }}
+                  >
+                    {impact.okrKeyResult.isGeneral
+                      ? "General"
+                      : impact.okrKeyResult.title}
+                  </div>
+                  <div
+                    style={{
+                      marginTop: "3px",
+                      fontSize: "0.78em",
+                      color: "#64748b",
+                      lineHeight: 1.4,
+                    }}
+                  >
+                    {impact.okrKeyResult.okr.title}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p
+              style={{
+                margin: 0,
+                fontSize: "0.9em",
+                color: "#64748b",
+                lineHeight: "1.6",
+              }}
+            >
+              No key result linked.
+            </p>
+          )}
+        </div>
+
+        <div className="task-meta">
+          <div className="meta-item">
+            <strong>Owner:</strong>{" "}
+            {selectedTask.assignee?.name ||
+              selectedTask.assignee?.email ||
+              "Unassigned"}
+          </div>
+          {selectedTask.createdBy && selectedTask.createdBy.id !== selectedTask.assignee?.id && (
+            <div className="meta-item">
+              <strong>Assigned By:</strong>{" "}
+              {selectedTask.createdBy.name || selectedTask.createdBy.email}
+            </div>
+          )}
+          <div className="meta-item">
+            <strong>Supporter:</strong>{" "}
+            {selectedTask.supporter?.name ||
+              selectedTask.supporter?.email ||
+              "None"}
+          </div>
+          <div className="meta-item">
+            <strong>Teams:</strong>{" "}
+            {(selectedTask.taskTeams || [])
+              .map((tt) => tt.team.name)
+              .join(", ") || "None"}
+          </div>
+        </div>
+
+        <div className="task-actions">
+          {isDeletedView ? (
+            <button
+              onClick={() => handleRestoreTask(selectedTask.id)}
+              className="btn-action success"
+            >
+              Restore Task
+            </button>
+          ) : (
+            <>
+              <button
+                onClick={() => handleOpenEditTask(selectedTask)}
+                className="btn-action secondary"
+              >
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  style={{
+                    marginRight: "6px",
+                    verticalAlign: "middle",
+                  }}
+                >
+                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                </svg>
+                Edit Details
+              </button>
+
+              <button
+                onClick={() => handleDuplicateTask(selectedTask)}
+                className="btn-action secondary"
+              >
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  style={{
+                    marginRight: "6px",
+                    verticalAlign: "middle",
+                  }}
+                >
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                </svg>
+                Duplicate Task
+              </button>
+
+              <label className="btn-action secondary upload-btn">
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  style={{
+                    marginRight: "6px",
+                    verticalAlign: "middle",
+                  }}
+                >
+                  <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path>
+                </svg>
+                Attach File
+                <input
+                  type="file"
+                  style={{ display: "none" }}
+                  onChange={async (e) => {
+                    if (e.target.files && e.target.files[0]) {
+                      const formData = new FormData();
+                      formData.append("file", e.target.files[0]);
+                      try {
+                        await api.post(
+                          `/tasks/${selectedTask.id}/attachments`,
+                          formData,
+                          {
+                            headers: {
+                              "Content-Type":
+                                "multipart/form-data",
+                            },
+                          },
+                        );
+                        await fetchData();
+                      } catch {
+                        showError("Error", "Upload failed");
+                      }
+                    }
+                  }}
+                />
+              </label>
+              <button
+                type="button"
+                className="btn-action secondary"
+                onClick={() => {
+                  setNewLink({
+                    taskId: selectedTask.id,
+                    url: "",
+                    fileName: "",
+                  });
+                  setShowAddLinkModal(true);
+                }}
+              >
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  style={{
+                    marginRight: "6px",
+                    verticalAlign: "middle",
+                  }}
+                >
+                  <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+                  <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+                </svg>
+                Attach Link
+              </button>
+              {canReviewTasks &&
+                selectedTask.approvalStatus === "PENDING" && (
+                  <>
+                    <button
+                      type="button"
+                      className="btn-action success"
+                      onClick={() =>
+                        handleApprovalAction(
+                          selectedTask.id,
+                          "APPROVE",
+                        )
+                      }
+                    >
+                      Approve
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-action danger"
+                      onClick={() =>
+                        handleApprovalAction(
+                          selectedTask.id,
+                          "REJECT",
+                        )
+                      }
+                    >
+                      Reject
+                    </button>
+                  </>
+                )}
+              {canDeleteTask(selectedTask) && (
+                <button
+                  onClick={() =>
+                    handleDeleteTask(selectedTask.id)
+                  }
+                  className="btn-action danger"
+                >
+                  Move to Recently Deleted
+                </button>
+              )}
+            </>
+          )}
+        </div>
+
+        {selectedTask.attachments &&
+          selectedTask.attachments.length > 0 && (
+            <div className="task-attachments">
+              <h4>Attachments</h4>
+              <ul>
+                {selectedTask.attachments.map((att) => (
+                  <li key={att.id} className="attachment-item">
+                    {att.type === "LINK" && att.url ? (
+                      <a
+                        href={att.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        🔗 {att.fileName || att.url}
+                      </a>
+                    ) : (
+                      <a
+                        href={`${api.defaults.baseURL}/${att.filePath}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        📄 {att.fileName}
+                      </a>
+                    )}
+                    {isAdmin && !isDeletedView && (
+                      <button
+                        className="btn-delete-small"
+                        onClick={async () => {
+                          if (
+                            window.confirm(
+                              "Delete this attachment?",
+                            )
+                          ) {
+                            await api.delete(
+                              `/tasks/attachments/${att.id}`,
+                            );
+                            await fetchData();
+                          }
+                        }}
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+        {!isDeletedView &&
+          selectedTask.status !== "COMPLETED" &&
+          (user?.id === selectedTask.assignee?.id ||
+            user?.id === selectedTask.supporter?.id) && (
+            <div className="task-work-submission">
+              <h4>Work Submission</h4>
+              <button
+                type="button"
+                className="btn-action success"
+                onClick={() => setShowSubmissionModal(true)}
+              >
+                Submit Work
+              </button>
+            </div>
+          )}
+
+        {!isDeletedView && submissions.length > 0 && (
+          <div className="task-submissions-list">
+            <h4>Submissions</h4>
+            <div className="submissions-list">
+              {submissions.map((sub) => (
+                <div key={sub.id} className="submission-item">
+                  <div className="submission-header">
+                    <span className="submission-author">
+                      {sub.user?.name || "Unknown"}
+                    </span>
+                    <span
+                      className={`submission-status status-${sub.status?.toLowerCase() || ""}`}
+                    >
+                      {sub.status}
+                    </span>
+                  </div>
+                  <div className="submission-meta">
+                    <span>
+                      Submitted:{" "}
+                      {new Date(sub.submittedAt).toLocaleString()}
+                    </span>
+                    {sub.reviewedAt && (
+                      <span>
+                        Reviewed:{" "}
+                        {new Date(
+                          sub.reviewedAt,
+                        ).toLocaleString()}
+                      </span>
+                    )}
+                  </div>
+                  {sub.description && (
+                    <p className="submission-description">
+                      {sub.description}
+                    </p>
+                  )}
+                  {sub.reviewNotes && (
+                    <p className="submission-review-notes">
+                      <strong>Review Notes:</strong>{" "}
+                      {sub.reviewNotes}
+                    </p>
+                  )}
+                  {canReviewSubmissions &&
+                    sub.status === "PENDING" && (
+                      <div className="submission-actions">
+                        <button
+                          className="btn-action success"
+                          onClick={() => {
+                            handleReviewSubmission(
+                              sub.id,
+                              "APPROVED",
+                            );
+                          }}
+                        >
+                          Approve
+                        </button>
+                        <button
+                          className="btn-action danger"
+                          onClick={() => {
+                            handleReviewSubmission(
+                              sub.id,
+                              "REJECTED",
+                            );
+                          }}
+                        >
+                          Reject
+                        </button>
+                      </div>
+                    )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {!isDeletedView && activityLogs.length > 0 && (
+          <div className="task-activity-timeline">
+            <h4>Activity Timeline</h4>
+            <div className="activity-list">
+              {activityLogs.map((log) => (
+                <div key={log.id} className="activity-item">
+                  <div className="activity-icon">
+                    {log.action === "COMMENT_ADDED" && "💬"}
+                    {log.action === "COMMENT_DELETED" && "🗑️"}
+                    {log.action === "STATUS_CHANGED" && "📊"}
+                    {log.action === "ASSIGNEE_CHANGED" && "👤"}
+                    {log.action === "SUPPORTER_CHANGED" && "🤝"}
+                    {log.action === "SUBMISSION_CREATED" && "📝"}
+                    {log.action === "SUBMISSION_REVIEWED" && "✅"}
+                    {log.action === "ATTACHMENT_ADDED" && "📎"}
+                    {log.action === "ATTACHMENT_DELETED" && "📎"}
+                    {log.action === "TASK_UPDATED" && "✏️"}
+                  </div>
+                  <div className="activity-content">
+                    <div className="activity-header">
+                      <span className="activity-user">
+                        {log.user?.name || "System"}
+                      </span>
+                      <span className="activity-time">
+                        {new Date(log.createdAt).toLocaleString()}
+                      </span>
+                    </div>
+                    <p className="activity-description">
+                      {log.description}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className="task-comments">
+          <div className="task-comments-header">
+            <h4>Timeline & Comments</h4>
+            <span className="comments-count">
+              {selectedTask.comments?.length || 0} entries
+            </span>
+          </div>
+          <div className="comments-list">
+            {(expandedCommentThreads[selectedTask.id]
+              ? selectedTask.comments || []
+              : (selectedTask.comments || []).slice(
+                  0,
+                  COMMENTS_PREVIEW_COUNT,
+                )
+            ).map((comment: any) => (
+              <div key={comment.id} className="comment-item">
+                <div className="comment-header">
+                  <strong>
+                    {comment.user.name || comment.user.email}
+                  </strong>
+                  <div className="comment-meta">
+                    <span>
+                      {new Date(
+                        comment.createdAt,
+                      ).toLocaleString()}
+                    </span>
+                    {!isDeletedView &&
+                      (user?.id === comment.userId ||
+                        isAdmin) && (
+                        <button
+                          className="btn-delete-small"
+                          onClick={async () => {
+                            if (
+                              window.confirm(
+                                "Delete this comment?",
+                              )
+                            ) {
+                              await api.delete(
+                                `/tasks/comments/${comment.id}`,
+                              );
+                              await fetchData();
+                            }
+                          }}
+                        >
+                          Delete
+                        </button>
+                      )}
+                  </div>
+                </div>
+                <p className="comment-content">
+                  {comment.content}
+                </p>
+              </div>
+            ))}
+          </div>
+          {(selectedTask.comments?.length || 0) >
+            COMMENTS_PREVIEW_COUNT && (
+            <button
+              type="button"
+              className="btn-thread-toggle"
+              onClick={() =>
+                setExpandedCommentThreads((prev) => ({
+                  ...prev,
+                  [selectedTask.id]: !prev[selectedTask.id],
+                }))
+              }
+            >
+              {expandedCommentThreads[selectedTask.id]
+                ? `Show recent ${COMMENTS_PREVIEW_COUNT}`
+                : `Show all ${selectedTask.comments?.length} comments`}
+            </button>
+          )}
+          {!isDeletedView && (
+            <form
+              className="add-comment"
+              onSubmit={async (e) => {
+                e.preventDefault();
+                await handleAddComment(selectedTask.id);
+              }}
+            >
+              <textarea
+                value={commentDrafts[selectedTask.id] || ""}
+                placeholder="Write a comment..."
+                rows={2}
+                onChange={(e) =>
+                  setCommentDrafts((prev) => ({
+                    ...prev,
+                    [selectedTask.id]: e.target.value,
+                  }))
+                }
+              />
+              <button
+                type="submit"
+                className="btn-action success"
+                disabled={
+                  submittingCommentTaskId === selectedTask.id ||
+                  !(commentDrafts[selectedTask.id] || "").trim()
+                }
+              >
+                {submittingCommentTaskId === selectedTask.id
+                  ? "Posting..."
+                  : "Post"}
+              </button>
+            </form>
+          )}
+        </div>
+      </div>
+    ) : (
+      <div className="task-detail-empty">
+        <p>Select a task to view full details</p>
+      </div>
+    );
+  };
+
   if (loading) {
     return <div className="dashboard loading">Loading...</div>;
   }
@@ -3216,21 +4042,23 @@ const DashboardPage = () => {
                     ? "created"
                     : f === "ongoing"
                       ? "in_progress"
-                      : f === "completed"
-                        ? "completed"
-                        : f === "pending_approval"
-                          ? "pending_approval"
-                          : f === "overdue"
-                            ? "overdue"
-                            : f === "supporting"
-                              ? "supporting"
-                              : "my",
+                      : f === "in_review"
+                        ? "in_review"
+                        : f === "completed"
+                          ? "completed"
+                          : f === "pending_approval"
+                            ? "pending_approval"
+                            : f === "overdue"
+                              ? "overdue"
+                              : f === "supporting"
+                                ? "supporting"
+                                : "my",
               )
             }
             onTaskClick={(task) => setSelectedTaskId(task.id)}
             onCreateTask={() => setShowCreateTaskModal(true)}
             onSendAlert={openSendAlertModal}
-            assignableUsers={assignableUsers.map((m) => ({
+            assignableUsers={taskAssignableUsers.map((m) => ({
               userId: m.userId,
               name: m.user.name,
               email: m.user.email,
@@ -3239,6 +4067,7 @@ const DashboardPage = () => {
             userRole={
               organization?.userRole as "ADMIN" | "TEAM_LEAD" | "MEMBER"
             }
+            loading={tasksLoading}
             onEdit={handleOpenEditTask}
             onDelete={(id) => openTaskDeleteDialog(id)}
             onChangeStatus={handleUpdateTaskStatus}
@@ -3299,15 +4128,17 @@ const DashboardPage = () => {
                     ? "created"
                     : f === "ongoing"
                       ? "in_progress"
-                      : f === "completed"
-                        ? "completed"
-                        : f === "pending_approval"
-                          ? "pending_approval"
-                          : f === "overdue"
-                            ? "overdue"
-                            : f === "supporting"
-                              ? "supporting"
-                              : "my",
+                      : f === "in_review"
+                        ? "in_review"
+                        : f === "completed"
+                          ? "completed"
+                          : f === "pending_approval"
+                            ? "pending_approval"
+                            : f === "overdue"
+                              ? "overdue"
+                              : f === "supporting"
+                                ? "supporting"
+                                : "my",
               )
             }
             onTaskClick={(task) => setSelectedTaskId(task.id)}
@@ -3316,6 +4147,7 @@ const DashboardPage = () => {
             userRole={
               organization?.userRole as "ADMIN" | "TEAM_LEAD" | "MEMBER"
             }
+            loading={tasksLoading}
             onEdit={handleOpenEditTask}
             onDelete={(id) => openTaskDeleteDialog(id)}
             onChangeStatus={handleUpdateTaskStatus}
@@ -4899,751 +5731,7 @@ const DashboardPage = () => {
                 <aside
                   className={`task-detail-panel ${selectedTask ? "open" : ""}`}
                 >
-                  {selectedTask ? (
-                    <div className="task-detail-content" key={selectedTask.id}>
-                      <div className="task-detail-header">
-                        <div className="task-detail-header-top">
-                          <button
-                            type="button"
-                            className="btn-icon-close"
-                            onClick={() => setSelectedTaskId(null)}
-                            title="Close"
-                          >
-                            ×
-                          </button>
-                          <div className="task-badges">
-                            <span
-                              className={`priority-badge ${selectedTask.priority?.toLowerCase() || ""}`}
-                            >
-                              {selectedTask.priority}
-                            </span>
-                            {selectedTask.approvalStatus &&
-                              selectedTask.approvalStatus !==
-                                "NOT_SUBMITTED" && (
-                                <span
-                                  className="priority-badge"
-                                  style={{
-                                    background:
-                                      selectedTask.approvalStatus === "APPROVED"
-                                        ? "#dcfce7"
-                                        : selectedTask.approvalStatus ===
-                                            "REJECTED"
-                                          ? "#fee2e2"
-                                          : "#fef3c7",
-                                    color:
-                                      selectedTask.approvalStatus === "APPROVED"
-                                        ? "#166534"
-                                        : selectedTask.approvalStatus ===
-                                            "REJECTED"
-                                          ? "#b91c1c"
-                                          : "#92400e",
-                                    borderColor:
-                                      selectedTask.approvalStatus === "APPROVED"
-                                        ? "#86efac"
-                                        : selectedTask.approvalStatus ===
-                                            "REJECTED"
-                                          ? "#fecaca"
-                                          : "#fde68a",
-                                  }}
-                                  title="Approval status"
-                                >
-                                  {selectedTask.approvalStatus === "PENDING"
-                                    ? "Awaiting approval"
-                                    : selectedTask.approvalStatus}
-                                </span>
-                              )}
-                          </div>
-                        </div>
-                        <h3>{selectedTask.title}</h3>
-
-                        {/* Status Dropdown - Linear style */}
-                        {!isDeletedView && (
-                          <div
-                            className="task-status-selector"
-                            style={{ marginTop: "12px" }}
-                          >
-                            <label
-                              style={{
-                                fontSize: "0.75em",
-                                fontWeight: 600,
-                                color: "#64748b",
-                                marginBottom: "4px",
-                                display: "block",
-                              }}
-                            >
-                              Status
-                            </label>
-                            <select
-                              value={selectedTask.status}
-                              onChange={(e) =>
-                                handleUpdateTaskStatus(
-                                  selectedTask.id,
-                                  e.target.value,
-                                )
-                              }
-                              style={{
-                                width: "100%",
-                                padding: "8px 12px",
-                                borderRadius: "6px",
-                                border: "1px solid #e2e8f0",
-                                fontSize: "0.9em",
-                                fontWeight: 600,
-                                cursor: "pointer",
-                                background:
-                                  selectedTask.status === "CREATED"
-                                    ? "#f1f5f9"
-                                    : selectedTask.status === "IN_PROGRESS"
-                                      ? "#dbeafe"
-                                      : "#dcfce7",
-                                color:
-                                  selectedTask.status === "CREATED"
-                                    ? "#475569"
-                                    : selectedTask.status === "IN_PROGRESS"
-                                      ? "#1d4ed8"
-                                      : "#166534",
-                              }}
-                            >
-                              <option value="CREATED">
-                                <svg
-                                  width="14"
-                                  height="14"
-                                  viewBox="0 0 24 24"
-                                  fill="none"
-                                  stroke="currentColor"
-                                  strokeWidth="2"
-                                  style={{
-                                    display: "inline",
-                                    verticalAlign: "middle",
-                                    marginRight: "4px",
-                                  }}
-                                >
-                                  <rect
-                                    x="3"
-                                    y="3"
-                                    width="18"
-                                    height="18"
-                                    rx="2"
-                                    ry="2"
-                                  ></rect>
-                                  <line x1="9" y1="9" x2="15" y2="15"></line>
-                                  <line x1="15" y1="9" x2="9" y2="15"></line>
-                                </svg>
-                                Not Started
-                              </option>
-                              <option value="IN_PROGRESS">
-                                <svg
-                                  width="14"
-                                  height="14"
-                                  viewBox="0 0 24 24"
-                                  fill="none"
-                                  stroke="currentColor"
-                                  strokeWidth="2"
-                                  style={{
-                                    display: "inline",
-                                    verticalAlign: "middle",
-                                    marginRight: "4px",
-                                  }}
-                                >
-                                  <polyline points="23 4 23 10 17 10"></polyline>
-                                  <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
-                                </svg>
-                                In Progress
-                              </option>
-                              <option value="COMPLETED">
-                                <svg
-                                  width="14"
-                                  height="14"
-                                  viewBox="0 0 24 24"
-                                  fill="none"
-                                  stroke="currentColor"
-                                  strokeWidth="2"
-                                  style={{
-                                    display: "inline",
-                                    verticalAlign: "middle",
-                                    marginRight: "4px",
-                                  }}
-                                >
-                                  <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
-                                  <polyline points="22 4 12 14.01 9 11.01"></polyline>
-                                </svg>
-                                Completed
-                              </option>
-                            </select>
-                          </div>
-                        )}
-                      </div>
-
-                      <div
-                        className="task-description-section"
-                        style={{
-                          marginTop: "16px",
-                          padding: "12px",
-                          background: "#f8fafc",
-                          borderRadius: "8px",
-                          border: "1px solid #e2e8f0",
-                        }}
-                      >
-                        <label
-                          style={{
-                            fontSize: "0.75em",
-                            fontWeight: 600,
-                            color: "#64748b",
-                            marginBottom: "8px",
-                            display: "block",
-                          }}
-                        >
-                          Description
-                        </label>
-                        <p
-                          style={{
-                            margin: 0,
-                            fontSize: "0.9em",
-                            color: selectedTask.description
-                              ? "#0f172a"
-                              : "#64748b",
-                            lineHeight: "1.6",
-                            whiteSpace: "pre-wrap",
-                          }}
-                        >
-                          {selectedTask.description ||
-                            "No description provided."}
-                        </p>
-                      </div>
-
-                      <div
-                        className="task-description-section"
-                        style={{
-                          marginTop: "12px",
-                          padding: "12px",
-                          background: "#f8fafc",
-                          borderRadius: "8px",
-                          border: "1px solid #e2e8f0",
-                        }}
-                      >
-                        <label
-                          style={{
-                            fontSize: "0.75em",
-                            fontWeight: 600,
-                            color: "#64748b",
-                            marginBottom: "8px",
-                            display: "block",
-                          }}
-                        >
-                          Linked OKRs
-                        </label>
-                        {selectedTask.krImpacts &&
-                        selectedTask.krImpacts.length > 0 ? (
-                          <div
-                            style={{
-                              display: "grid",
-                              gap: "8px",
-                            }}
-                          >
-                            {selectedTask.krImpacts.map((impact) => (
-                              <div
-                                key={impact.id}
-                                style={{
-                                  padding: "10px",
-                                  borderRadius: "6px",
-                                  background: "#fff",
-                                  border: "1px solid #e2e8f0",
-                                }}
-                              >
-                                <div
-                                  style={{
-                                    fontSize: "0.85em",
-                                    fontWeight: 700,
-                                    color: "#0f172a",
-                                    lineHeight: 1.4,
-                                  }}
-                                >
-                                  {impact.okrKeyResult.isGeneral
-                                    ? "General"
-                                    : impact.okrKeyResult.title}
-                                </div>
-                                <div
-                                  style={{
-                                    marginTop: "3px",
-                                    fontSize: "0.78em",
-                                    color: "#64748b",
-                                    lineHeight: 1.4,
-                                  }}
-                                >
-                                  {impact.okrKeyResult.okr.title}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <p
-                            style={{
-                              margin: 0,
-                              fontSize: "0.9em",
-                              color: "#64748b",
-                              lineHeight: "1.6",
-                            }}
-                          >
-                            No key result linked.
-                          </p>
-                        )}
-                      </div>
-
-                      <div className="task-meta">
-                        <div className="meta-item">
-                          <strong>Owner:</strong>{" "}
-                          {selectedTask.assignee?.name ||
-                            selectedTask.assignee?.email ||
-                            "Unassigned"}
-                        </div>
-                        <div className="meta-item">
-                          <strong>Supporter:</strong>{" "}
-                          {selectedTask.supporter?.name ||
-                            selectedTask.supporter?.email ||
-                            "None"}
-                        </div>
-                        <div className="meta-item">
-                          <strong>Teams:</strong>{" "}
-                          {(selectedTask.taskTeams || [])
-                            .map((tt) => tt.team.name)
-                            .join(", ") || "None"}
-                        </div>
-                      </div>
-
-                      <div className="task-actions">
-                        {isDeletedView ? (
-                          <button
-                            onClick={() => handleRestoreTask(selectedTask.id)}
-                            className="btn-action success"
-                          >
-                            Restore Task
-                          </button>
-                        ) : (
-                          <>
-                            <button
-                              onClick={() => handleOpenEditTask(selectedTask)}
-                              className="btn-action secondary"
-                            >
-                              <svg
-                                width="16"
-                                height="16"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                strokeWidth="2"
-                                style={{
-                                  marginRight: "6px",
-                                  verticalAlign: "middle",
-                                }}
-                              >
-                                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-                                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
-                              </svg>
-                              Edit Details
-                            </button>
-
-                            <label className="btn-action secondary upload-btn">
-                              <svg
-                                width="16"
-                                height="16"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                strokeWidth="2"
-                                style={{
-                                  marginRight: "6px",
-                                  verticalAlign: "middle",
-                                }}
-                              >
-                                <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path>
-                              </svg>
-                              Attach File
-                              <input
-                                type="file"
-                                style={{ display: "none" }}
-                                onChange={async (e) => {
-                                  if (e.target.files && e.target.files[0]) {
-                                    const formData = new FormData();
-                                    formData.append("file", e.target.files[0]);
-                                    try {
-                                      await api.post(
-                                        `/tasks/${selectedTask.id}/attachments`,
-                                        formData,
-                                        {
-                                          headers: {
-                                            "Content-Type":
-                                              "multipart/form-data",
-                                          },
-                                        },
-                                      );
-                                      await fetchData();
-                                    } catch {
-                                      showError("Error", "Upload failed");
-                                    }
-                                  }
-                                }}
-                              />
-                            </label>
-                            <button
-                              type="button"
-                              className="btn-action secondary"
-                              onClick={() => {
-                                setNewLink({
-                                  taskId: selectedTask.id,
-                                  url: "",
-                                  fileName: "",
-                                });
-                                setShowAddLinkModal(true);
-                              }}
-                            >
-                              <svg
-                                width="16"
-                                height="16"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                strokeWidth="2"
-                                style={{
-                                  marginRight: "6px",
-                                  verticalAlign: "middle",
-                                }}
-                              >
-                                <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
-                                <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
-                              </svg>
-                              Attach Link
-                            </button>
-                            {canReviewTasks &&
-                              selectedTask.status === "COMPLETED" &&
-                              selectedTask.approvalStatus === "PENDING" && (
-                                <>
-                                  <button
-                                    type="button"
-                                    className="btn-action success"
-                                    onClick={() =>
-                                      handleApprovalAction(
-                                        selectedTask.id,
-                                        "APPROVE",
-                                      )
-                                    }
-                                  >
-                                    Approve
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className="btn-action danger"
-                                    onClick={() =>
-                                      handleApprovalAction(
-                                        selectedTask.id,
-                                        "REJECT",
-                                      )
-                                    }
-                                  >
-                                    Reject
-                                  </button>
-                                </>
-                              )}
-                            {canDeleteTask(selectedTask) && (
-                              <button
-                                onClick={() =>
-                                  handleDeleteTask(selectedTask.id)
-                                }
-                                className="btn-action danger"
-                              >
-                                Move to Recently Deleted
-                              </button>
-                            )}
-                          </>
-                        )}
-                      </div>
-
-                      {selectedTask.attachments &&
-                        selectedTask.attachments.length > 0 && (
-                          <div className="task-attachments">
-                            <h4>Attachments</h4>
-                            <ul>
-                              {selectedTask.attachments.map((att) => (
-                                <li key={att.id} className="attachment-item">
-                                  {att.type === "LINK" && att.url ? (
-                                    <a
-                                      href={att.url}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                    >
-                                      🔗 {att.fileName || att.url}
-                                    </a>
-                                  ) : (
-                                    <a
-                                      href={`${api.defaults.baseURL}/${att.filePath}`}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                    >
-                                      📄 {att.fileName}
-                                    </a>
-                                  )}
-                                  {isAdmin && !isDeletedView && (
-                                    <button
-                                      className="btn-delete-small"
-                                      onClick={async () => {
-                                        if (
-                                          window.confirm(
-                                            "Delete this attachment?",
-                                          )
-                                        ) {
-                                          await api.delete(
-                                            `/tasks/attachments/${att.id}`,
-                                          );
-                                          await fetchData();
-                                        }
-                                      }}
-                                    >
-                                      Remove
-                                    </button>
-                                  )}
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
-                        )}
-
-                      {!isDeletedView &&
-                        selectedTask.status !== "COMPLETED" &&
-                        (user?.id === selectedTask.assignee?.id ||
-                          user?.id === selectedTask.supporter?.id) && (
-                          <div className="task-work-submission">
-                            <h4>Work Submission</h4>
-                            <button
-                              type="button"
-                              className="btn-action success"
-                              onClick={() => setShowSubmissionModal(true)}
-                            >
-                              Submit Work
-                            </button>
-                          </div>
-                        )}
-
-                      {!isDeletedView && submissions.length > 0 && (
-                        <div className="task-submissions-list">
-                          <h4>Submissions</h4>
-                          <div className="submissions-list">
-                            {submissions.map((sub) => (
-                              <div key={sub.id} className="submission-item">
-                                <div className="submission-header">
-                                  <span className="submission-author">
-                                    {sub.user?.name || "Unknown"}
-                                  </span>
-                                  <span
-                                    className={`submission-status status-${sub.status?.toLowerCase() || ""}`}
-                                  >
-                                    {sub.status}
-                                  </span>
-                                </div>
-                                <div className="submission-meta">
-                                  <span>
-                                    Submitted:{" "}
-                                    {new Date(sub.submittedAt).toLocaleString()}
-                                  </span>
-                                  {sub.reviewedAt && (
-                                    <span>
-                                      Reviewed:{" "}
-                                      {new Date(
-                                        sub.reviewedAt,
-                                      ).toLocaleString()}
-                                    </span>
-                                  )}
-                                </div>
-                                {sub.description && (
-                                  <p className="submission-description">
-                                    {sub.description}
-                                  </p>
-                                )}
-                                {sub.reviewNotes && (
-                                  <p className="submission-review-notes">
-                                    <strong>Review Notes:</strong>{" "}
-                                    {sub.reviewNotes}
-                                  </p>
-                                )}
-                                {canReviewSubmissions &&
-                                  sub.status === "PENDING" && (
-                                    <div className="submission-actions">
-                                      <button
-                                        className="btn-action success"
-                                        onClick={() => {
-                                          handleReviewSubmission(
-                                            sub.id,
-                                            "APPROVED",
-                                          );
-                                        }}
-                                      >
-                                        Approve
-                                      </button>
-                                      <button
-                                        className="btn-action danger"
-                                        onClick={() => {
-                                          handleReviewSubmission(
-                                            sub.id,
-                                            "REJECTED",
-                                          );
-                                        }}
-                                      >
-                                        Reject
-                                      </button>
-                                    </div>
-                                  )}
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {!isDeletedView && activityLogs.length > 0 && (
-                        <div className="task-activity-timeline">
-                          <h4>Activity Timeline</h4>
-                          <div className="activity-list">
-                            {activityLogs.map((log) => (
-                              <div key={log.id} className="activity-item">
-                                <div className="activity-icon">
-                                  {log.action === "COMMENT_ADDED" && "💬"}
-                                  {log.action === "COMMENT_DELETED" && "🗑️"}
-                                  {log.action === "STATUS_CHANGED" && "📊"}
-                                  {log.action === "ASSIGNEE_CHANGED" && "👤"}
-                                  {log.action === "SUPPORTER_CHANGED" && "🤝"}
-                                  {log.action === "SUBMISSION_CREATED" && "📝"}
-                                  {log.action === "SUBMISSION_REVIEWED" && "✅"}
-                                  {log.action === "ATTACHMENT_ADDED" && "📎"}
-                                  {log.action === "ATTACHMENT_DELETED" && "📎"}
-                                  {log.action === "TASK_UPDATED" && "✏️"}
-                                </div>
-                                <div className="activity-content">
-                                  <div className="activity-header">
-                                    <span className="activity-user">
-                                      {log.user?.name || "System"}
-                                    </span>
-                                    <span className="activity-time">
-                                      {new Date(log.createdAt).toLocaleString()}
-                                    </span>
-                                  </div>
-                                  <p className="activity-description">
-                                    {log.description}
-                                  </p>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      <div className="task-comments">
-                        <div className="task-comments-header">
-                          <h4>Timeline & Comments</h4>
-                          <span className="comments-count">
-                            {selectedTask.comments?.length || 0} entries
-                          </span>
-                        </div>
-                        <div className="comments-list">
-                          {(expandedCommentThreads[selectedTask.id]
-                            ? selectedTask.comments || []
-                            : (selectedTask.comments || []).slice(
-                                0,
-                                COMMENTS_PREVIEW_COUNT,
-                              )
-                          ).map((comment: any) => (
-                            <div key={comment.id} className="comment-item">
-                              <div className="comment-header">
-                                <strong>
-                                  {comment.user.name || comment.user.email}
-                                </strong>
-                                <div className="comment-meta">
-                                  <span>
-                                    {new Date(
-                                      comment.createdAt,
-                                    ).toLocaleString()}
-                                  </span>
-                                  {!isDeletedView &&
-                                    (user?.id === comment.userId ||
-                                      isAdmin) && (
-                                      <button
-                                        className="btn-delete-small"
-                                        onClick={async () => {
-                                          if (
-                                            window.confirm(
-                                              "Delete this comment?",
-                                            )
-                                          ) {
-                                            await api.delete(
-                                              `/tasks/comments/${comment.id}`,
-                                            );
-                                            await fetchData();
-                                          }
-                                        }}
-                                      >
-                                        Delete
-                                      </button>
-                                    )}
-                                </div>
-                              </div>
-                              <p className="comment-content">
-                                {comment.content}
-                              </p>
-                            </div>
-                          ))}
-                        </div>
-                        {(selectedTask.comments?.length || 0) >
-                          COMMENTS_PREVIEW_COUNT && (
-                          <button
-                            type="button"
-                            className="btn-thread-toggle"
-                            onClick={() =>
-                              setExpandedCommentThreads((prev) => ({
-                                ...prev,
-                                [selectedTask.id]: !prev[selectedTask.id],
-                              }))
-                            }
-                          >
-                            {expandedCommentThreads[selectedTask.id]
-                              ? `Show recent ${COMMENTS_PREVIEW_COUNT}`
-                              : `Show all ${selectedTask.comments?.length} comments`}
-                          </button>
-                        )}
-                        {!isDeletedView && (
-                          <form
-                            className="add-comment"
-                            onSubmit={async (e) => {
-                              e.preventDefault();
-                              await handleAddComment(selectedTask.id);
-                            }}
-                          >
-                            <textarea
-                              value={commentDrafts[selectedTask.id] || ""}
-                              placeholder="Write a comment..."
-                              rows={2}
-                              onChange={(e) =>
-                                setCommentDrafts((prev) => ({
-                                  ...prev,
-                                  [selectedTask.id]: e.target.value,
-                                }))
-                              }
-                            />
-                            <button
-                              type="submit"
-                              className="btn-action success"
-                              disabled={
-                                submittingCommentTaskId === selectedTask.id ||
-                                !(commentDrafts[selectedTask.id] || "").trim()
-                              }
-                            >
-                              {submittingCommentTaskId === selectedTask.id
-                                ? "Posting..."
-                                : "Post"}
-                            </button>
-                          </form>
-                        )}
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="task-detail-empty">
-                      <p>Select a task to view full details</p>
-                    </div>
-                  )}
+                  {renderTaskDetailPanelInner()}
                 </aside>
               </div>
             </div>
@@ -5806,6 +5894,21 @@ const DashboardPage = () => {
                     }
                   />
                 </div>
+                <div className="form-group">
+                  <label>Status</label>
+                  <select
+                    value={newTask.status}
+                    onChange={(e) =>
+                      setNewTask({ ...newTask, status: e.target.value })
+                    }
+                  >
+                    <option value="TODO">To Do</option>
+                    <option value="IN_PROGRESS">In Progress</option>
+                    <option value="IN_REVIEW">In Review</option>
+                    <option value="DONE">Done</option>
+                    <option value="CANCELLED">Cancelled</option>
+                  </select>
+                </div>
               </div>
               {organization?.members && (
                 <div className="form-group">
@@ -5814,6 +5917,7 @@ const DashboardPage = () => {
                     value={newTask.assigneeId}
                     onChange={(e) => {
                       const assigneeId = e.target.value;
+                      const isDelegated = assigneeId && assigneeId !== user?.id;
                       setNewTask({
                         ...newTask,
                         assigneeId,
@@ -5821,9 +5925,7 @@ const DashboardPage = () => {
                           newTask.supporterId === assigneeId
                             ? ""
                             : newTask.supporterId,
-                        alertTeamLead: assigneeId
-                          ? true
-                          : newTask.alertTeamLead,
+                        alertTeamLead: isDelegated ? true : newTask.alertTeamLead,
                         okrId: "",
                         keyResultIds: [],
                       });
@@ -5834,7 +5936,7 @@ const DashboardPage = () => {
                     required
                   >
                     <option value="">Select assignee</option>
-                    {assignableUsers.map((member) => (
+                    {taskAssignableUsers.map((member) => (
                       <option key={member.user.id} value={member.user.id}>
                         {member.user.id === user?.id
                           ? `Me (${member.user.name || member.user.email})`
@@ -5854,7 +5956,7 @@ const DashboardPage = () => {
                     }
                   >
                     <option value="">Select supporter (optional)</option>
-                    {assignableUsers
+                    {taskAssignableUsers
                       .filter((member) => member.user.id !== newTask.assigneeId)
                       .map((member) => (
                         <option key={member.user.id} value={member.user.id}>
@@ -5878,7 +5980,8 @@ const DashboardPage = () => {
                   >
                     <input
                       type="checkbox"
-                      checked={newTask.alertTeamLead}
+                      checked={newTask.alertTeamLead || (newTask.assigneeId && newTask.assigneeId !== user?.id) || false}
+                      disabled={newTask.assigneeId && newTask.assigneeId !== user?.id ? true : false}
                       onChange={(e) =>
                         setNewTask({
                           ...newTask,
@@ -5887,7 +5990,7 @@ const DashboardPage = () => {
                       }
                       style={{ width: "auto", margin: 0 }}
                     />
-                    <span>Alert Team Lead about this task</span>
+                    <span>Alert Team Lead about this task{newTask.assigneeId && newTask.assigneeId !== user?.id ? " (Locked: Delegated task)" : ""}</span>
                   </label>
                   <small
                     style={{
@@ -5900,6 +6003,24 @@ const DashboardPage = () => {
                   </small>
                 </div>
               )}
+              <div className="form-group">
+                <label
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    cursor: "pointer",
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={createMore}
+                    onChange={(e) => setCreateMore(e.target.checked)}
+                    style={{ width: "auto", margin: 0 }}
+                  />
+                  <span>Create more (keep this form open after saving)</span>
+                </label>
+              </div>
               <div className="form-group">
                 <label>OKR Key Results</label>
                 <div className="task-kr-toolbar">
@@ -6070,6 +6191,21 @@ const DashboardPage = () => {
                     }
                   />
                 </div>
+                <div className="form-group">
+                  <label>Status</label>
+                  <select
+                    value={editTask.status}
+                    onChange={(e) =>
+                      setEditTask({ ...editTask, status: e.target.value })
+                    }
+                  >
+                    <option value="TODO">To Do</option>
+                    <option value="IN_PROGRESS">In Progress</option>
+                    <option value="IN_REVIEW">In Review</option>
+                    <option value="DONE">Done</option>
+                    <option value="CANCELLED">Cancelled</option>
+                  </select>
+                </div>
               </div>
               <div className="form-group">
                 <label>Primary Assignee *</label>
@@ -6077,6 +6213,7 @@ const DashboardPage = () => {
                   value={editTask.assigneeId}
                   onChange={(e) => {
                     const assigneeId = e.target.value;
+                    const isDelegated = assigneeId && assigneeId !== user?.id;
                     setEditTask({
                       ...editTask,
                       assigneeId,
@@ -6084,7 +6221,7 @@ const DashboardPage = () => {
                         editTask.supporterId === assigneeId
                           ? ""
                           : editTask.supporterId,
-                      alertTeamLead: assigneeId ? true : editTask.alertTeamLead,
+                      alertTeamLead: isDelegated ? true : editTask.alertTeamLead,
                       okrId: "",
                       keyResultIds: [],
                     });
@@ -6095,7 +6232,7 @@ const DashboardPage = () => {
                   required
                 >
                   <option value="">Select assignee</option>
-                  {assignableUsers.map((member) => (
+                  {taskAssignableUsers.map((member) => (
                     <option key={member.user.id} value={member.user.id}>
                       {member.user.id === user?.id
                         ? `Me (${member.user.name || member.user.email})`
@@ -6234,7 +6371,7 @@ const DashboardPage = () => {
                   }
                 >
                   <option value="">Select supporter (optional)</option>
-                  {assignableUsers
+                  {taskAssignableUsers
                     .filter((member) => member.user.id !== editTask.assigneeId)
                     .map((member) => (
                       <option key={member.user.id} value={member.user.id}>
@@ -6257,15 +6394,17 @@ const DashboardPage = () => {
                   >
                     <input
                       type="checkbox"
-                      checked={editTask.alertTeamLead}
+                      checked={editTask.alertTeamLead || (editTask.assigneeId && editTask.assigneeId !== user?.id) || false}
+                      disabled={editTask.assigneeId && editTask.assigneeId !== user?.id ? true : false}
                       onChange={(e) =>
                         setEditTask({
                           ...editTask,
                           alertTeamLead: e.target.checked,
                         })
                       }
+                      style={{ width: "auto", margin: 0 }}
                     />
-                    <span>Send task alert for review</span>
+                    <span>Send task alert for review{editTask.assigneeId && editTask.assigneeId !== user?.id ? " (Locked: Delegated task)" : ""}</span>
                   </label>
                   <p
                     style={{
@@ -7729,6 +7868,20 @@ const DashboardPage = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {currentSection !== "tracker" && (
+        <>
+          <div
+            className={`task-detail-backdrop ${selectedTaskId ? "active" : ""} drawer-backdrop`}
+            onClick={() => setSelectedTaskId(null)}
+          />
+          <aside
+            className={`task-detail-panel drawer ${selectedTask ? "open" : ""}`}
+          >
+            {renderTaskDetailPanelInner()}
+          </aside>
+        </>
       )}
 
       {/* Error Dialog */}

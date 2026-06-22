@@ -114,6 +114,7 @@ model Task {
   approvedById    String?
   approvedAt      DateTime?
   approvalNotes   String?
+  alertTeamLead   Boolean          @default(false)
   priority        String           @default("LOW") // LOW, MEDIUM, HIGH
   dueDate         DateTime?
   organizationId  String

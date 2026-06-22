@@ -360,6 +360,13 @@ export const getTasks = async (req: Request, res: Response) => {
         const tasks = await prisma.task.findMany({
             where,
             include: {
+                createdBy: {
+                    select: {
+                        id: true,
+                        email: true,
+                        name: true
+                    }
+                },
                 assignee: {
                     select: {
                         id: true,
@@ -441,7 +448,7 @@ export const getTasks = async (req: Request, res: Response) => {
 export const createTask = async (req: Request, res: Response) => {
     try {
         const userId = (req as any).user.userId;
-        const { title, description, organizationId, assigneeId, supporterId, dueDate, priority, alertTeamLead, keyResultId } = req.body;
+        const { title, description, organizationId, assigneeId, supporterId, dueDate, priority, alertTeamLead, keyResultId, status } = req.body;
         const normalizedAssigneeId = assigneeId === '' ? null : assigneeId;
         const normalizedSupporterId = supporterId === '' ? null : supporterId;
 
@@ -507,6 +514,21 @@ export const createTask = async (req: Request, res: Response) => {
             supporterId: normalizedSupporterId
         });
 
+        const isDelegated = normalizedAssigneeId && normalizedAssigneeId !== userId;
+        const alertTeamLeadValue = isDelegated ? true : (alertTeamLead ? true : false);
+
+        const initialStatus = status || 'TODO';
+        const isReviewer = ['ADMIN', 'TEAM_LEAD'].includes(membership.role);
+        let finalStatus = initialStatus;
+        let finalApprovalStatus = 'NOT_SUBMITTED';
+
+        if (initialStatus === 'COMPLETED' || initialStatus === 'DONE' || initialStatus === 'IN_REVIEW') {
+            finalStatus = isReviewer ? 'DONE' : 'IN_REVIEW';
+            finalApprovalStatus = 'PENDING';
+        } else if (alertTeamLeadValue) {
+            finalApprovalStatus = 'PENDING';
+        }
+
         const task = await prisma.$transaction(async (tx) => {
             const created = await tx.task.create({
                 data: {
@@ -518,7 +540,9 @@ export const createTask = async (req: Request, res: Response) => {
                     supporterId: normalizedSupporterId,
                     dueDate: taskDueDate,
                     priority: priority || 'LOW',
-                    status: 'CREATED'
+                    status: finalStatus,
+                    alertTeamLead: alertTeamLeadValue,
+                    approvalStatus: finalApprovalStatus
                 }
             });
 
@@ -541,6 +565,7 @@ export const createTask = async (req: Request, res: Response) => {
             return tx.task.findUnique({
                 where: { id: created.id },
                 include: {
+                    createdBy: { select: { id: true, email: true, name: true } },
                     assignee: { select: { id: true, email: true, name: true } },
                     supporter: { select: { id: true, email: true, name: true } },
                     organization: { select: { id: true, name: true } },
@@ -622,6 +647,13 @@ export const getTaskById = async (req: Request, res: Response) => {
         const task = await prisma.task.findUnique({
             where: { id: id },
             include: {
+                createdBy: {
+                    select: {
+                        id: true,
+                        email: true,
+                        name: true
+                    }
+                },
                 assignee: {
                     select: {
                         id: true,
@@ -710,7 +742,7 @@ export const updateTask = async (req: Request, res: Response) => {
     try {
         const userId = (req as any).user.userId;
         const id = req.params.id as string;
-        const { title, description, status, assigneeId, supporterId, dueDate, priority, approvalAction, approvalNotes } = req.body;
+        const { title, description, status, assigneeId, supporterId, dueDate, priority, approvalAction, approvalNotes, alertTeamLead } = req.body;
         const hasAssigneeUpdate = assigneeId !== undefined;
         const normalizedAssigneeId = assigneeId === '' ? null : assigneeId;
         const hasSupporterUpdate = supporterId !== undefined;
@@ -742,18 +774,27 @@ export const updateTask = async (req: Request, res: Response) => {
             if (!['APPROVE', 'REJECT'].includes(approvalAction)) {
                 return res.status(400).json({ error: 'Invalid approval action' });
             }
-            if (task.status !== 'COMPLETED' || task.approvalStatus !== 'PENDING') {
-                return res.status(400).json({ error: 'Only completed tasks pending approval can be reviewed' });
+            const canBeReviewed = task.status === 'COMPLETED' || task.status === 'DONE' || task.status === 'IN_REVIEW' || task.approvalStatus === 'PENDING' || task.alertTeamLead;
+            if (!canBeReviewed) {
+                return res.status(400).json({ error: 'Only completed tasks pending approval or tasks requiring team lead review can be reviewed' });
             }
         }
 
         if (status) {
-            if (status === 'COMPLETED') {
-                nextApprovalPatch.approvalStatus = isReviewer ? 'APPROVED' : 'PENDING';
+            if (status === 'COMPLETED' || status === 'DONE' || status === 'IN_REVIEW') {
+                const finalStatus = isReviewer ? 'DONE' : 'IN_REVIEW';
+                const finalApproval = isReviewer ? 'APPROVED' : 'PENDING';
+                
+                nextApprovalPatch.status = finalStatus;
+                nextApprovalPatch.approvalStatus = finalApproval;
                 nextApprovalPatch.approvedById = isReviewer ? userId : null;
                 nextApprovalPatch.approvedAt = isReviewer ? new Date() : null;
                 nextApprovalPatch.approvalNotes = null;
+                if (!isReviewer) {
+                    nextApprovalPatch.alertTeamLead = true;
+                }
             } else {
+                nextApprovalPatch.status = status;
                 nextApprovalPatch.approvalStatus = 'NOT_SUBMITTED';
                 nextApprovalPatch.approvedById = null;
                 nextApprovalPatch.approvedAt = null;
@@ -761,12 +802,31 @@ export const updateTask = async (req: Request, res: Response) => {
             }
         }
 
+        const nextAssigneeId = hasAssigneeUpdate ? normalizedAssigneeId : task.assigneeId;
+        const isDelegated = nextAssigneeId && nextAssigneeId !== task.createdByUserId;
+        const alertTeamLeadValue = isDelegated ? true : (alertTeamLead !== undefined ? !!alertTeamLead : (nextApprovalPatch.alertTeamLead !== undefined ? nextApprovalPatch.alertTeamLead : task.alertTeamLead));
+        
+        nextApprovalPatch.alertTeamLead = alertTeamLeadValue;
+        if (alertTeamLeadValue && (nextApprovalPatch.approvalStatus === undefined || nextApprovalPatch.approvalStatus === 'NOT_SUBMITTED' || nextApprovalPatch.approvalStatus === 'REJECTED')) {
+            const currentApproval = nextApprovalPatch.approvalStatus !== undefined ? nextApprovalPatch.approvalStatus : task.approvalStatus;
+            if (currentApproval === 'NOT_SUBMITTED' || currentApproval === 'REJECTED') {
+                nextApprovalPatch.approvalStatus = 'PENDING';
+            }
+        } else if (!alertTeamLeadValue && (nextApprovalPatch.approvalStatus === undefined || nextApprovalPatch.approvalStatus === 'PENDING')) {
+            const currentApproval = nextApprovalPatch.approvalStatus !== undefined ? nextApprovalPatch.approvalStatus : task.approvalStatus;
+            if (currentApproval === 'PENDING') {
+                nextApprovalPatch.approvalStatus = 'NOT_SUBMITTED';
+            }
+        }
+
         if (approvalAction === 'APPROVE') {
+            nextApprovalPatch.status = 'DONE';
             nextApprovalPatch.approvalStatus = 'APPROVED';
             nextApprovalPatch.approvedById = userId;
             nextApprovalPatch.approvedAt = new Date();
             nextApprovalPatch.approvalNotes = approvalNotes || null;
         } else if (approvalAction === 'REJECT') {
+            nextApprovalPatch.status = 'IN_PROGRESS';
             nextApprovalPatch.approvalStatus = 'REJECTED';
             nextApprovalPatch.approvedById = userId;
             nextApprovalPatch.approvedAt = new Date();
@@ -774,7 +834,6 @@ export const updateTask = async (req: Request, res: Response) => {
         }
 
 
-        const nextAssigneeId = hasAssigneeUpdate ? normalizedAssigneeId : task.assigneeId;
         const nextSupporterId = hasSupporterUpdate ? normalizedSupporterId : task.supporterId;
         const shouldRecalculateTeams = hasAssigneeUpdate || hasSupporterUpdate;
         let teamIds: string[] | null = null;
@@ -831,7 +890,7 @@ export const updateTask = async (req: Request, res: Response) => {
                     ...(title && { title }),
                     ...(description !== undefined && { description }),
                     ...(status && { status }),
-                    ...((status || approvalAction) && nextApprovalPatch),
+                    ...nextApprovalPatch,
                     ...(hasAssigneeUpdate && { assigneeId: normalizedAssigneeId }),
                     ...(hasSupporterUpdate && { supporterId: normalizedSupporterId }),
                     ...(dueDate !== undefined && { dueDate: dueDate ? new Date(dueDate) : null }),
@@ -940,6 +999,7 @@ export const updateTask = async (req: Request, res: Response) => {
             return tx.task.findUnique({
                 where: { id: updated.id },
                 include: {
+                    createdBy: { select: { id: true, email: true, name: true } },
                     assignee: { select: { id: true, email: true, name: true } },
                     supporter: { select: { id: true, email: true, name: true } },
                     organization: { select: { id: true, name: true } },
@@ -986,6 +1046,39 @@ export const updateTask = async (req: Request, res: Response) => {
                 organizationId: task.organizationId,
                 actorUserId: userId
             });
+        }
+
+        // Notify assignee if edits were made by another user (e.g. team lead or creator)
+        if (updatedTask && task.assigneeId && userId !== task.assigneeId) {
+            const titleChanged = title && title !== task.title;
+            const descriptionChanged = description !== undefined && description !== task.description;
+            const priorityChanged = priority && priority !== task.priority;
+            const dueDateChanged = dueDate !== undefined && (task.dueDate ? new Date(task.dueDate).getTime() : null) !== (dueDate ? new Date(dueDate).getTime() : null);
+            const supporterChanged = hasSupporterUpdate && normalizedSupporterId !== task.supporterId;
+            const assigneeChanged = hasAssigneeUpdate && normalizedAssigneeId !== task.assigneeId;
+
+            if (titleChanged || descriptionChanged || priorityChanged || dueDateChanged || supporterChanged || assigneeChanged) {
+                try {
+                    const modifierUser = await prisma.user.findUnique({
+                        where: { id: userId },
+                        select: { name: true, email: true }
+                    });
+                    const modifierName = modifierUser?.name || modifierUser?.email || 'a reviewer';
+                    
+                    await prisma.notification.create({
+                        data: {
+                            organizationId: task.organizationId,
+                            senderId: userId,
+                            targetType: 'INDIVIDUAL',
+                            targetId: task.assigneeId,
+                            type: 'PRIORITY_ALERT',
+                            message: `Your task "${updatedTask.title}" was modified by ${modifierName}.`
+                        }
+                    });
+                } catch (notifErr) {
+                    console.error('Failed to send modification notification:', notifErr);
+                }
+            }
         }
 
         // emit socket event for real-time updates

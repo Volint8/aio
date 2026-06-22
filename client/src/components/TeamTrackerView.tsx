@@ -37,6 +37,18 @@ interface Task {
     email: string;
   } | null;
   createdAt: string;
+  krImpacts?: Array<{
+    id: string;
+    okrKeyResult: {
+      id: string;
+      title: string;
+      isGeneral?: boolean;
+      okr: {
+        id: string;
+        title: string;
+      };
+    };
+  }>;
 }
 
 interface TeamMember {
@@ -56,6 +68,7 @@ interface TeamTrackerViewProps {
     | "supporting"
     | "pending"
     | "ongoing"
+    | "in_review"
     | "completed"
     | "pending_approval"
     | "overdue"
@@ -69,6 +82,7 @@ interface TeamTrackerViewProps {
       | "supporting"
       | "pending"
       | "ongoing"
+      | "in_review"
       | "completed"
       | "pending_approval"
       | "overdue",
@@ -85,6 +99,7 @@ interface TeamTrackerViewProps {
     notes?: string,
   ) => void;
   userRole?: "ADMIN" | "TEAM_LEAD" | "MEMBER";
+  loading?: boolean;
 }
 
 const TeamTrackerView: React.FC<TeamTrackerViewProps> = ({
@@ -103,6 +118,7 @@ const TeamTrackerView: React.FC<TeamTrackerViewProps> = ({
   onChangeStatus,
   onApprovalAction,
   userRole = "MEMBER",
+  loading = false,
 }) => {
   const { user } = useAuth();
   const userId = user?.id || "";
@@ -115,6 +131,7 @@ const TeamTrackerView: React.FC<TeamTrackerViewProps> = ({
       | "supporting"
       | "pending"
       | "ongoing"
+      | "in_review"
       | "completed"
       | "pending_approval"
       | "overdue";
@@ -127,6 +144,7 @@ const TeamTrackerView: React.FC<TeamTrackerViewProps> = ({
         | "supporting"
         | "pending"
         | "ongoing"
+        | "in_review"
         | "completed"
         | "pending_approval"
         | "overdue";
@@ -140,6 +158,7 @@ const TeamTrackerView: React.FC<TeamTrackerViewProps> = ({
 
     arr.push({ key: "pending", label: "Pending" });
     arr.push({ key: "ongoing", label: "In Progress" });
+    arr.push({ key: "in_review", label: "In Review" });
     arr.push({ key: "completed", label: "Completed" });
     if (userRole === "ADMIN" || userRole === "TEAM_LEAD") {
       arr.push({ key: "pending_approval", label: "Pending Approval" });
@@ -172,10 +191,12 @@ const TeamTrackerView: React.FC<TeamTrackerViewProps> = ({
         if (task.status !== "CREATED") return false;
       } else if (filter === "ongoing" || filter === "in_progress") {
         if (task.status !== "IN_PROGRESS") return false;
+      } else if (filter === "in_review") {
+        if (task.status !== "IN_REVIEW") return false;
       } else if (filter === "completed") {
         if (task.status !== "COMPLETED") return false;
       } else if (filter === "pending_approval") {
-        if (task.status !== "COMPLETED" || task.approvalStatus !== "PENDING") {
+        if (task.approvalStatus !== "PENDING") {
           return false;
         }
       } else if (filter === "overdue") {
@@ -208,14 +229,16 @@ const TeamTrackerView: React.FC<TeamTrackerViewProps> = ({
 
   const getStatusLabel = (status: string, dueDate: string | null) => {
     // Check if overdue first (automatic status)
-    if (status !== "COMPLETED" && isDueDateOverdue(dueDate)) {
+    if (status !== "COMPLETED" && status !== "DONE" && isDueDateOverdue(dueDate)) {
       return "Overdue";
     }
     // Map status to user-friendly labels
-    if (status === "CREATED") return "Not Started";
+    if (status === "CREATED" || status === "TODO") return "To Do";
     if (status === "IN_PROGRESS") return "In Progress";
-    if (status === "COMPLETED") return "Completed";
-    return status.replace("_", " ").toLowerCase();
+    if (status === "IN_REVIEW") return "In Review";
+    if (status === "COMPLETED" || status === "DONE") return "Done";
+    if (status === "CANCELLED") return "Cancelled";
+    return status;
   };
 
   const [openMenuTaskId, setOpenMenuTaskId] = React.useState<string | null>(
@@ -353,15 +376,48 @@ const TeamTrackerView: React.FC<TeamTrackerViewProps> = ({
             </tr>
           </thead>
           <tbody>
-            {filteredTasks.length > 0 ? (
+            {loading ? (
+              Array.from({ length: 5 }).map((_, idx) => (
+                <tr key={`skeleton-${idx}`} className="skeleton-row">
+                  <td><div className="skeleton-text skeleton-title"></div></td>
+                  <td><div className="skeleton-text skeleton-okr"></div></td>
+                  <td>
+                    <div className="skeleton-avatar-group">
+                      <div className="skeleton-avatar"></div>
+                      <div className="skeleton-text skeleton-owner"></div>
+                    </div>
+                  </td>
+                  <td><div className="skeleton-pill"></div></td>
+                  <td><div className="skeleton-pill"></div></td>
+                  <td><div className="skeleton-text skeleton-timeline"></div></td>
+                  <td><div className="skeleton-action"></div></td>
+                </tr>
+              ))
+            ) : filteredTasks.length > 0 ? (
               filteredTasks.map((task) => (
                 <tr
                   key={task.id}
                   className="task-row"
                   onClick={() => onTaskClick(task)}
+                  title={task.description || undefined}
                 >
                   <td className="task-title-cell">{task.title}</td>
-                  <td>-</td>
+                  <td>
+                    {task.krImpacts && task.krImpacts.length > 0 ? (
+                      <div className="task-linked-okr" style={{ fontSize: "0.85em" }}>
+                        {task.krImpacts.map((impact) => (
+                          <div key={impact.id} title={`${impact.okrKeyResult.okr.title} - ${impact.okrKeyResult.isGeneral ? "General" : impact.okrKeyResult.title}`}>
+                            <strong style={{ display: "block", color: "var(--text-main)", fontWeight: 600 }}>{impact.okrKeyResult.okr.title}</strong>
+                            <div style={{ fontSize: "0.85em", color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 180 }}>
+                              {impact.okrKeyResult.isGeneral ? "General" : impact.okrKeyResult.title}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="text-muted" style={{ fontSize: "0.85em" }}>General</span>
+                    )}
+                  </td>
                   <td>
                     <div className="owner-cell">
                       <div className="owner-avatar">
@@ -514,7 +570,7 @@ const TeamTrackerView: React.FC<TeamTrackerViewProps> = ({
               ))
             ) : (
               <tr>
-                <td colSpan={6} className="tracker-empty">
+                <td colSpan={7} className="tracker-empty">
                   No tasks found for this member or filter.
                 </td>
               </tr>
