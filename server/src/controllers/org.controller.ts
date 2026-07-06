@@ -2611,15 +2611,24 @@ export const updateOkr = async (req: Request, res: Response) => {
 
         const recipientEmails = Array.from(new Set(members.map(m => m.user.email).filter(Boolean)));
 
+        const clientBaseUrl = (process.env.CLIENT_URL || 'http://localhost:5173').split(',')[0].replace(/\/$/, '');
         const subject = `OKR Completed: ${updated.title}`;
         const html = `
-          <div style="font-family: sans-serif; max-width: 600px; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
-            <h2 style="color: #22C55E;">OKR Completed! 🎉</h2>
+          <div style="font-family: sans-serif; max-width: 600px; padding: 20px; border: 1px solid #eee; border-radius: 10px; margin: 0 auto;">
+            <div style="text-align: center; margin-bottom: 20px;">
+              <img src="${clientBaseUrl}/images/image.png" alt="Apraizal Logo" style="height: 40px;" />
+            </div>
+            <h2 style="color: #22C55E; text-align: center;">OKR Completed! 🎉</h2>
             <p>The following OKR in <strong>${organization?.name}</strong> has been marked as completed:</p>
             <div style="background: #f8fafc; padding: 15px; border-radius: 8px; margin: 20px 0;">
               <h3 style="margin-top: 0;">${updated.title}</h3>
               <p>${updated.description || 'No description provided.'}</p>
             </div>
+            <p style="text-align: center; margin: 24px 0;">
+              <a href="${clientBaseUrl}/dashboard" style="display:inline-block;padding:12px 18px;background:#2563eb;color:#fff;text-decoration:none;border-radius:6px;font-weight:bold;">
+                View OKR in Dashboard
+              </a>
+            </p>
             <p>Well done to all involved teams!</p>
           </div>
         `;
@@ -3217,7 +3226,8 @@ export const previewAppraisal = async (req: Request, res: Response) => {
       periodStart: req.body.periodStart || req.body.fromDate,
       periodEnd: req.body.periodEnd || req.body.toDate,
       purposes: req.body.purposes,
-      customFocus: req.body.customFocus
+      customFocus: req.body.customFocus,
+      selectedOkrIds: req.body.selectedOkrIds || req.body.okrIds
     });
 
     return res.json(preview);
@@ -3610,6 +3620,82 @@ export const listUserOkrs = async (req: Request, res: Response) => {
     return res.json(enrichedOkrs);
   } catch (error) {
     console.error('List user OKRs error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+export const duplicateOkr = async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user.userId as string;
+    const organizationId = req.params.id as string;
+    const okrId = req.params.okrId as string;
+
+    const isAdmin = await requireAdmin(userId, organizationId);
+    if (!isAdmin) {
+      return res.status(403).json({ error: 'Only admins can duplicate OKRs' });
+    }
+
+    const originalOkr = await prisma.okr.findUnique({
+      where: { id: okrId },
+      include: {
+        assignments: true,
+        keyResults: true
+      }
+    });
+
+    if (!originalOkr || originalOkr.organizationId !== organizationId) {
+      return res.status(404).json({ error: 'OKR not found' });
+    }
+
+    const duplicatedOkr = await prisma.$transaction(async (tx) => {
+      const created = await tx.okr.create({
+        data: {
+          organizationId,
+          title: `${originalOkr.title} (Copy)`,
+          description: originalOkr.description,
+          objectiveTargetValue: originalOkr.objectiveTargetValue,
+          objectiveMetricUnit: originalOkr.objectiveMetricUnit,
+          periodStart: originalOkr.periodStart,
+          periodEnd: originalOkr.periodEnd,
+          status: originalOkr.status,
+          createdBy: userId,
+          assignments: {
+            create: originalOkr.assignments.map((a) => ({
+              targetType: a.targetType,
+              targetId: a.targetId
+            }))
+          }
+        }
+      });
+
+      for (const kr of originalOkr.keyResults) {
+        await tx.okrKeyResult.create({
+          data: {
+            title: kr.title,
+            assignedUserId: kr.assignedUserId,
+            ownerIds: kr.ownerIds || [],
+            isGeneral: kr.isGeneral,
+            metricName: kr.metricName,
+            metricUnit: kr.metricUnit,
+            targetValue: kr.targetValue,
+            weight: kr.weight,
+            contributionValue: kr.contributionValue,
+            contributionPct: kr.contributionPct,
+            approvalStatus: 'PENDING',
+            okr: { connect: { id: created.id } }
+          } as any
+        });
+      }
+
+      return tx.okr.findUnique({
+        where: { id: created.id },
+        include: okrInclude
+      });
+    });
+
+    return res.json(duplicatedOkr);
+  } catch (error) {
+    console.error('Duplicate OKR error:', error);
     return res.status(500).json({ error: 'Internal server error' });
   }
 };

@@ -108,6 +108,7 @@ Context based on:
 Selected purpose
 Selected focus
 OKR performance
+Shifts in task deadlines (if any) during the period
 
 3. OKR Performance Breakdown
 For each OKR:
@@ -122,7 +123,7 @@ Performance Insight
 Key areas where performance was strong
 
 5. Areas for Improvement
-Gaps or underperformance
+Gaps, underperformance, or excessive deadline shifts (if applicable)
 
 6. Skills / Capability Insights
 Especially important for:

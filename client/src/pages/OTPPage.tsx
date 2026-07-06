@@ -13,9 +13,13 @@ const OTPPage = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Get email from router state or local storage
+  // Get email from router state, query params, or local storage
+  const queryParams = new URLSearchParams(location.search);
   const email =
-    location.state?.email || localStorage.getItem("pendingAuthEmail");
+    location.state?.email ||
+    queryParams.get("email") ||
+    localStorage.getItem("pendingAuthEmail") ||
+    "";
 
   useEffect(() => {
     if (!email) {

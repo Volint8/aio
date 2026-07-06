@@ -82,6 +82,7 @@ interface TaskTrackerViewProps {
   onCreateTask: () => void;
   onSendAlert: () => void;
   onEdit?: (task: Task) => void;
+  onDuplicate?: (task: Task) => void;
   onDelete?: (taskId: string) => void;
   onChangeStatus?: (taskId: string, status: string) => void;
   onApprovalAction?: (
@@ -107,6 +108,7 @@ const TaskTrackerView: React.FC<TaskTrackerViewProps> = ({
   onCreateTask,
   onSendAlert,
   onEdit,
+  onDuplicate,
   onDelete,
   onChangeStatus,
   onApprovalAction,
@@ -166,6 +168,14 @@ const TaskTrackerView: React.FC<TaskTrackerViewProps> = ({
   // Use useMemo to optimize filtering performance
   const filteredTasks = React.useMemo(() => {
     return tasks.filter((task) => {
+      // Completed/Done tasks should only show up under the "completed" filter
+      if (filter === "completed") {
+        if (task.status !== "COMPLETED" && task.status !== "DONE") return false;
+      } else {
+        // Exclude fully completed/done tasks from all other views
+        if (task.status === "COMPLETED" || task.status === "DONE") return false;
+      }
+
       // Status filter - handle both UI filter keys and backend status values
       if (filter === "pending" || filter === "created") {
         if (task.status !== "CREATED") return false;
@@ -173,14 +183,12 @@ const TaskTrackerView: React.FC<TaskTrackerViewProps> = ({
         if (task.status !== "IN_PROGRESS") return false;
       } else if (filter === "in_review") {
         if (task.status !== "IN_REVIEW") return false;
-      } else if (filter === "completed") {
-        if (task.status !== "COMPLETED") return false;
       } else if (filter === "pending_approval") {
         if (task.approvalStatus !== "PENDING") {
           return false;
         }
       } else if (filter === "overdue") {
-        if (task.status === "COMPLETED" || !isDueDateOverdue(task.dueDate)) {
+        if (!isDueDateOverdue(task.dueDate)) {
           return false;
         }
       } else if (filter === "my") {
@@ -188,7 +196,6 @@ const TaskTrackerView: React.FC<TaskTrackerViewProps> = ({
       } else if (filter === "supporting") {
         if (task.supporter?.id !== userId) return false;
       }
-      // 'all' filter shows everything
 
       // Priority filter
       if (priorityFilter !== "all" && task.priority !== priorityFilter)
@@ -213,13 +220,19 @@ const TaskTrackerView: React.FC<TaskTrackerViewProps> = ({
 
   const getStatusLabel = (status: string, dueDate: string | null) => {
     // Check if overdue first (automatic status)
-    if (status !== "COMPLETED" && status !== "DONE" && isDueDateOverdue(dueDate)) {
+    if (
+      status !== "COMPLETED" &&
+      status !== "DONE" &&
+      status !== "ON_HOLD" &&
+      isDueDateOverdue(dueDate)
+    ) {
       return "Overdue";
     }
     // Map status to user-friendly labels
     if (status === "CREATED" || status === "TODO") return "To Do";
     if (status === "IN_PROGRESS") return "In Progress";
     if (status === "IN_REVIEW") return "In Review";
+    if (status === "ON_HOLD") return "On Hold";
     if (status === "COMPLETED" || status === "DONE") return "Done";
     if (status === "CANCELLED") return "Cancelled";
     return status;
@@ -368,18 +381,30 @@ const TaskTrackerView: React.FC<TaskTrackerViewProps> = ({
             {loading ? (
               Array.from({ length: 5 }).map((_, idx) => (
                 <tr key={`skeleton-${idx}`} className="skeleton-row">
-                  <td><div className="skeleton-text skeleton-title"></div></td>
-                  <td><div className="skeleton-text skeleton-okr"></div></td>
+                  <td>
+                    <div className="skeleton-text skeleton-title"></div>
+                  </td>
+                  <td>
+                    <div className="skeleton-text skeleton-okr"></div>
+                  </td>
                   <td>
                     <div className="skeleton-avatar-group">
                       <div className="skeleton-avatar"></div>
                       <div className="skeleton-text skeleton-owner"></div>
                     </div>
                   </td>
-                  <td><div className="skeleton-pill"></div></td>
-                  <td><div className="skeleton-pill"></div></td>
-                  <td><div className="skeleton-text skeleton-timeline"></div></td>
-                  <td><div className="skeleton-action"></div></td>
+                  <td>
+                    <div className="skeleton-pill"></div>
+                  </td>
+                  <td>
+                    <div className="skeleton-pill"></div>
+                  </td>
+                  <td>
+                    <div className="skeleton-text skeleton-timeline"></div>
+                  </td>
+                  <td>
+                    <div className="skeleton-action"></div>
+                  </td>
                 </tr>
               ))
             ) : filteredTasks.length > 0 ? (
@@ -393,18 +418,48 @@ const TaskTrackerView: React.FC<TaskTrackerViewProps> = ({
                   <td className="task-title-cell">{task.title}</td>
                   <td>
                     {task.krImpacts && task.krImpacts.length > 0 ? (
-                      <div className="task-linked-okr" style={{ fontSize: "0.85em" }}>
+                      <div
+                        className="task-linked-okr"
+                        style={{ fontSize: "0.85em" }}
+                      >
                         {task.krImpacts.map((impact) => (
-                          <div key={impact.id} title={`${impact.okrKeyResult.okr.title} - ${impact.okrKeyResult.isGeneral ? "General" : impact.okrKeyResult.title}`}>
-                            <strong style={{ display: "block", color: "var(--text-main)", fontWeight: 600 }}>{impact.okrKeyResult.okr.title}</strong>
-                            <div style={{ fontSize: "0.85em", color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 180 }}>
-                              {impact.okrKeyResult.isGeneral ? "General" : impact.okrKeyResult.title}
+                          <div
+                            key={impact.id}
+                            title={`${impact.okrKeyResult.okr.title} - ${impact.okrKeyResult.isGeneral ? "General" : impact.okrKeyResult.title}`}
+                          >
+                            <strong
+                              style={{
+                                display: "block",
+                                color: "var(--text-main)",
+                                fontWeight: 600,
+                              }}
+                            >
+                              {impact.okrKeyResult.okr.title}
+                            </strong>
+                            <div
+                              style={{
+                                fontSize: "0.85em",
+                                color: "var(--text-muted)",
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                whiteSpace: "nowrap",
+                                maxWidth: 180,
+                              }}
+                            >
+                              {impact.okrKeyResult.isGeneral
+                                ? "General"
+                                : impact.okrKeyResult.title}
                             </div>
                           </div>
                         ))}
                       </div>
                     ) : (
-                      <span className="text-muted" style={{ fontSize: "0.85em" }}>General</span>
+                      <span
+                        className="text-muted"
+                        style={{ fontSize: "0.85em" }}
+                      >
+                        General
+                      </span>
                     )}
                   </td>
                   <td>
@@ -422,7 +477,7 @@ const TaskTrackerView: React.FC<TaskTrackerViewProps> = ({
                   </td>
                   <td>
                     <span
-                      className={`status-pill ${task.status === "CREATED" ? "not-started" : task.status === "IN_PROGRESS" ? "in_progress" : task.status === "COMPLETED" ? "completed" : task.status.toLowerCase()}`}
+                      className={`status-pill ${task.status === "CREATED" ? "not-started" : task.status === "IN_PROGRESS" ? "in_progress" : task.status === "IN_REVIEW" ? "in_review" : task.status === "ON_HOLD" ? "on_hold" : task.status === "COMPLETED" ? "completed" : task.status.toLowerCase()}`}
                     >
                       {getStatusLabel(task.status, task.dueDate)}
                     </span>
@@ -486,6 +541,16 @@ const TaskTrackerView: React.FC<TaskTrackerViewProps> = ({
                             }}
                           >
                             Edit
+                          </button>
+                          <button
+                            className="task-action-item"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              closeMenu();
+                              onDuplicate && onDuplicate(task);
+                            }}
+                          >
+                            Duplicate
                           </button>
                           {onDelete &&
                             (userRole === "ADMIN" ||

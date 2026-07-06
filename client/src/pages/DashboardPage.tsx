@@ -81,6 +81,7 @@ interface Stats {
   ongoing: number;
   completed: number;
   overdue: number;
+  onHold: number;
   myTasks: number;
   total: number;
 }
@@ -736,6 +737,8 @@ const DashboardPage = () => {
   const [assigneeFilterId, setAssigneeFilterId] = useState<string | null>(null);
   const [ownerFilter, setOwnerFilter] = useState<string>("all");
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [isEditingDescription, setIsEditingDescription] = useState(false);
+  const [editingDescriptionText, setEditingDescriptionText] = useState("");
   const [menuOpenTaskId, setMenuOpenTaskId] = useState<string | null>(null);
   const [expandedCommentThreads, setExpandedCommentThreads] = useState<
     Record<string, boolean>
@@ -1202,7 +1205,9 @@ const DashboardPage = () => {
   );
 
   const taskAssignableUsers = useMemo(() => {
-    const myMember = (organization?.members || []).find((m) => m.userId === user?.id);
+    const myMember = (organization?.members || []).find(
+      (m) => m.userId === user?.id,
+    );
     if (!myMember) return [];
 
     const myTeamIds = getMemberTeamIds(myMember);
@@ -1211,10 +1216,12 @@ const DashboardPage = () => {
     const myOkrIds = okrs
       .filter((okr) => {
         const teamAssigned = okr.assignments?.some(
-          (assign) => assign.targetType === "TEAM" && myTeamIds.includes(assign.targetId)
+          (assign) =>
+            assign.targetType === "TEAM" && myTeamIds.includes(assign.targetId),
         );
         const krAssigned = okr.keyResults?.some(
-          (kr) => kr.assignedUserId === user?.id || kr.assignedUser?.id === user?.id
+          (kr) =>
+            kr.assignedUserId === user?.id || kr.assignedUser?.id === user?.id,
         );
         return teamAssigned || krAssigned;
       })
@@ -1233,10 +1240,14 @@ const DashboardPage = () => {
       const memberOkrIds = okrs
         .filter((okr) => {
           const teamAssigned = okr.assignments?.some(
-            (assign) => assign.targetType === "TEAM" && memberTeamIds.includes(assign.targetId)
+            (assign) =>
+              assign.targetType === "TEAM" &&
+              memberTeamIds.includes(assign.targetId),
           );
           const krAssigned = okr.keyResults?.some(
-            (kr) => kr.assignedUserId === member.userId || kr.assignedUser?.id === member.userId
+            (kr) =>
+              kr.assignedUserId === member.userId ||
+              kr.assignedUser?.id === member.userId,
           );
           return teamAssigned || krAssigned;
         })
@@ -1266,7 +1277,10 @@ const DashboardPage = () => {
       : assignableUsers.map((member) => ({
           id: member.user.id,
           label: member.user.name || member.user.email,
-          meta: [member.user.jobTitle || member.role, getMemberTeamLabel(member)]
+          meta: [
+            member.user.jobTitle || member.role,
+            getMemberTeamLabel(member),
+          ]
             .filter(Boolean)
             .join(" • "),
         }));
@@ -1350,6 +1364,7 @@ const DashboardPage = () => {
           periodEnd: newAppraisal.periodEnd,
           purposes: normalizedAppraisalPurposes,
           customFocus: newAppraisal.customFocus || undefined,
+          selectedOkrIds: appraisalSelectionDirty ? selectedOkrIds : undefined,
         });
         if (cancelled) return;
         setAppraisalPreview(res.data);
@@ -1381,17 +1396,23 @@ const DashboardPage = () => {
     newAppraisal.customFocus,
     normalizedAppraisalPurposes,
     appraisalSelectionDirty,
+    selectedOkrIds,
   ]);
 
   useEffect(() => {
     if (selectedTaskId) {
       fetchSubmissions(selectedTaskId);
       fetchActivity(selectedTaskId);
+      const currentTask = allTasks.find((t) => t.id === selectedTaskId);
+      setEditingDescriptionText(currentTask?.description || "");
+      setIsEditingDescription(false);
     } else {
       setSubmissions([]);
       setActivityLogs([]);
+      setEditingDescriptionText("");
+      setIsEditingDescription(false);
     }
-  }, [selectedTaskId]);
+  }, [selectedTaskId, allTasks]);
 
   useEffect(() => {
     if (showCreateTaskModal && user?.id) {
@@ -2004,7 +2025,9 @@ const DashboardPage = () => {
   };
 
   const handleDuplicateTask = (task: Task) => {
-    const isDelegated = task.assignee?.id ? task.assignee.id !== user?.id : false;
+    const isDelegated = task.assignee?.id
+      ? task.assignee.id !== user?.id
+      : false;
     setNewTask({
       title: `${task.title} (Copy)`,
       description: task.description || "",
@@ -2068,6 +2091,9 @@ const DashboardPage = () => {
 
       setShowEditTaskModal(false);
       await fetchData();
+      if (selectedTaskId === editTask.id) {
+        await fetchActivity(editTask.id);
+      }
     } catch (error: any) {
       const errorData = error.response?.data?.error;
       showError(
@@ -2242,6 +2268,25 @@ const DashboardPage = () => {
       await fetchData();
     } catch (error: any) {
       showError("Error", error.response?.data?.error || "Failed to delete OKR");
+    }
+  };
+
+  const handleDuplicateOkr = async (okr: Okr) => {
+    if (
+      !window.confirm(
+        `Are you sure you want to duplicate the OKR "${okr.title}"?`,
+      )
+    ) {
+      return;
+    }
+    try {
+      await api.post(`/orgs/${orgId}/okrs/${okr.id}/duplicate`);
+      await fetchData();
+    } catch (error: any) {
+      showError(
+        "Error",
+        error.response?.data?.error || "Failed to duplicate OKR",
+      );
     }
   };
 
@@ -3120,6 +3165,9 @@ const DashboardPage = () => {
     try {
       await api.put(`/tasks/${taskId}`, { status: newStatus });
       await fetchData();
+      if (selectedTaskId === taskId) {
+        await fetchActivity(taskId);
+      }
     } catch {
       showError("Error", "Failed to update task");
     }
@@ -3191,6 +3239,20 @@ const DashboardPage = () => {
       await fetchData();
     } catch {
       showError("Error", "Failed to restore task");
+    }
+  };
+
+  const handleUpdateTaskDescription = async () => {
+    if (!selectedTaskId) return;
+    try {
+      await api.put(`/tasks/${selectedTaskId}`, {
+        description: editingDescriptionText,
+      });
+      await fetchData();
+      await fetchActivity(selectedTaskId);
+      setIsEditingDescription(false);
+    } catch {
+      showError("Error", "Failed to update description");
     }
   };
 
@@ -3290,30 +3352,26 @@ const DashboardPage = () => {
                 {selectedTask.priority}
               </span>
               {selectedTask.approvalStatus &&
-                selectedTask.approvalStatus !==
-                  "NOT_SUBMITTED" && (
+                selectedTask.approvalStatus !== "NOT_SUBMITTED" && (
                   <span
                     className="priority-badge"
                     style={{
                       background:
                         selectedTask.approvalStatus === "APPROVED"
                           ? "#dcfce7"
-                          : selectedTask.approvalStatus ===
-                              "REJECTED"
+                          : selectedTask.approvalStatus === "REJECTED"
                             ? "#fee2e2"
                             : "#fef3c7",
                       color:
                         selectedTask.approvalStatus === "APPROVED"
                           ? "#166534"
-                          : selectedTask.approvalStatus ===
-                              "REJECTED"
+                          : selectedTask.approvalStatus === "REJECTED"
                             ? "#b91c1c"
                             : "#92400e",
                       borderColor:
                         selectedTask.approvalStatus === "APPROVED"
                           ? "#86efac"
-                          : selectedTask.approvalStatus ===
-                              "REJECTED"
+                          : selectedTask.approvalStatus === "REJECTED"
                             ? "#fecaca"
                             : "#fde68a",
                     }}
@@ -3330,10 +3388,7 @@ const DashboardPage = () => {
 
           {/* Status Dropdown - Linear style */}
           {!isDeletedView && (
-            <div
-              className="task-status-selector"
-              style={{ marginTop: "12px" }}
-            >
+            <div className="task-status-selector" style={{ marginTop: "12px" }}>
               <label
                 style={{
                   fontSize: "0.75em",
@@ -3354,10 +3409,7 @@ const DashboardPage = () => {
                       : selectedTask.status
                 }
                 onChange={(e) =>
-                  handleUpdateTaskStatus(
-                    selectedTask.id,
-                    e.target.value,
-                  )
+                  handleUpdateTaskStatus(selectedTask.id, e.target.value)
                 }
                 style={{
                   width: "100%",
@@ -3368,31 +3420,40 @@ const DashboardPage = () => {
                   fontWeight: 600,
                   cursor: "pointer",
                   background:
-                    selectedTask.status === "CREATED" || selectedTask.status === "TODO"
+                    selectedTask.status === "CREATED" ||
+                    selectedTask.status === "TODO"
                       ? "#f1f5f9"
                       : selectedTask.status === "IN_PROGRESS"
                         ? "#dbeafe"
                         : selectedTask.status === "IN_REVIEW"
                           ? "#fef3c7"
-                          : selectedTask.status === "DONE" || selectedTask.status === "COMPLETED"
-                            ? "#dcfce7"
-                            : "#fee2e2",
+                          : selectedTask.status === "ON_HOLD"
+                            ? "#fef9c3"
+                            : selectedTask.status === "DONE" ||
+                                selectedTask.status === "COMPLETED"
+                              ? "#dcfce7"
+                              : "#fee2e2",
                   color:
-                    selectedTask.status === "CREATED" || selectedTask.status === "TODO"
+                    selectedTask.status === "CREATED" ||
+                    selectedTask.status === "TODO"
                       ? "#475569"
                       : selectedTask.status === "IN_PROGRESS"
                         ? "#1d4ed8"
                         : selectedTask.status === "IN_REVIEW"
                           ? "#b45309"
-                          : selectedTask.status === "DONE" || selectedTask.status === "COMPLETED"
-                            ? "#166534"
-                            : "#b91c1c",
+                          : selectedTask.status === "ON_HOLD"
+                            ? "#854d0e"
+                            : selectedTask.status === "DONE" ||
+                                selectedTask.status === "COMPLETED"
+                              ? "#166534"
+                              : "#b91c1c",
                 }}
               >
                 <option value="TODO">To Do</option>
                 <option value="IN_PROGRESS">In Progress</option>
                 <option value="IN_REVIEW">In Review</option>
                 <option value="DONE">Done</option>
+                <option value="ON_HOLD">On Hold</option>
                 <option value="CANCELLED">Cancelled</option>
               </select>
             </div>
@@ -3407,33 +3468,101 @@ const DashboardPage = () => {
             background: "#f8fafc",
             borderRadius: "8px",
             border: "1px solid #e2e8f0",
+            cursor: isEditingDescription ? "default" : "pointer",
           }}
+          onClick={() => {
+            if (!isEditingDescription) {
+              setEditingDescriptionText(selectedTask.description || "");
+              setIsEditingDescription(true);
+            }
+          }}
+          title={isEditingDescription ? undefined : "Click to edit description"}
         >
-          <label
-            style={{
-              fontSize: "0.75em",
-              fontWeight: 600,
-              color: "#64748b",
-              marginBottom: "8px",
-              display: "block",
-            }}
-          >
-            Description
-          </label>
-          <p
-            style={{
-              margin: 0,
-              fontSize: "0.9em",
-              color: selectedTask.description
-                ? "#0f172a"
-                : "#64748b",
-              lineHeight: "1.6",
-              whiteSpace: "pre-wrap",
-            }}
-          >
-            {selectedTask.description ||
-              "No description provided."}
-          </p>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+            <label
+              style={{
+                fontSize: "0.75em",
+                fontWeight: 600,
+                color: "#64748b",
+                margin: 0,
+                display: "block",
+              }}
+            >
+              Description
+            </label>
+            {!isEditingDescription && (
+              <span style={{ fontSize: "0.75em", color: "var(--primary-color)", fontWeight: 500 }}>
+                Click to edit
+              </span>
+            )}
+          </div>
+          {isEditingDescription ? (
+            <div onClick={(e) => e.stopPropagation()}>
+              <textarea
+                value={editingDescriptionText}
+                onChange={(e) => setEditingDescriptionText(e.target.value)}
+                rows={4}
+                style={{
+                  width: "100%",
+                  padding: "8px",
+                  borderRadius: "6px",
+                  border: "1px solid var(--border-color)",
+                  fontFamily: "inherit",
+                  fontSize: "0.9em",
+                  resize: "vertical",
+                  marginBottom: "8px",
+                  display: "block",
+                  boxSizing: "border-box",
+                }}
+                placeholder="Write task description..."
+                autoFocus
+              />
+              <div style={{ display: "flex", gap: "8px" }}>
+                <button
+                  type="button"
+                  onClick={handleUpdateTaskDescription}
+                  style={{
+                    padding: "6px 12px",
+                    fontSize: "0.85em",
+                    background: "var(--primary-color)",
+                    color: "white",
+                    border: "none",
+                    borderRadius: "4px",
+                    cursor: "pointer"
+                  }}
+                >
+                  Save
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsEditingDescription(false)}
+                  style={{
+                    padding: "6px 12px",
+                    fontSize: "0.85em",
+                    background: "#e2e8f0",
+                    color: "#334155",
+                    border: "none",
+                    borderRadius: "4px",
+                    cursor: "pointer"
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <p
+              style={{
+                margin: 0,
+                fontSize: "0.9em",
+                color: selectedTask.description ? "#0f172a" : "#64748b",
+                lineHeight: "1.6",
+                whiteSpace: "pre-wrap",
+              }}
+            >
+              {selectedTask.description || "No description provided."}
+            </p>
+          )}
         </div>
 
         <div
@@ -3457,8 +3586,7 @@ const DashboardPage = () => {
           >
             Linked OKRs
           </label>
-          {selectedTask.krImpacts &&
-          selectedTask.krImpacts.length > 0 ? (
+          {selectedTask.krImpacts && selectedTask.krImpacts.length > 0 ? (
             <div
               style={{
                 display: "grid",
@@ -3521,12 +3649,13 @@ const DashboardPage = () => {
               selectedTask.assignee?.email ||
               "Unassigned"}
           </div>
-          {selectedTask.createdBy && selectedTask.createdBy.id !== selectedTask.assignee?.id && (
-            <div className="meta-item">
-              <strong>Assigned By:</strong>{" "}
-              {selectedTask.createdBy.name || selectedTask.createdBy.email}
-            </div>
-          )}
+          {selectedTask.createdBy &&
+            selectedTask.createdBy.id !== selectedTask.assignee?.id && (
+              <div className="meta-item">
+                <strong>Assigned By:</strong>{" "}
+                {selectedTask.createdBy.name || selectedTask.createdBy.email}
+              </div>
+            )}
           <div className="meta-item">
             <strong>Supporter:</strong>{" "}
             {selectedTask.supporter?.name ||
@@ -3624,8 +3753,7 @@ const DashboardPage = () => {
                           formData,
                           {
                             headers: {
-                              "Content-Type":
-                                "multipart/form-data",
+                              "Content-Type": "multipart/form-data",
                             },
                           },
                         );
@@ -3666,40 +3794,31 @@ const DashboardPage = () => {
                 </svg>
                 Attach Link
               </button>
-              {canReviewTasks &&
-                selectedTask.approvalStatus === "PENDING" && (
-                  <>
-                    <button
-                      type="button"
-                      className="btn-action success"
-                      onClick={() =>
-                        handleApprovalAction(
-                          selectedTask.id,
-                          "APPROVE",
-                        )
-                      }
-                    >
-                      Approve
-                    </button>
-                    <button
-                      type="button"
-                      className="btn-action danger"
-                      onClick={() =>
-                        handleApprovalAction(
-                          selectedTask.id,
-                          "REJECT",
-                        )
-                      }
-                    >
-                      Reject
-                    </button>
-                  </>
-                )}
+              {canReviewTasks && selectedTask.approvalStatus === "PENDING" && (
+                <>
+                  <button
+                    type="button"
+                    className="btn-action success"
+                    onClick={() =>
+                      handleApprovalAction(selectedTask.id, "APPROVE")
+                    }
+                  >
+                    Approve
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-action danger"
+                    onClick={() =>
+                      handleApprovalAction(selectedTask.id, "REJECT")
+                    }
+                  >
+                    Reject
+                  </button>
+                </>
+              )}
               {canDeleteTask(selectedTask) && (
                 <button
-                  onClick={() =>
-                    handleDeleteTask(selectedTask.id)
-                  }
+                  onClick={() => handleDeleteTask(selectedTask.id)}
                   className="btn-action danger"
                 >
                   Move to Recently Deleted
@@ -3709,54 +3828,43 @@ const DashboardPage = () => {
           )}
         </div>
 
-        {selectedTask.attachments &&
-          selectedTask.attachments.length > 0 && (
-            <div className="task-attachments">
-              <h4>Attachments</h4>
-              <ul>
-                {selectedTask.attachments.map((att) => (
-                  <li key={att.id} className="attachment-item">
-                    {att.type === "LINK" && att.url ? (
-                      <a
-                        href={att.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        🔗 {att.fileName || att.url}
-                      </a>
-                    ) : (
-                      <a
-                        href={`${api.defaults.baseURL}/${att.filePath}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        📄 {att.fileName}
-                      </a>
-                    )}
-                    {isAdmin && !isDeletedView && (
-                      <button
-                        className="btn-delete-small"
-                        onClick={async () => {
-                          if (
-                            window.confirm(
-                              "Delete this attachment?",
-                            )
-                          ) {
-                            await api.delete(
-                              `/tasks/attachments/${att.id}`,
-                            );
-                            await fetchData();
-                          }
-                        }}
-                      >
-                        Remove
-                      </button>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
+        {selectedTask.attachments && selectedTask.attachments.length > 0 && (
+          <div className="task-attachments">
+            <h4>Attachments</h4>
+            <ul>
+              {selectedTask.attachments.map((att) => (
+                <li key={att.id} className="attachment-item">
+                  {att.type === "LINK" && att.url ? (
+                    <a href={att.url} target="_blank" rel="noopener noreferrer">
+                      🔗 {att.fileName || att.url}
+                    </a>
+                  ) : (
+                    <a
+                      href={`${api.defaults.baseURL}/${att.filePath}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      📄 {att.fileName}
+                    </a>
+                  )}
+                  {isAdmin && !isDeletedView && (
+                    <button
+                      className="btn-delete-small"
+                      onClick={async () => {
+                        if (window.confirm("Delete this attachment?")) {
+                          await api.delete(`/tasks/attachments/${att.id}`);
+                          await fetchData();
+                        }
+                      }}
+                    >
+                      Remove
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         {!isDeletedView &&
           selectedTask.status !== "COMPLETED" &&
@@ -3792,56 +3900,42 @@ const DashboardPage = () => {
                   </div>
                   <div className="submission-meta">
                     <span>
-                      Submitted:{" "}
-                      {new Date(sub.submittedAt).toLocaleString()}
+                      Submitted: {new Date(sub.submittedAt).toLocaleString()}
                     </span>
                     {sub.reviewedAt && (
                       <span>
-                        Reviewed:{" "}
-                        {new Date(
-                          sub.reviewedAt,
-                        ).toLocaleString()}
+                        Reviewed: {new Date(sub.reviewedAt).toLocaleString()}
                       </span>
                     )}
                   </div>
                   {sub.description && (
-                    <p className="submission-description">
-                      {sub.description}
-                    </p>
+                    <p className="submission-description">{sub.description}</p>
                   )}
                   {sub.reviewNotes && (
                     <p className="submission-review-notes">
-                      <strong>Review Notes:</strong>{" "}
-                      {sub.reviewNotes}
+                      <strong>Review Notes:</strong> {sub.reviewNotes}
                     </p>
                   )}
-                  {canReviewSubmissions &&
-                    sub.status === "PENDING" && (
-                      <div className="submission-actions">
-                        <button
-                          className="btn-action success"
-                          onClick={() => {
-                            handleReviewSubmission(
-                              sub.id,
-                              "APPROVED",
-                            );
-                          }}
-                        >
-                          Approve
-                        </button>
-                        <button
-                          className="btn-action danger"
-                          onClick={() => {
-                            handleReviewSubmission(
-                              sub.id,
-                              "REJECTED",
-                            );
-                          }}
-                        >
-                          Reject
-                        </button>
-                      </div>
-                    )}
+                  {canReviewSubmissions && sub.status === "PENDING" && (
+                    <div className="submission-actions">
+                      <button
+                        className="btn-action success"
+                        onClick={() => {
+                          handleReviewSubmission(sub.id, "APPROVED");
+                        }}
+                      >
+                        Approve
+                      </button>
+                      <button
+                        className="btn-action danger"
+                        onClick={() => {
+                          handleReviewSubmission(sub.id, "REJECTED");
+                        }}
+                      >
+                        Reject
+                      </button>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -3855,6 +3949,7 @@ const DashboardPage = () => {
               {activityLogs.map((log) => (
                 <div key={log.id} className="activity-item">
                   <div className="activity-icon">
+                    {log.action === "TASK_CREATED" && "🚀"}
                     {log.action === "COMMENT_ADDED" && "💬"}
                     {log.action === "COMMENT_DELETED" && "🗑️"}
                     {log.action === "STATUS_CHANGED" && "📊"}
@@ -3875,9 +3970,7 @@ const DashboardPage = () => {
                         {new Date(log.createdAt).toLocaleString()}
                       </span>
                     </div>
-                    <p className="activity-description">
-                      {log.description}
-                    </p>
+                    <p className="activity-description">{log.description}</p>
                   </div>
                 </div>
               ))}
@@ -3895,37 +3988,24 @@ const DashboardPage = () => {
           <div className="comments-list">
             {(expandedCommentThreads[selectedTask.id]
               ? selectedTask.comments || []
-              : (selectedTask.comments || []).slice(
-                  0,
-                  COMMENTS_PREVIEW_COUNT,
-                )
+              : (selectedTask.comments || []).slice(0, COMMENTS_PREVIEW_COUNT)
             ).map((comment: any) => (
               <div key={comment.id} className="comment-item">
                 <div className="comment-header">
-                  <strong>
-                    {comment.user.name || comment.user.email}
-                  </strong>
+                  <strong>{comment.user.name || comment.user.email}</strong>
                   <div className="comment-meta">
-                    <span>
-                      {new Date(
-                        comment.createdAt,
-                      ).toLocaleString()}
-                    </span>
+                    <span>{new Date(comment.createdAt).toLocaleString()}</span>
                     {!isDeletedView &&
-                      (user?.id === comment.userId ||
-                        isAdmin) && (
+                      (user?.id === comment.userId || isAdmin) && (
                         <button
                           className="btn-delete-small"
                           onClick={async () => {
-                            if (
-                              window.confirm(
-                                "Delete this comment?",
-                              )
-                            ) {
-                              await api.delete(
-                                `/tasks/comments/${comment.id}`,
-                              );
+                            if (window.confirm("Delete this comment?")) {
+                              await api.delete(`/tasks/comments/${comment.id}`);
                               await fetchData();
+                              if (selectedTaskId) {
+                                await fetchActivity(selectedTaskId);
+                              }
                             }
                           }}
                         >
@@ -3934,14 +4014,11 @@ const DashboardPage = () => {
                       )}
                   </div>
                 </div>
-                <p className="comment-content">
-                  {comment.content}
-                </p>
+                <p className="comment-content">{comment.content}</p>
               </div>
             ))}
           </div>
-          {(selectedTask.comments?.length || 0) >
-            COMMENTS_PREVIEW_COUNT && (
+          {(selectedTask.comments?.length || 0) > COMMENTS_PREVIEW_COUNT && (
             <button
               type="button"
               className="btn-thread-toggle"
@@ -4069,6 +4146,7 @@ const DashboardPage = () => {
             }
             loading={tasksLoading}
             onEdit={handleOpenEditTask}
+            onDuplicate={handleDuplicateTask}
             onDelete={(id) => openTaskDeleteDialog(id)}
             onChangeStatus={handleUpdateTaskStatus}
             onApprovalAction={handleApprovalAction}
@@ -4101,8 +4179,7 @@ const DashboardPage = () => {
                 }
                 if (!urlTeamId) return true;
                 // match by explicit team relation or by searching teams data
-                if (getMemberTeamIds(m).includes(urlTeamId))
-                  return true;
+                if (getMemberTeamIds(m).includes(urlTeamId)) return true;
                 const teamObj = teams.find((t) => t.id === urlTeamId);
                 if (!teamObj) return false;
                 const inMembers = (teamObj.members || []).some(
@@ -4149,6 +4226,7 @@ const DashboardPage = () => {
             }
             loading={tasksLoading}
             onEdit={handleOpenEditTask}
+            onDuplicate={handleDuplicateTask}
             onDelete={(id) => openTaskDeleteDialog(id)}
             onChangeStatus={handleUpdateTaskStatus}
             onApprovalAction={handleApprovalAction}
@@ -4162,6 +4240,7 @@ const DashboardPage = () => {
             onCreateTask={() => setShowCreateTaskModal(true)}
             onCreateOkr={() => setShowCreateOkrModal(true)}
             onEditOkr={handleOpenEditOkr as any}
+            onDuplicateOkr={handleDuplicateOkr as any}
             onDeleteOkr={handleDeleteOkr}
           />
         )}
@@ -4444,7 +4523,9 @@ const DashboardPage = () => {
                               </div>
                               {invite.teams && invite.teams.length > 0 && (
                                 <div>
-                                  {invite.teams.map((team) => team.name).join(", ")}
+                                  {invite.teams
+                                    .map((team) => team.name)
+                                    .join(", ")}
                                 </div>
                               )}
                             </div>
@@ -5164,7 +5245,6 @@ const DashboardPage = () => {
                           Assigned KR Performance
                         </div>
                         {appraisal.okrImpactSummary.okrs
-                          .slice(0, 3)
                           .map((okr) => (
                             <div key={okr.okrId} style={{ marginBottom: 8 }}>
                               <div
@@ -5181,7 +5261,7 @@ const DashboardPage = () => {
                                   : "N/A (no quantitative target configured)"}
                               </div>
                               <div style={{ marginTop: 6 }}>
-                                {okr.keyResults.slice(0, 2).map((kr) => (
+                                {okr.keyResults.map((kr) => (
                                   <div
                                     key={kr.krId}
                                     style={{
@@ -5504,11 +5584,12 @@ const DashboardPage = () => {
                       className="task-card-wrapper"
                       style={{ position: "relative" }}
                     >
-                      <button
+                      <div
                         key={task.id}
-                        type="button"
-                        className={`task-card task-card-compact ${selectedTaskId === task.id ? "active" : ""} ${isOverdue(task) ? "overdue" : ""}`}
+                        className={`task-card task-card-compact clickable ${selectedTaskId === task.id ? "active" : ""} ${isOverdue(task) ? "overdue" : ""}`}
                         onClick={() => setSelectedTaskId(task.id)}
+                        role="button"
+                        tabIndex={0}
                       >
                         <div className="task-header">
                           <h3>{task.title}</h3>
@@ -5632,7 +5713,7 @@ const DashboardPage = () => {
                         >
                           ⋮
                         </button>
-                      </button>
+                      </div>
 
                       {menuOpenTaskId === task.id && (
                         <div
@@ -5906,6 +5987,7 @@ const DashboardPage = () => {
                     <option value="IN_PROGRESS">In Progress</option>
                     <option value="IN_REVIEW">In Review</option>
                     <option value="DONE">Done</option>
+                    <option value="ON_HOLD">On Hold</option>
                     <option value="CANCELLED">Cancelled</option>
                   </select>
                 </div>
@@ -5925,7 +6007,9 @@ const DashboardPage = () => {
                           newTask.supporterId === assigneeId
                             ? ""
                             : newTask.supporterId,
-                        alertTeamLead: isDelegated ? true : newTask.alertTeamLead,
+                        alertTeamLead: isDelegated
+                          ? true
+                          : newTask.alertTeamLead,
                         okrId: "",
                         keyResultIds: [],
                       });
@@ -5980,8 +6064,17 @@ const DashboardPage = () => {
                   >
                     <input
                       type="checkbox"
-                      checked={newTask.alertTeamLead || (newTask.assigneeId && newTask.assigneeId !== user?.id) || false}
-                      disabled={newTask.assigneeId && newTask.assigneeId !== user?.id ? true : false}
+                      checked={
+                        newTask.alertTeamLead ||
+                        (newTask.assigneeId &&
+                          newTask.assigneeId !== user?.id) ||
+                        false
+                      }
+                      disabled={
+                        newTask.assigneeId && newTask.assigneeId !== user?.id
+                          ? true
+                          : false
+                      }
                       onChange={(e) =>
                         setNewTask({
                           ...newTask,
@@ -5990,7 +6083,12 @@ const DashboardPage = () => {
                       }
                       style={{ width: "auto", margin: 0 }}
                     />
-                    <span>Alert Team Lead about this task{newTask.assigneeId && newTask.assigneeId !== user?.id ? " (Locked: Delegated task)" : ""}</span>
+                    <span>
+                      Alert Team Lead about this task
+                      {newTask.assigneeId && newTask.assigneeId !== user?.id
+                        ? " (Locked: Delegated task)"
+                        : ""}
+                    </span>
                   </label>
                   <small
                     style={{
@@ -6203,6 +6301,7 @@ const DashboardPage = () => {
                     <option value="IN_PROGRESS">In Progress</option>
                     <option value="IN_REVIEW">In Review</option>
                     <option value="DONE">Done</option>
+                    <option value="ON_HOLD">On Hold</option>
                     <option value="CANCELLED">Cancelled</option>
                   </select>
                 </div>
@@ -6221,7 +6320,9 @@ const DashboardPage = () => {
                         editTask.supporterId === assigneeId
                           ? ""
                           : editTask.supporterId,
-                      alertTeamLead: isDelegated ? true : editTask.alertTeamLead,
+                      alertTeamLead: isDelegated
+                        ? true
+                        : editTask.alertTeamLead,
                       okrId: "",
                       keyResultIds: [],
                     });
@@ -6394,8 +6495,17 @@ const DashboardPage = () => {
                   >
                     <input
                       type="checkbox"
-                      checked={editTask.alertTeamLead || (editTask.assigneeId && editTask.assigneeId !== user?.id) || false}
-                      disabled={editTask.assigneeId && editTask.assigneeId !== user?.id ? true : false}
+                      checked={
+                        editTask.alertTeamLead ||
+                        (editTask.assigneeId &&
+                          editTask.assigneeId !== user?.id) ||
+                        false
+                      }
+                      disabled={
+                        editTask.assigneeId && editTask.assigneeId !== user?.id
+                          ? true
+                          : false
+                      }
                       onChange={(e) =>
                         setEditTask({
                           ...editTask,
@@ -6404,7 +6514,12 @@ const DashboardPage = () => {
                       }
                       style={{ width: "auto", margin: 0 }}
                     />
-                    <span>Send task alert for review{editTask.assigneeId && editTask.assigneeId !== user?.id ? " (Locked: Delegated task)" : ""}</span>
+                    <span>
+                      Send task alert for review
+                      {editTask.assigneeId && editTask.assigneeId !== user?.id
+                        ? " (Locked: Delegated task)"
+                        : ""}
+                    </span>
                   </label>
                   <p
                     style={{

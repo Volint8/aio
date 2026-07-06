@@ -137,15 +137,24 @@ export const sendAlert = async (req: Request, res: Response) => {
 
       const notification = notifications[0];
       const subject = `Alert: ${type.replace('_', ' ')}`;
+      const clientBaseUrl = (process.env.CLIENT_URL || 'http://localhost:5173').split(',')[0].replace(/\/$/, '');
       const html = `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 10px;">
-          <h2 style="color: #2563eb;">Notification Alert</h2>
+          <div style="text-align: center; margin-bottom: 20px;">
+            <img src="${clientBaseUrl}/images/image.png" alt="Apraizal Logo" style="height: 40px;" />
+          </div>
+          <h2 style="color: #2563eb; text-align: center;">Notification Alert</h2>
           <p><strong>From:</strong> ${notification.sender.name || notification.sender.email}</p>
           <p><strong>Org:</strong> ${notification.organization.name}</p>
           <div style="background-color: #f4f4f4; padding: 15px; border-radius: 5px; margin: 20px 0;">
             <p style="margin: 0;">${message}</p>
           </div>
-          <p style="color: #666; font-size: 12px;">This is an automated alert from Apraizal.</p>
+          <p style="text-align: center; margin: 24px 0;">
+            <a href="${clientBaseUrl}/dashboard" style="display:inline-block;padding:12px 18px;background:#2563eb;color:#fff;text-decoration:none;border-radius:6px;font-weight:bold;">
+              Open Apraizal Dashboard
+            </a>
+          </p>
+          <p style="color: #666; font-size: 12px; text-align: center;">This is an automated alert from Apraizal.</p>
         </div>
       `;
 
@@ -198,15 +207,24 @@ export const sendAlert = async (req: Request, res: Response) => {
 
     // Send emails
     const subject = `Alert: ${type.replace('_', ' ')}`;
+    const clientBaseUrl = (process.env.CLIENT_URL || 'http://localhost:5173').split(',')[0].replace(/\/$/, '');
     const html = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 10px;">
-        <h2 style="color: #2563eb;">Notification Alert</h2>
+        <div style="text-align: center; margin-bottom: 20px;">
+          <img src="${clientBaseUrl}/images/image.png" alt="Apraizal Logo" style="height: 40px;" />
+        </div>
+        <h2 style="color: #2563eb; text-align: center;">Notification Alert</h2>
         <p><strong>From:</strong> ${notification.sender.name || notification.sender.email}</p>
         <p><strong>Org:</strong> ${notification.organization.name}</p>
         <div style="background-color: #f4f4f4; padding: 15px; border-radius: 5px; margin: 20px 0;">
           <p style="margin: 0;">${message}</p>
         </div>
-        <p style="color: #666; font-size: 12px;">This is an automated alert from Apraizal.</p>
+        <p style="text-align: center; margin: 24px 0;">
+          <a href="${clientBaseUrl}/dashboard" style="display:inline-block;padding:12px 18px;background:#2563eb;color:#fff;text-decoration:none;border-radius:6px;font-weight:bold;">
+            Open Apraizal Dashboard
+          </a>
+        </p>
+        <p style="color: #666; font-size: 12px; text-align: center;">This is an automated alert from Apraizal.</p>
       </div>
     `;
 

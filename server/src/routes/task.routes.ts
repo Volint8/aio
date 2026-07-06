@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getTasks, createTask, getTaskById, updateTask, deleteTask, addComment, getStats, uploadAttachment, addLinkAttachment, getMemberStats, getTeamDistribution, deleteComment, deleteAttachment, restoreTask, submitWork, getSubmissions, reviewSubmission, getActivityTimeline, getTaskKrImpacts, upsertTaskKrImpacts } from '../controllers/task.controller';
+import { getTasks, createTask, getTaskById, updateTask, deleteTask, duplicateTask, addComment, getStats, uploadAttachment, addLinkAttachment, getMemberStats, getTeamDistribution, deleteComment, deleteAttachment, restoreTask, submitWork, getSubmissions, reviewSubmission, getActivityTimeline, getTaskKrImpacts, upsertTaskKrImpacts } from '../controllers/task.controller';
 import { authenticateToken } from '../middleware/auth.middleware';
 import { upload } from '../middleware/upload.middleware';
 
@@ -17,6 +17,7 @@ router.post('/:id/submit', authenticateToken, submitWork);
 router.post('/:id/submissions/:submissionId/review', authenticateToken, reviewSubmission);
 router.put('/:id/kr-impacts', authenticateToken, upsertTaskKrImpacts);
 router.post('/:id/restore', authenticateToken, restoreTask);
+router.post('/:id/duplicate', authenticateToken, duplicateTask);
 router.get('/:id', authenticateToken, getTaskById);
 router.put('/:id', authenticateToken, updateTask);
 router.delete('/:id', authenticateToken, deleteTask);

@@ -546,6 +546,16 @@ export const createTask = async (req: Request, res: Response) => {
                 }
             });
 
+            await tx.activityLog.create({
+                data: {
+                    taskId: created.id,
+                    userId,
+                    action: 'TASK_CREATED',
+                    description: 'Task created',
+                    metadata: { initialStatus: finalStatus }
+                }
+            });
+
             if (teamIds.length > 0) {
                 await tx.taskTeam.createMany({
                     data: teamIds.map((teamId) => ({ taskId: created.id, teamId }))
@@ -782,15 +792,32 @@ export const updateTask = async (req: Request, res: Response) => {
 
         if (status) {
             if (status === 'COMPLETED' || status === 'DONE' || status === 'IN_REVIEW') {
-                const finalStatus = isReviewer ? 'DONE' : 'IN_REVIEW';
-                const finalApproval = isReviewer ? 'APPROVED' : 'PENDING';
-                
+                let finalStatus = 'IN_REVIEW';
+                let finalApproval = 'PENDING';
+                let approvedById = null;
+                let approvedAt = null;
+
+                if (status === 'IN_REVIEW') {
+                    finalStatus = 'IN_REVIEW';
+                    finalApproval = 'PENDING';
+                } else if (status === 'DONE') {
+                    finalStatus = isReviewer ? 'DONE' : 'IN_REVIEW';
+                    finalApproval = isReviewer ? 'APPROVED' : 'PENDING';
+                    approvedById = isReviewer ? userId : null;
+                    approvedAt = isReviewer ? new Date() : null;
+                } else if (status === 'COMPLETED') {
+                    finalStatus = isReviewer ? 'DONE' : 'IN_REVIEW';
+                    finalApproval = isReviewer ? 'APPROVED' : 'PENDING';
+                    approvedById = isReviewer ? userId : null;
+                    approvedAt = isReviewer ? new Date() : null;
+                }
+
                 nextApprovalPatch.status = finalStatus;
                 nextApprovalPatch.approvalStatus = finalApproval;
-                nextApprovalPatch.approvedById = isReviewer ? userId : null;
-                nextApprovalPatch.approvedAt = isReviewer ? new Date() : null;
+                nextApprovalPatch.approvedById = approvedById;
+                nextApprovalPatch.approvedAt = approvedAt;
                 nextApprovalPatch.approvalNotes = null;
-                if (!isReviewer) {
+                if (finalStatus === 'IN_REVIEW') {
                     nextApprovalPatch.alertTeamLead = true;
                 }
             } else {
@@ -805,7 +832,7 @@ export const updateTask = async (req: Request, res: Response) => {
         const nextAssigneeId = hasAssigneeUpdate ? normalizedAssigneeId : task.assigneeId;
         const isDelegated = nextAssigneeId && nextAssigneeId !== task.createdByUserId;
         const alertTeamLeadValue = isDelegated ? true : (alertTeamLead !== undefined ? !!alertTeamLead : (nextApprovalPatch.alertTeamLead !== undefined ? nextApprovalPatch.alertTeamLead : task.alertTeamLead));
-        
+
         nextApprovalPatch.alertTeamLead = alertTeamLeadValue;
         if (alertTeamLeadValue && (nextApprovalPatch.approvalStatus === undefined || nextApprovalPatch.approvalStatus === 'NOT_SUBMITTED' || nextApprovalPatch.approvalStatus === 'REJECTED')) {
             const currentApproval = nextApprovalPatch.approvalStatus !== undefined ? nextApprovalPatch.approvalStatus : task.approvalStatus;
@@ -1064,7 +1091,7 @@ export const updateTask = async (req: Request, res: Response) => {
                         select: { name: true, email: true }
                     });
                     const modifierName = modifierUser?.name || modifierUser?.email || 'a reviewer';
-                    
+
                     await prisma.notification.create({
                         data: {
                             organizationId: task.organizationId,
@@ -1396,17 +1423,18 @@ export const getStats = async (req: Request, res: Response) => {
         }
 
         const overdueCutoff = startOfToday();
-        const [pending, ongoing, completed, overdue, myTasks] = await Promise.all([
+        const [pending, ongoing, completed, overdue, onHold, myTasks] = await Promise.all([
             prisma.task.count({ where: { ...where, status: 'CREATED' } }),
             prisma.task.count({ where: { ...where, status: 'IN_PROGRESS' } }),
             prisma.task.count({ where: { ...where, status: 'COMPLETED' } }),
             prisma.task.count({
                 where: {
                     ...where,
-                    status: { not: 'COMPLETED' },
+                    status: { notIn: ['COMPLETED', 'ON_HOLD'] },
                     dueDate: { lt: overdueCutoff }
                 }
             }),
+            prisma.task.count({ where: { ...where, status: 'ON_HOLD' } }),
             prisma.task.count({ where: { ...where, assigneeId: userId } })
         ]);
 
@@ -1415,6 +1443,7 @@ export const getStats = async (req: Request, res: Response) => {
             ongoing,
             completed,
             overdue,
+            onHold,
             myTasks,
             total: pending + ongoing + completed
         });
@@ -1589,7 +1618,7 @@ export const getMemberStats = async (req: Request, res: Response) => {
                         organizationId: organizationId as string,
                         assigneeId: m.userId,
                         deletedAt: null,
-                        status: { not: 'COMPLETED' },
+                        status: { notIn: ['COMPLETED', 'ON_HOLD'] },
                         dueDate: { lt: overdueCutoff }
                     }
                 }),
@@ -2362,6 +2391,118 @@ export const getActivityTimeline = async (req: Request, res: Response) => {
         res.json(activities);
     } catch (error) {
         console.error('Get activity timeline error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+};
+
+export const duplicateTask = async (req: Request, res: Response) => {
+    try {
+        const taskId = req.params.id as string;
+        const userId = (req as any).user.userId;
+
+        const originalTask = await prisma.task.findUnique({
+            where: { id: taskId },
+            include: {
+                taskTeams: true,
+                krImpacts: true
+            }
+        });
+
+        if (!originalTask) {
+            return res.status(404).json({ error: 'Task not found' });
+        }
+
+        const membership = await prisma.organizationMember.findUnique({
+            where: {
+                userId_organizationId: {
+                    userId,
+                    organizationId: originalTask.organizationId
+                }
+            }
+        });
+
+        if (!membership) {
+            return res.status(403).json({ error: 'Access denied' });
+        }
+
+        // Duplicate the task
+        const duplicatedTask = await prisma.$transaction(async (tx) => {
+            const created = await tx.task.create({
+                data: {
+                    title: `${originalTask.title} (Copy)`,
+                    description: originalTask.description,
+                    organizationId: originalTask.organizationId,
+                    createdByUserId: userId,
+                    assigneeId: originalTask.assigneeId,
+                    supporterId: originalTask.supporterId,
+                    dueDate: originalTask.dueDate,
+                    priority: originalTask.priority,
+                    status: 'CREATED',
+                    alertTeamLead: originalTask.alertTeamLead,
+                    approvalStatus: 'NOT_SUBMITTED'
+                }
+            });
+
+            if (originalTask.taskTeams.length > 0) {
+                await tx.taskTeam.createMany({
+                    data: originalTask.taskTeams.map((tt) => ({
+                        taskId: created.id,
+                        teamId: tt.teamId
+                    }))
+                });
+            }
+
+            if (originalTask.krImpacts.length > 0) {
+                await tx.taskKrImpact.createMany({
+                    data: originalTask.krImpacts.map((ki) => ({
+                        taskId: created.id,
+                        okrKeyResultId: ki.okrKeyResultId,
+                        plannedValue: ki.plannedValue,
+                        actualValue: 0,
+                        notes: ki.notes
+                    }))
+                });
+            }
+
+            return tx.task.findUnique({
+                where: { id: created.id },
+                include: {
+                    createdBy: { select: { id: true, email: true, name: true } },
+                    assignee: { select: { id: true, email: true, name: true } },
+                    supporter: { select: { id: true, email: true, name: true } },
+                    organization: { select: { id: true, name: true } },
+                    krImpacts: {
+                        include: {
+                            okrKeyResult: {
+                                select: {
+                                    id: true,
+                                    title: true,
+                                    metricName: true,
+                                    metricUnit: true,
+                                    targetValue: true,
+                                    weight: true,
+                                    contributionPct: true
+                                }
+                            }
+                        }
+                    },
+                    taskTeams: {
+                        include: {
+                            team: {
+                                select: {
+                                    id: true,
+                                    name: true
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        });
+
+        res.json(duplicatedTask);
+    } catch (error) {
+        console.error('Duplicate task error:', error);
         res.status(500).json({ error: 'Internal server error' });
     }
 };

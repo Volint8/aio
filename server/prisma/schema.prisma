@@ -48,23 +48,23 @@ model User {
 }
 
 model Organization {
-  id             String               @id @default(uuid())
-  name           String
-  normalizedName String               @unique
-  slug           String               @unique
-  domain         String?              @unique
-  createdAt      DateTime             @default(now())
-  updatedAt      DateTime             @updatedAt
-  members        OrganizationMember[]
-  teams          Team[]
-  tasks          Task[]
-  invites        Invite[]
-  okrs           Okr[]
-  appraisals     Appraisal[]
+  id               String               @id @default(uuid())
+  name             String
+  normalizedName   String               @unique
+  slug             String               @unique
+  domain           String?              @unique
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+  members          OrganizationMember[]
+  teams            Team[]
+  tasks            Task[]
+  invites          Invite[]
+  okrs             Okr[]
+  appraisals       Appraisal[]
   appraisalBatches AppraisalBatch[]
-  clients        Client[]
-  notifications  Notification[]
-  quotes         Quote[]
+  clients          Client[]
+  notifications    Notification[]
+  quotes           Quote[]
 }
 
 model Quote {
@@ -78,15 +78,15 @@ model Quote {
 }
 
 model OrganizationMember {
-  id             String                   @id @default(uuid())
-  userId         String
-  organizationId String
-  primaryTeamId  String?
-  role           String                   @default("MEMBER") // MEMBER, TEAM_LEAD, ADMIN
-  joinedAt       DateTime                 @default(now())
-  user           User                     @relation(fields: [userId], references: [id])
-  organization   Organization             @relation(fields: [organizationId], references: [id])
-  primaryTeam    Team?                    @relation("OrganizationMemberPrimaryTeam", fields: [primaryTeamId], references: [id])
+  id              String                   @id @default(uuid())
+  userId          String
+  organizationId  String
+  primaryTeamId   String?
+  role            String                   @default("MEMBER") // MEMBER, TEAM_LEAD, ADMIN
+  joinedAt        DateTime                 @default(now())
+  user            User                     @relation(fields: [userId], references: [id])
+  organization    Organization             @relation(fields: [organizationId], references: [id])
+  primaryTeam     Team?                    @relation("OrganizationMemberPrimaryTeam", fields: [primaryTeamId], references: [id])
   teamMemberships OrganizationMemberTeam[]
 
   @@unique([userId, organizationId])
@@ -109,7 +109,7 @@ model Task {
   id              String           @id @default(uuid())
   title           String
   description     String?
-  status          String           @default("CREATED") // CREATED, IN_PROGRESS, COMPLETED
+  status          String           @default("CREATED") // CREATED, IN_PROGRESS, IN_REVIEW, COMPLETED, DONE, ON_HOLD, CANCELLED
   approvalStatus  String           @default("NOT_SUBMITTED") // NOT_SUBMITTED, PENDING, APPROVED, REJECTED
   approvedById    String?
   approvedAt      DateTime?
@@ -275,38 +275,38 @@ model OkrKeyResult {
 }
 
 model Appraisal {
-  id               String       @id @default(uuid())
-  organizationId   String
-  batchId          String?
-  subjectType      String       @default("INDIVIDUAL") // INDIVIDUAL, TEAM
-  subjectUserId    String?
-  subjectTeamId    String?
-  subjectName      String?
-  createdByUserId  String
-  cycle            String
-  summary          String
-  periodStart      DateTime?
-  periodEnd        DateTime?
-  purposes         Json?
-  customFocus      String?
-  tasksCompleted   Float? // Percentage
-  deadlinesMet     Float? // Percentage
-  okrContribution  String? // HIGH, MEDIUM, LOW
-  okrImpactScore   Float? // Percentage
-  okrImpactSummary Json?
-  scoreBreakdown   Json?
-  reportSections   Json?
+  id                  String          @id @default(uuid())
+  organizationId      String
+  batchId             String?
+  subjectType         String          @default("INDIVIDUAL") // INDIVIDUAL, TEAM
+  subjectUserId       String?
+  subjectTeamId       String?
+  subjectName         String?
+  createdByUserId     String
+  cycle               String
+  summary             String
+  periodStart         DateTime?
+  periodEnd           DateTime?
+  purposes            Json?
+  customFocus         String?
+  tasksCompleted      Float? // Percentage
+  deadlinesMet        Float? // Percentage
+  okrContribution     String? // HIGH, MEDIUM, LOW
+  okrImpactScore      Float? // Percentage
+  okrImpactSummary    Json?
+  scoreBreakdown      Json?
+  reportSections      Json?
   selectedOkrSnapshot Json?
-  aiMetadata       Json?
-  fallbackReason   String?
-  overallRating    String? // EXCELLENT, GOOD, AVERAGE, POOR
-  status           String       @default("GENERATED") // GENERATED, PUBLISHED
-  createdAt        DateTime     @default(now())
-  updatedAt        DateTime     @updatedAt
-  organization     Organization @relation(fields: [organizationId], references: [id])
-  batch            AppraisalBatch? @relation(fields: [batchId], references: [id], onDelete: Cascade)
-  subjectUser      User?        @relation("AppraisalSubject", fields: [subjectUserId], references: [id])
-  createdByUser    User         @relation("AppraisalCreator", fields: [createdByUserId], references: [id])
+  aiMetadata          Json?
+  fallbackReason      String?
+  overallRating       String? // EXCELLENT, GOOD, AVERAGE, POOR
+  status              String          @default("GENERATED") // GENERATED, PUBLISHED
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+  organization        Organization    @relation(fields: [organizationId], references: [id])
+  batch               AppraisalBatch? @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  subjectUser         User?           @relation("AppraisalSubject", fields: [subjectUserId], references: [id])
+  createdByUser       User            @relation("AppraisalCreator", fields: [createdByUserId], references: [id])
 
   @@index([batchId])
   @@index([organizationId, createdAt])
@@ -353,19 +353,19 @@ model TaskKrImpact {
 }
 
 model Team {
-  id             String               @id @default(uuid())
+  id             String                   @id @default(uuid())
   organizationId String
   name           String
   normalizedName String
   leadUserId     String?
-  createdAt      DateTime             @default(now())
-  updatedAt      DateTime             @updatedAt
-  organization   Organization         @relation(fields: [organizationId], references: [id])
-  leadUser       User?                @relation("TeamLead", fields: [leadUserId], references: [id], onDelete: SetNull)
+  createdAt      DateTime                 @default(now())
+  updatedAt      DateTime                 @updatedAt
+  organization   Organization             @relation(fields: [organizationId], references: [id])
+  leadUser       User?                    @relation("TeamLead", fields: [leadUserId], references: [id], onDelete: SetNull)
   members        OrganizationMemberTeam[]
-  primaryMembers OrganizationMember[] @relation("OrganizationMemberPrimaryTeam")
+  primaryMembers OrganizationMember[]     @relation("OrganizationMemberPrimaryTeam")
   taskLinks      TaskTeam[]
-  invites        Invite[]             @relation("InvitePrimaryTeam")
+  invites        Invite[]                 @relation("InvitePrimaryTeam")
 
   @@unique([organizationId, normalizedName])
 }

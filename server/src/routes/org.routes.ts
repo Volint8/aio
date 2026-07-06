@@ -27,6 +27,7 @@ import {
     listUserOkrs,
     updateOkr,
     deleteOkr,
+    duplicateOkr,
     reviewKeyResult,
     previewAppraisal,
     generateAdvancedAppraisal,
@@ -94,6 +95,7 @@ router.post('/:id/okrs', authenticateToken, createOkr);
 router.get('/:id/okrs', authenticateToken, listOkrs);
 router.get('/:id/okrs/user/:userId', authenticateToken, listUserOkrs);
 router.patch('/:id/okrs/:okrId', authenticateToken, updateOkr);
+router.post('/:id/okrs/:okrId/duplicate', authenticateToken, duplicateOkr);
 router.post('/:id/okrs/:okrId/key-results/:keyResultId/review', authenticateToken, reviewKeyResult);
 router.delete('/:id/okrs/:okrId', authenticateToken, deleteOkr);
 

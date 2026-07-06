@@ -14,7 +14,7 @@ export interface Task {
     id: string;
     title: string;
     description?: string;
-    status: 'CREATED' | 'IN_PROGRESS' | 'COMPLETED';
+    status: 'CREATED' | 'IN_PROGRESS' | 'IN_REVIEW' | 'COMPLETED' | 'DONE' | 'ON_HOLD' | 'CANCELLED';
     priority: 'LOW' | 'MEDIUM' | 'HIGH';
     dueDate?: string;
     assigneeId?: string;

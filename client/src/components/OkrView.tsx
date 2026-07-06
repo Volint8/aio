@@ -56,6 +56,7 @@ interface OkrViewProps {
   onCreateTask: () => void;
   onCreateOkr?: () => void;
   onEditOkr?: (okr: Okr) => void;
+  onDuplicateOkr?: (okr: Okr) => void;
   onDeleteOkr?: (okrId: string) => void;
   onReviewKeyResult?: (
     okrId: string,
@@ -70,6 +71,7 @@ const OkrView: React.FC<OkrViewProps> = ({
   onCreateTask,
   onCreateOkr,
   onEditOkr,
+  onDuplicateOkr,
   onDeleteOkr,
 }) => {
   const currentYear = new Date().getFullYear();
@@ -144,7 +146,7 @@ const OkrView: React.FC<OkrViewProps> = ({
               <span
                 className={`okr-status-pill ${okr.status?.toLowerCase() || ""}`}
               >
-                {okr.status}
+                {okr.status === "NOT_YET_OPEN" ? "Not yet Open" : okr.status}
               </span>
             </div>
 
@@ -154,7 +156,9 @@ const OkrView: React.FC<OkrViewProps> = ({
 
             <div className="okr-card-meta">
               <span className="okr-meta-item" style={{ whiteSpace: "nowrap" }}>
-                <strong>{okr.status}</strong>
+                <strong>
+                  {okr.status === "NOT_YET_OPEN" ? "Not yet Open" : okr.status}
+                </strong>
                 <span>
                   (
                   {new Date(okr.periodStart).toLocaleDateString(undefined, {
@@ -291,7 +295,7 @@ const OkrView: React.FC<OkrViewProps> = ({
                 </div>
               )}
 
-              {userRole === "ADMIN" && (
+               {userRole === "ADMIN" && (
                 <div className="okr-card-footer">
                   <button
                     className="btn-okr-action btn-okr-edit"
@@ -300,8 +304,16 @@ const OkrView: React.FC<OkrViewProps> = ({
                     Edit
                   </button>
                   <button
+                    className="btn-okr-action btn-okr-edit"
+                    onClick={() => onDuplicateOkr?.(okr)}
+                    style={{ marginLeft: 8 }}
+                  >
+                    Duplicate
+                  </button>
+                  <button
                     className="btn-okr-action btn-okr-delete"
                     onClick={() => onDeleteOkr?.(okr.id)}
+                    style={{ marginLeft: 8 }}
                   >
                     Delete
                   </button>

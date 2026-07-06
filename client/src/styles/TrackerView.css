@@ -252,6 +252,8 @@
 .status-pill.created { background: #F1F5F9; color: #475569; }
 .status-pill.not-started { background: #F1F5F9; color: #475569; }
 .status-pill.in_progress { background: #E0F2FE; color: #0369A1; }
+.status-pill.in_review { background: #FEF3C7; color: #92400E; }
+.status-pill.on_hold { background: #FEF9C3; color: #854D0E; }
 .status-pill.completed { background: #DCFCE7; color: #166534; }
 .status-pill.overdue { background: #FEE2E2; color: #991B1B; }
 

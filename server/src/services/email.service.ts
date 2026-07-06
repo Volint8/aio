@@ -28,10 +28,11 @@ export const sendEmail = async (to: string, subject: string, html: string) => {
 
 export const sendOtpEmail = async (to: string, otp: string) => {
     const subject = "Your Verification Code - Apraizal";
+    const clientBaseUrl = (process.env.CLIENT_URL || 'http://localhost:5173').split(',')[0].replace(/\/$/, '');
     const html = `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 10px;">
             <div style="text-align: center; margin-bottom: 20px;">
-                <img src="${(process.env.CLIENT_URL || 'http://localhost:5173').split(',')[0]}/images/image.png" alt="Apraizal Logo" style="height: 40px;" />
+                <img src="${clientBaseUrl}/images/image.png" alt="Apraizal Logo" style="height: 40px;" />
             </div>
             <h2 style="color: #333; text-align: center;">Verify Your Email</h2>
             <p style="color: #666; font-size: 16px;">Hello,</p>
@@ -39,7 +40,13 @@ export const sendOtpEmail = async (to: string, otp: string) => {
             <div style="background-color: #f4f4f4; padding: 15px; text-align: center; border-radius: 5px; margin: 20px 0;">
                 <span style="font-size: 24px; font-weight: bold; letter-spacing: 5px; color: #333;">${otp}</span>
             </div>
+            <p style="text-align: center; margin: 24px 0;">
+                <a href="${clientBaseUrl}/confirm-otp?email=${encodeURIComponent(to)}" style="display:inline-block;padding:12px 18px;background:#2563eb;color:#fff;text-decoration:none;border-radius:6px;font-weight:bold;">
+                    Verify & Join
+                </a>
+            </p>
             <p style="color: #666; font-size: 14px;">This code will expire in 15 minutes.</p>
+            <p style="color: #666; font-size: 14px;">If the button does not work, open: ${clientBaseUrl}/confirm-otp?email=${encodeURIComponent(to)}</p>
             <p style="color: #666; font-size: 14px;">If you did not request this verification, please ignore this email.</p>
             <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
             <p style="text-align: center; color: #999; font-size: 12px;">&copy; ${new Date().getFullYear()} Apraizal. All rights reserved.</p>
@@ -51,10 +58,11 @@ export const sendOtpEmail = async (to: string, otp: string) => {
 
 export const sendPasswordResetEmail = async (to: string, otp: string) => {
     const subject = "Password Reset Request - Apraizal";
+    const clientBaseUrl = (process.env.CLIENT_URL || 'http://localhost:5173').split(',')[0].replace(/\/$/, '');
     const html = `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 10px;">
             <div style="text-align: center; margin-bottom: 20px;">
-                <img src="${(process.env.CLIENT_URL || 'http://localhost:5173').split(',')[0]}/images/image.png" alt="Apraizal Logo" style="height: 40px;" />
+                <img src="${clientBaseUrl}/images/image.png" alt="Apraizal Logo" style="height: 40px;" />
             </div>
             <h2 style="color: #333; text-align: center;">Password Reset Request</h2>
             <p style="color: #666; font-size: 16px;">Hello,</p>
@@ -62,7 +70,13 @@ export const sendPasswordResetEmail = async (to: string, otp: string) => {
             <div style="background-color: #f4f4f4; padding: 15px; text-align: center; border-radius: 5px; margin: 20px 0;">
                 <span style="font-size: 24px; font-weight: bold; letter-spacing: 5px; color: #333;">${otp}</span>
             </div>
+            <p style="text-align: center; margin: 24px 0;">
+                <a href="${clientBaseUrl}/forgot-password?email=${encodeURIComponent(to)}" style="display:inline-block;padding:12px 18px;background:#2563eb;color:#fff;text-decoration:none;border-radius:6px;font-weight:bold;">
+                    Reset Password
+                </a>
+            </p>
             <p style="color: #666; font-size: 14px;">This code will expire in 15 minutes.</p>
+            <p style="color: #666; font-size: 14px;">If the button does not work, open: ${clientBaseUrl}/forgot-password?email=${encodeURIComponent(to)}</p>
             <p style="color: #666; font-size: 14px;">If you did not request this password reset, please ignore this email and your password will remain unchanged.</p>
             <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
             <p style="text-align: center; color: #999; font-size: 12px;">&copy; ${new Date().getFullYear()} Apraizal Platform. All rights reserved.</p>
@@ -148,11 +162,12 @@ export const sendTaskAssignmentEmail = async (params: {
     const priorityText = priority || 'LOW';
     const displayName = assigneeName || to;
     const assignedBy = assignerName || 'A team member';
+    const clientBaseUrl = (process.env.CLIENT_URL || 'http://localhost:5173').split(',')[0].replace(/\/$/, '');
 
     const html = `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 10px;">
             <div style="text-align: center; margin-bottom: 20px;">
-                <img src="${(process.env.CLIENT_URL || 'http://localhost:5173').split(',')[0]}/images/image.png" alt="Apraizal Logo" style="height: 40px;" />
+                <img src="${clientBaseUrl}/images/image.png" alt="Apraizal Logo" style="height: 40px;" />
             </div>
             <h2 style="color: #333; text-align: center;">You Have a New Task</h2>
             <p style="color: #666; font-size: 16px;">Hi ${displayName},</p>
@@ -164,7 +179,12 @@ export const sendTaskAssignmentEmail = async (params: {
                 <p style="margin: 0 0 8px 0;"><strong>Priority:</strong> ${priorityText}</p>
                 <p style="margin: 0;"><strong>Due Date:</strong> ${dueDateText}</p>
             </div>
-            <p style="color: #666; font-size: 14px;">Please log in to Apraizal to review and update this task.</p>
+            <p style="text-align: center; margin: 24px 0;">
+                <a href="${clientBaseUrl}/dashboard" style="display:inline-block;padding:12px 18px;background:#2563eb;color:#fff;text-decoration:none;border-radius:6px;font-weight:bold;">
+                    View Task in Dashboard
+                </a>
+            </p>
+            <p style="color: #666; font-size: 14px; text-align: center;">If the button does not work, open: ${clientBaseUrl}/dashboard</p>
             <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
             <p style="text-align: center; color: #999; font-size: 12px;">&copy; ${new Date().getFullYear()} Apraizal. All rights reserved.</p>
         </div>
@@ -185,11 +205,12 @@ export const sendInviteEmail = async (params: {
     const subject = `Invitation to join ${organizationName} on Apraizal`;
     const inviter = inviterName || 'An administrator';
     const recipient = inviteeName || to;
+    const clientBaseUrl = (process.env.CLIENT_URL || 'http://localhost:5173').split(',')[0].replace(/\/$/, '');
 
     const html = `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 10px;">
             <div style="text-align: center; margin-bottom: 20px;">
-                <img src="${(process.env.CLIENT_URL || 'http://localhost:5173').split(',')[0]}/images/image.png" alt="Apraizal Logo" style="height: 40px;" />
+                <img src="${clientBaseUrl}/images/image.png" alt="Apraizal Logo" style="height: 40px;" />
             </div>
             <h2 style="color: #333; text-align: center;">You're Invited</h2>
             <p style="color: #666; font-size: 16px;">Hi ${recipient},</p>
@@ -198,7 +219,7 @@ export const sendInviteEmail = async (params: {
             </p>
             <p style="color: #666; font-size: 16px;">Use the link below to accept this invite:</p>
             <p style="text-align: center; margin: 24px 0;">
-                <a href="${inviteUrl}" style="display:inline-block;padding:12px 18px;background:#2563eb;color:#fff;text-decoration:none;border-radius:6px;">
+                <a href="${inviteUrl}" style="display:inline-block;padding:12px 18px;background:#2563eb;color:#fff;text-decoration:none;border-radius:6px;font-weight:bold;">
                     Accept Invite
                 </a>
             </p>
@@ -222,11 +243,12 @@ export const sendTaskAlertEmail = async (params: {
     const { to, taskTitle, taskDescription, creatorName, organizationName } = params;
     const subject = `Task Alert: ${taskTitle}`;
     const fromUser = creatorName || 'A team member';
+    const clientBaseUrl = (process.env.CLIENT_URL || 'http://localhost:5173').split(',')[0].replace(/\/$/, '');
 
     const html = `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 10px;">
             <div style="text-align: center; margin-bottom: 20px;">
-                <img src="${(process.env.CLIENT_URL || 'http://localhost:5173').split(',')[0]}/images/image.png" alt="Apraizal Logo" style="height: 40px;" />
+                <img src="${clientBaseUrl}/images/image.png" alt="Apraizal Logo" style="height: 40px;" />
             </div>
             <h2 style="color: #333; text-align: center;">Task Alert</h2>
             <p style="color: #666; font-size: 16px;">Hi Team Lead,</p>
@@ -237,7 +259,12 @@ export const sendTaskAlertEmail = async (params: {
                 <p style="margin: 0 0 8px 0;"><strong>Task:</strong> ${taskTitle}</p>
                 ${taskDescription ? `<p style="margin: 0;"><strong>Description:</strong> ${taskDescription}</p>` : ''}
             </div>
-            <p style="color: #666; font-size: 14px;">Please log in to Apraizal to review and assign this task.</p>
+            <p style="text-align: center; margin: 24px 0;">
+                <a href="${clientBaseUrl}/dashboard" style="display:inline-block;padding:12px 18px;background:#2563eb;color:#fff;text-decoration:none;border-radius:6px;font-weight:bold;">
+                    Review Task in Dashboard
+                </a>
+            </p>
+            <p style="color: #666; font-size: 14px; text-align: center;">If the button does not work, open: ${clientBaseUrl}/dashboard</p>
             <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
             <p style="text-align: center; color: #999; font-size: 12px;">&copy; ${new Date().getFullYear()} Apraizal. All rights reserved.</p>
         </div>
@@ -272,6 +299,7 @@ export const sendOkrNotificationEmail = async (params: {
     const subject = `New OKR Assigned to ${teamName}: ${okrTitle}`;
     const displayName = recipientName || to;
     const createdBy = creatorName || 'An administrator';
+    const clientBaseUrl = (process.env.CLIENT_URL || 'http://localhost:5173').split(',')[0].replace(/\/$/, '');
 
     const startDate = new Date(periodStart).toLocaleDateString('en-US', {
         day: 'numeric',
@@ -287,7 +315,7 @@ export const sendOkrNotificationEmail = async (params: {
     const html = `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 10px;">
             <div style="text-align: center; margin-bottom: 20px;">
-                <img src="${(process.env.CLIENT_URL || 'http://localhost:5173').split(',')[0]}/images/image.png" alt="Apraizal Logo" style="height: 40px;" />
+                <img src="${clientBaseUrl}/images/image.png" alt="Apraizal Logo" style="height: 40px;" />
             </div>
             <h2 style="color: #333; text-align: center;">New OKR Assigned</h2>
             <p style="color: #666; font-size: 16px;">Hi ${displayName},</p>
@@ -299,7 +327,12 @@ export const sendOkrNotificationEmail = async (params: {
                 ${okrDescription ? `<p style="margin: 0 0 8px 0;"><strong>Description:</strong> ${okrDescription}</p>` : ''}
                 <p style="margin: 0 0 8px 0;"><strong>Period:</strong> ${startDate} - ${endDate}</p>
             </div>
-            <p style="color: #666; font-size: 14px;">Please log in to Apraizal to review this OKR and track its progress.</p>
+            <p style="text-align: center; margin: 24px 0;">
+                <a href="${clientBaseUrl}/dashboard" style="display:inline-block;padding:12px 18px;background:#2563eb;color:#fff;text-decoration:none;border-radius:6px;font-weight:bold;">
+                    View OKR in Dashboard
+                </a>
+            </p>
+            <p style="color: #666; font-size: 14px; text-align: center;">If the button does not work, open: ${clientBaseUrl}/dashboard</p>
             <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
             <p style="text-align: center; color: #999; font-size: 12px;">&copy; ${new Date().getFullYear()} Apraizal. All rights reserved.</p>
         </div>
@@ -332,6 +365,7 @@ export const sendKeyResultNotificationEmail = async (params: {
     const subject = `You've been assigned a key result: ${okrTitle}`;
     const displayName = recipientName || to;
     const createdBy = creatorName || 'An administrator';
+    const clientBaseUrl = (process.env.CLIENT_URL || 'http://localhost:5173').split(',')[0].replace(/\/$/, '');
 
     const startDate = new Date(periodStart).toLocaleDateString('en-US', {
         day: 'numeric',
@@ -347,7 +381,7 @@ export const sendKeyResultNotificationEmail = async (params: {
     const html = `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 10px;">
             <div style="text-align: center; margin-bottom: 20px;">
-                <img src="${(process.env.CLIENT_URL || 'http://localhost:5173').split(',')[0]}/images/image.png" alt="Apraizal Logo" style="height: 40px;" />
+                <img src="${clientBaseUrl}/images/image.png" alt="Apraizal Logo" style="height: 40px;" />
             </div>
             <h2 style="color: #333; text-align: center;">New Key Result Assignment</h2>
             <p style="color: #666; font-size: 16px;">Hi ${displayName},</p>
@@ -358,7 +392,12 @@ export const sendKeyResultNotificationEmail = async (params: {
                 <p style="margin: 0 0 8px 0;"><strong>Key Result:</strong> ${keyResultTitle}</p>
                 <p style="margin: 0 0 8px 0;"><strong>OKR Period:</strong> ${startDate} - ${endDate}</p>
             </div>
-            <p style="color: #666; font-size: 14px;">Please log in to Apraizal to review this Key Result and track its progress.</p>
+            <p style="text-align: center; margin: 24px 0;">
+                <a href="${clientBaseUrl}/dashboard" style="display:inline-block;padding:12px 18px;background:#2563eb;color:#fff;text-decoration:none;border-radius:6px;font-weight:bold;">
+                    View Key Result in Dashboard
+                </a>
+            </p>
+            <p style="color: #666; font-size: 14px; text-align: center;">If the button does not work, open: ${clientBaseUrl}/dashboard</p>
             <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
             <p style="text-align: center; color: #999; font-size: 12px;">&copy; ${new Date().getFullYear()} Apraizal. All rights reserved.</p>
         </div>

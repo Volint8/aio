@@ -66,11 +66,19 @@ const LoginPage = () => {
       } else {
         await handleAdminSignupStepTwo();
       }
-    } catch (err: any) {
-      const errorData = err.response?.data?.error;
+    } catch (err: unknown) {
+      const axiosError = err as {
+        response?: { data?: { error?: unknown } };
+        message?: string;
+      };
+      const errorData = axiosError.response?.data?.error;
       const message =
-        typeof errorData === "object" ? errorData.message : errorData;
-      setError(message || err.message || "Authentication failed");
+        typeof errorData === "object" && errorData !== null
+          ? (errorData as Record<string, unknown>).message
+          : errorData;
+      setError(
+        (message as string) || axiosError.message || "Authentication failed",
+      );
     } finally {
       setLoading(false);
     }
@@ -246,7 +254,9 @@ const LoginPage = () => {
           </p>
         </div>
         <div className="domain-notice">
-          <small>Use a work email address. Personal domains are blocked.</small>
+          <small>
+            Use a work email address. Personal domains are not supported.
+          </small>
         </div>
       </div>
     </div>

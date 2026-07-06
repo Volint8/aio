@@ -291,6 +291,7 @@ export const previewAppraisalSetup = async (params: {
   periodEnd?: string;
   purposes?: unknown;
   customFocus?: string | null;
+  selectedOkrIds?: string[];
 }) => {
   const scope = normalizeScope(params.scope);
   const { from, to } = parseDateRange(params.periodStart, params.periodEnd);
@@ -298,7 +299,13 @@ export const previewAppraisalSetup = async (params: {
   const subjects = await resolveSubjects(params.organizationId, scope, params.subjectIds || []);
   const overlappingOkrs = await fetchOverlappingOkrs(params.organizationId, from, to);
   const eligibleOkrs = overlappingOkrs.filter((okr) => subjects.some((subject) => okrMatchesSubject(okr, subject)));
-  const setupSummary = buildSetupSummary(subjects, from, to, eligibleOkrs, purposes, params.customFocus);
+
+  const selectedOkrIds = (params.selectedOkrIds && params.selectedOkrIds.length > 0)
+    ? params.selectedOkrIds.filter((id) => eligibleOkrs.some((okr) => okr.id === id))
+    : eligibleOkrs.map((okr) => okr.id);
+
+  const setupOkrs = eligibleOkrs.filter((okr) => selectedOkrIds.includes(okr.id));
+  const setupSummary = buildSetupSummary(subjects, from, to, setupOkrs, purposes, params.customFocus);
 
   return {
     scope,
@@ -321,7 +328,7 @@ export const previewAppraisalSetup = async (params: {
       status: okr.status,
       keyResultCount: okr.keyResults.length
     })),
-    selectedOkrIds: eligibleOkrs.map((okr) => okr.id),
+    selectedOkrIds,
     setupSummary
   };
 };
@@ -350,13 +357,43 @@ const buildOkrImpact = async (params: {
   };
 
   const overdueCutoff = startOfToday();
-  const [allTasks, completedTasks, overdueTasks, generalTaskCount, completedGeneralTaskCount] = await Promise.all([
+  const [allTasks, completedTasks, overdueTasks, generalTaskCount, completedGeneralTaskCount, rawDeadlineShifts] = await Promise.all([
     prisma.task.count({ where: taskWhere }),
     prisma.task.count({ where: { ...taskWhere, status: 'COMPLETED' } }),
     prisma.task.count({ where: { ...taskWhere, status: { not: 'COMPLETED' }, dueDate: { lt: overdueCutoff } } }),
     prisma.task.count({ where: { ...taskWhere, krImpacts: { none: {} } } }),
-    prisma.task.count({ where: { ...taskWhere, status: 'COMPLETED', krImpacts: { none: {} } } })
+    prisma.task.count({ where: { ...taskWhere, status: 'COMPLETED', krImpacts: { none: {} } } }),
+    prisma.activityLog.findMany({
+      where: {
+        action: 'TASK_UPDATED',
+        description: 'Due date changed',
+        task: {
+          organizationId,
+          deletedAt: null,
+          assigneeId: { in: subject.userIds }
+        },
+        createdAt: { gte: from, lte: to }
+      },
+      include: {
+        task: {
+          select: {
+            title: true
+          }
+        }
+      },
+      orderBy: { createdAt: 'asc' }
+    })
   ]);
+
+  const deadlineShifts = rawDeadlineShifts.map((log: any) => {
+    const meta = (log.metadata && typeof log.metadata === 'object') ? log.metadata : {};
+    return {
+      taskTitle: log.task?.title || 'Untitled Task',
+      oldDueDate: meta.oldDueDate || null,
+      newDueDate: meta.newDueDate || null,
+      changedAt: log.createdAt.toISOString()
+    };
+  });
 
   const krIds = scopedOkrs.flatMap((okr) => okr.keyResults.map((kr) => kr.id));
   const impactRows = krIds.length > 0
@@ -470,6 +507,7 @@ const buildOkrImpact = async (params: {
     okrContribution,
     okrImpactScore: roundMetric(okrImpactScore) || 0,
     overallRating,
+    deadlineShifts,
     okrImpactSummary: {
       okrs: okrSummaries,
       totals: {
@@ -519,6 +557,16 @@ const buildFallbackSections = (input: {
       : 'Quantitative target data is incomplete, so this OKR should be reviewed qualitatively.'
   }));
 
+  let overviewSummary = `${subject.name} completed ${metrics.completedTasks}/${metrics.allTasks} tasks, met ${Math.round(metrics.deadlinesMet)}% of tracked deadlines, and recorded an OKR impact score of ${Math.round(metrics.okrImpactScore)}%.${customFocus ? ` Focus area: ${customFocus}.` : ''}`;
+  if (metrics.deadlineShifts && metrics.deadlineShifts.length > 0) {
+    const shiftDetails = metrics.deadlineShifts.map((s: any) => {
+      const oldStr = s.oldDueDate ? toDateOnly(new Date(s.oldDueDate)) : 'None';
+      const newStr = s.newDueDate ? toDateOnly(new Date(s.newDueDate)) : 'None';
+      return `"${s.taskTitle}" (${oldStr} -> ${newStr})`;
+    }).join(', ');
+    overviewSummary += ` Deadline shifts occurred for: ${shiftDetails}.`;
+  }
+
   return {
     header: {
       name: subject.name,
@@ -527,7 +575,7 @@ const buildFallbackSections = (input: {
       appraisalPeriod: periodLabel(from, to),
       purpose: purposes.join(', ')
     },
-    overviewSummary: `${subject.name} completed ${metrics.completedTasks}/${metrics.allTasks} tasks, met ${Math.round(metrics.deadlinesMet)}% of tracked deadlines, and recorded an OKR impact score of ${Math.round(metrics.okrImpactScore)}%.${customFocus ? ` Focus area: ${customFocus}.` : ''}`,
+    overviewSummary,
     okrPerformanceBreakdown: okrRows,
     strengths: [
       metrics.tasksCompleted >= 70 ? 'Consistent completion of assigned work.' : 'Maintained measurable work activity during the appraisal period.',
@@ -535,7 +583,10 @@ const buildFallbackSections = (input: {
     ],
     areasForImprovement: [
       metrics.deadlinesMet < 70 ? 'Improve deadline reliability and escalation timing.' : 'Continue improving delivery predictability.',
-      metrics.okrImpactScore < 70 ? 'Increase completion and approval rate for assigned key results.' : 'Sustain OKR execution quality across future periods.'
+      metrics.okrImpactScore < 70 ? 'Increase completion and approval rate for assigned key results.' : 'Sustain OKR execution quality across future periods.',
+      ...(metrics.deadlineShifts && metrics.deadlineShifts.length > 0
+        ? [`Minimize deadline shifts (recorded ${metrics.deadlineShifts.length} deadline shift(s) during this period).`]
+        : [])
     ],
     skillsCapabilityInsights: [
       purposes.includes('Skills Gap Analysis')
