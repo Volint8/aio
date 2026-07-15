@@ -318,6 +318,13 @@
 }
 
 .team-invite-fields input,
+.team-invite-fields select,
+.team-invite-fields .team-multi-select {
+    flex: 1;
+    min-width: 160px;
+}
+
+.team-invite-fields input,
 .team-invite-fields select {
     padding: 10px 16px;
     border: 1px solid #E2E8F0;
@@ -325,9 +332,25 @@
     font-size: 0.95em;
     font-weight: 500;
     transition: all 0.2s ease;
-    flex: 1;
-    min-width: 160px;
     background-color: white;
+}
+
+.team-invite-fields .team-multi-select-trigger {
+    padding: 10px 16px;
+    border: 1px solid #E2E8F0;
+    border-radius: 999px;
+    font-size: 0.95em;
+    font-weight: 500;
+    background-color: white;
+    min-height: 40px;
+    box-sizing: border-box;
+}
+
+.team-invite-fields .team-multi-select-trigger.open,
+.team-invite-fields .team-multi-select-trigger:focus {
+    outline: none;
+    border-color: var(--primary-blue);
+    box-shadow: 0 0 0 3px rgba(29, 112, 226, 0.1);
 }
 
 .team-invite-form input:focus,

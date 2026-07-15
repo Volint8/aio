@@ -1442,11 +1442,26 @@
     right: 0;
     max-height: 220px;
     overflow-y: auto;
+    overflow-x: hidden;
     padding: 6px;
     border: 1px solid var(--border-color);
     border-radius: var(--radius);
     background: white;
     box-shadow: var(--shadow-lg);
+}
+
+.team-multi-select-menu::-webkit-scrollbar {
+    width: 6px;
+}
+
+.team-multi-select-menu::-webkit-scrollbar-thumb {
+    background: #CBD5E1;
+    border-radius: 999px;
+}
+
+.team-multi-select-menu::-webkit-scrollbar-track {
+    background: #F1F5F9;
+    border-radius: 999px;
 }
 
 .team-multi-select-option {
@@ -1462,10 +1477,29 @@
     letter-spacing: 0 !important;
     text-transform: none !important;
     cursor: pointer;
+    min-width: 0;
+    transition: background-color 0.2s;
 }
 
 .team-multi-select-option:hover {
     background: #F1F5F9;
+}
+
+.team-multi-select-option.selected {
+    background: #E0F2FE;
+    color: #0369A1 !important;
+}
+
+.team-multi-select-option.selected:hover {
+    background: #BAE6FD;
+}
+
+.team-multi-select-option span {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+    flex: 1;
 }
 
 .team-multi-select-option input {

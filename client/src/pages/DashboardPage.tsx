@@ -241,16 +241,22 @@ const TeamMultiDropdown = ({
           aria-multiselectable="true"
         >
           {availableTeams.length > 0 ? (
-            availableTeams.map((team) => (
-              <label className="team-multi-select-option" key={team.id}>
-                <input
-                  type="checkbox"
-                  checked={value.includes(team.id)}
-                  onChange={() => toggleTeam(team.id)}
-                />
-                <span>{team.name}</span>
-              </label>
-            ))
+            availableTeams.map((team) => {
+              const isSelected = value.includes(team.id);
+              return (
+                <label
+                  className={`team-multi-select-option ${isSelected ? "selected" : ""}`}
+                  key={team.id}
+                >
+                  <input
+                    type="checkbox"
+                    checked={isSelected}
+                    onChange={() => toggleTeam(team.id)}
+                  />
+                  <span>{team.name}</span>
+                </label>
+              );
+            })
           ) : (
             <div className="team-multi-select-empty">{emptyMessage}</div>
           )}
@@ -1041,6 +1047,12 @@ const DashboardPage = () => {
     return teamDistribution
       .filter((d) => d.leadUser?.id === user.id)
       .flatMap((d) => (d.people || []).map((p) => p.userId));
+  }, [teamDistribution, user?.id, isTeamLead]);
+  const ledTeamIds = useMemo(() => {
+    if (!isTeamLead || !teamDistribution || !user?.id) return [] as string[];
+    return teamDistribution
+      .filter((d) => d.leadUser?.id === user.id)
+      .map((d) => d.teamId);
   }, [teamDistribution, user?.id, isTeamLead]);
   const trackerView: TrackerView =
     requestedTrackerView === "teams" ? "teams" : "users";
@@ -1897,8 +1909,19 @@ const DashboardPage = () => {
   const selectedTask =
     allTasks.find((task) => task.id === selectedTaskId) || null;
   const isDeletedView = filter === "recently_deleted";
-  const canDeleteTask = (task: Task) =>
-    isAdmin || task.createdByUserId === user?.id;
+  const canDeleteTask = (task: Task) => {
+    if (isAdmin) return true;
+    if (task.createdByUserId === user?.id) return true;
+    if (isTeamLead) {
+      const isCreatorMember = task.createdByUserId && ledTeamMemberIds.includes(task.createdByUserId);
+      const isAssigneeMember = task.assignee?.id && ledTeamMemberIds.includes(task.assignee.id);
+      const isTaskTeamLed = task.taskTeams?.some((tt) => ledTeamIds.includes(tt.team.id));
+      if (isCreatorMember || isAssigneeMember || isTaskTeamLed) {
+        return true;
+      }
+    }
+    return false;
+  };
   const focusMembers =
     new URLSearchParams(location.search).get("focus") === "members";
 

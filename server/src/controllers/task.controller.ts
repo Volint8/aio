@@ -1152,8 +1152,66 @@ export const deleteTask = async (req: Request, res: Response) => {
             return res.status(403).json({ error: 'Access denied' });
         }
 
-        if (membership.role !== 'ADMIN' && task.createdByUserId !== userId) {
-            return res.status(403).json({ error: 'Only admins or the task creator can delete this task' });
+        let isAuthorized = membership.role === 'ADMIN' || task.createdByUserId === userId;
+
+        if (!isAuthorized && membership.role === 'TEAM_LEAD') {
+            const ledTeams = await prisma.team.findMany({
+                where: {
+                    organizationId: task.organizationId,
+                    leadUserId: userId
+                },
+                select: { id: true }
+            });
+            const ledTeamIds = ledTeams.map(t => t.id);
+
+            if (ledTeamIds.length > 0) {
+                const taskTeamCount = await prisma.taskTeam.count({
+                    where: {
+                        taskId: task.id,
+                        teamId: { in: ledTeamIds }
+                    }
+                });
+
+                if (taskTeamCount > 0) {
+                    isAuthorized = true;
+                } else {
+                    if (task.assigneeId) {
+                        const assigneeMembershipCount = await prisma.organizationMember.count({
+                            where: {
+                                userId: task.assigneeId,
+                                organizationId: task.organizationId,
+                                OR: [
+                                    { primaryTeamId: { in: ledTeamIds } },
+                                    { teamMemberships: { some: { teamId: { in: ledTeamIds } } } }
+                                ]
+                            }
+                        });
+                        if (assigneeMembershipCount > 0) {
+                            isAuthorized = true;
+                        }
+                    }
+
+                    if (!isAuthorized && task.createdByUserId) {
+                        const creatorMembershipCount = await prisma.organizationMember.count({
+                            where: {
+                                userId: task.createdByUserId,
+                                organizationId: task.organizationId,
+                                OR: [
+                                    { primaryTeamId: { in: ledTeamIds } },
+                                    { teamMemberships: { some: { teamId: { in: ledTeamIds } } } }
+                                ]
+                            }
+                        });
+                        if (creatorMembershipCount > 0) {
+                            isAuthorized = true;
+                        }
+                    }
+                }
+            }
+        }
+
+        if (!isAuthorized) {
+            return res.status(403).json({ error: 'Only admins, the task creator, or their team lead can delete this task' });
         }
 
         if (task.deletedAt) {
