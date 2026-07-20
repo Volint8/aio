@@ -86,14 +86,18 @@ export const purgeExpiredDeletedUsers = async () => {
   console.log(`[UserPurge] Purge complete. Purged ${totalPurged} users.`);
 };
 
+import * as Sentry from '@sentry/node';
+
 export const startUserPurgeJob = () => {
   purgeExpiredDeletedUsers().catch((error) => {
     console.error('[UserPurge] Initial purge run failed:', error);
+    Sentry.captureException(error);
   });
 
   setInterval(() => {
     purgeExpiredDeletedUsers().catch((error) => {
       console.error('[UserPurge] Scheduled purge run failed:', error);
+      Sentry.captureException(error);
     });
   }, PURGE_INTERVAL_MS);
 };

@@ -71,13 +71,17 @@ function AppRoutes() {
   );
 }
 
+import * as Sentry from '@sentry/react';
+
 function App() {
   return (
-    <AuthProvider>
-      <Router>
-        <AppRoutes />
-      </Router>
-    </AuthProvider>
+    <Sentry.ErrorBoundary fallback={<div style={{ padding: '2rem', textAlign: 'center' }}>Something went wrong. An unexpected error occurred.</div>}>
+      <AuthProvider>
+        <Router>
+          <AppRoutes />
+        </Router>
+      </AuthProvider>
+    </Sentry.ErrorBoundary>
   );
 }
 

@@ -1,3 +1,10 @@
+import * as Sentry from '@sentry/node';
+
+Sentry.init({
+  dsn: "https://745818562c2142b9a84cfd3a27c26823@app.glitchtip.com/25973",
+  tracesSampleRate: 0.01, // 1% of transactions — adjust to your needs
+});
+
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
@@ -61,6 +68,9 @@ app.use('/subscriptions', subscriptionRoutes);
 app.use('/internal/provisioning', internalProvisioningRoutes);
 app.use('/internal/reports', internalReportRoutes);
 
+// Sentry error handler must be registered after all controllers and before any other error middleware
+Sentry.setupExpressErrorHandler(app);
+
 // Create HTTP server and attach Socket.IO
 const server = http.createServer(app);
 const io = new IOServer(server, {
@@ -82,6 +92,16 @@ io.on('connection', (socket: Socket) => {
 
 // expose io globally so controllers can emit events
 (global as any).io = io;
+
+process.on('unhandledRejection', (reason) => {
+    console.error('Unhandled Rejection at:', reason);
+    Sentry.captureException(reason);
+});
+
+process.on('uncaughtException', (error) => {
+    console.error('Uncaught Exception thrown:', error);
+    Sentry.captureException(error);
+});
 
 server.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);

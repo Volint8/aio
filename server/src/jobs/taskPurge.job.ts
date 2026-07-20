@@ -100,14 +100,18 @@ export const purgeExpiredDeletedTasks = async () => {
     console.log(`[TaskPurge] Purge complete. Removed ${totalPurged} tasks.`);
 };
 
+import * as Sentry from '@sentry/node';
+
 export const startTaskPurgeJob = () => {
     purgeExpiredDeletedTasks().catch((error) => {
         console.error('[TaskPurge] Initial purge run failed:', error);
+        Sentry.captureException(error);
     });
 
     setInterval(() => {
         purgeExpiredDeletedTasks().catch((error) => {
             console.error('[TaskPurge] Scheduled purge run failed:', error);
+            Sentry.captureException(error);
         });
     }, PURGE_INTERVAL_MS);
 };
