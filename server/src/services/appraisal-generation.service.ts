@@ -961,8 +961,17 @@ const drawTemplatePageFrame = (doc: PDFKit.PDFDocument, pageNumber: number, foot
   const height = doc.page.height;
   doc.save();
   doc.lineWidth(2).strokeColor('#2F73B5').moveTo(52, 30).lineTo(width - 52, 30).stroke();
+
+  // Temporarily disable the bottom margin for writing the footer text to prevent triggering autoPageBreak.
+  const oldBottomMargin = doc.page.margins.bottom;
+  doc.page.margins.bottom = 0;
+
   doc.font('Helvetica').fontSize(9).fillColor('#B2BCC8').text(footerLabel, 52, height - 36, { width: 240 });
   doc.text(`Page ${pageNumber}`, width - 100, height - 36, { width: 48, align: 'right' });
+
+  // Restore the original bottom margin.
+  doc.page.margins.bottom = oldBottomMargin;
+
   doc.restore();
 };
 
