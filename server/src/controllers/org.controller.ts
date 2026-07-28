@@ -26,6 +26,7 @@ import {
 import * as XLSX from 'xlsx';
 
 const prisma = new PrismaClient();
+const completedTaskStatuses = ['COMPLETED', 'DONE'];
 
 const startOfToday = () => {
   const today = new Date();
@@ -1451,11 +1452,11 @@ export const getTeams = async (req: Request, res: Response) => {
       const [pending, ongoing, completed, overdue] = await Promise.all([
         prisma.task.count({ where: { deletedAt: null, status: 'CREATED', taskTeams: { some: { teamId: team.id } } } }),
         prisma.task.count({ where: { deletedAt: null, status: 'IN_PROGRESS', taskTeams: { some: { teamId: team.id } } } }),
-        prisma.task.count({ where: { deletedAt: null, status: 'COMPLETED', taskTeams: { some: { teamId: team.id } } } }),
+        prisma.task.count({ where: { deletedAt: null, status: { in: completedTaskStatuses }, taskTeams: { some: { teamId: team.id } } } }),
         prisma.task.count({
           where: {
             deletedAt: null,
-            status: { not: 'COMPLETED' },
+            status: { notIn: completedTaskStatuses },
             taskTeams: { some: { teamId: team.id } },
             dueDate: { lt: overdueCutoff }
           }
@@ -1491,12 +1492,12 @@ export const getTeams = async (req: Request, res: Response) => {
         const [mPending, mOngoing, mCompleted, mOverdue, mOkrTasks] = await Promise.all([
           prisma.task.count({ where: { deletedAt: null, assigneeId: orgMember.userId, status: 'CREATED' } }),
           prisma.task.count({ where: { deletedAt: null, assigneeId: orgMember.userId, status: 'IN_PROGRESS' } }),
-          prisma.task.count({ where: { deletedAt: null, assigneeId: orgMember.userId, status: 'COMPLETED' } }),
+          prisma.task.count({ where: { deletedAt: null, assigneeId: orgMember.userId, status: { in: completedTaskStatuses } } }),
           prisma.task.count({
             where: {
               deletedAt: null,
               assigneeId: orgMember.userId,
-              status: { not: 'COMPLETED' },
+              status: { notIn: completedTaskStatuses },
               dueDate: { lt: overdueCutoff }
             }
           }),
@@ -2849,11 +2850,11 @@ export const generateAppraisal = async (req: Request, res: Response) => {
     const overdueCutoff = startOfToday();
     const [allTasks, completedTasks, overdueTasks] = await Promise.all([
       prisma.task.count({ where: taskWhere }),
-      prisma.task.count({ where: { ...taskWhere, status: 'COMPLETED' } }),
+      prisma.task.count({ where: { ...taskWhere, status: { in: completedTaskStatuses } } }),
       prisma.task.count({
         where: {
           ...taskWhere,
-          status: { not: 'COMPLETED' },
+          status: { notIn: completedTaskStatuses },
           dueDate: { lt: overdueCutoff }
         }
       })
@@ -2870,7 +2871,7 @@ export const generateAppraisal = async (req: Request, res: Response) => {
       prisma.task.count({
         where: {
           ...taskWhere,
-          status: 'COMPLETED',
+          status: { in: completedTaskStatuses },
           krImpacts: { none: {} }
         }
       })

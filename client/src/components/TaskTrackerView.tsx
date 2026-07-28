@@ -17,6 +17,9 @@ const isDueDateOverdue = (dueDateValue: string | null | undefined) => {
   return dueDate < today;
 };
 
+const isTaskCompleted = (status: string | null | undefined) =>
+  status === "COMPLETED" || status === "DONE";
+
 interface Task {
   id: string;
   title: string;
@@ -171,7 +174,7 @@ const TaskTrackerView: React.FC<TaskTrackerViewProps> = ({
       // Completed/Done tasks should only show up under the "completed" filter
       if (filter === "completed") {
         if (task.status !== "COMPLETED" && task.status !== "DONE") return false;
-      } else {
+      } else if (filter !== "pending_approval") {
         // Exclude fully completed/done tasks from all other views
         if (task.status === "COMPLETED" || task.status === "DONE") return false;
       }
@@ -477,7 +480,7 @@ const TaskTrackerView: React.FC<TaskTrackerViewProps> = ({
                   </td>
                   <td>
                     <span
-                      className={`status-pill ${task.status === "CREATED" ? "not-started" : task.status === "IN_PROGRESS" ? "in_progress" : task.status === "IN_REVIEW" ? "in_review" : task.status === "ON_HOLD" ? "on_hold" : task.status === "COMPLETED" ? "completed" : task.status.toLowerCase()}`}
+                      className={`status-pill ${task.status === "CREATED" ? "not-started" : task.status === "IN_PROGRESS" ? "in_progress" : task.status === "IN_REVIEW" ? "in_review" : task.status === "ON_HOLD" ? "on_hold" : isTaskCompleted(task.status) ? "completed" : task.status.toLowerCase()}`}
                     >
                       {getStatusLabel(task.status, task.dueDate)}
                     </span>
@@ -605,7 +608,7 @@ const TaskTrackerView: React.FC<TaskTrackerViewProps> = ({
                           >
                             Mark Completed
                           </button>
-                          {task.status === "COMPLETED" &&
+                          {isTaskCompleted(task.status) &&
                             task.approvalStatus === "PENDING" &&
                             userRole &&
                             (userRole === "ADMIN" ||

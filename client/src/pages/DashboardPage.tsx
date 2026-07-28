@@ -709,6 +709,9 @@ const isDueDateOverdue = (dueDateValue: string | null | undefined) => {
   return dueDate < today;
 };
 
+const isTaskCompleted = (status: string | null | undefined) =>
+  status === "COMPLETED" || status === "DONE";
+
 const DashboardPage = () => {
   const location = useLocation();
   const { user } = useAuth();
@@ -1852,22 +1855,26 @@ const DashboardPage = () => {
         );
       } else if (filter === "overdue") {
         filteredTasks = filteredTasks.filter(
-          (t: Task) => t.status !== "COMPLETED" && isDueDateOverdue(t.dueDate),
+          (t: Task) => !isTaskCompleted(t.status) && isDueDateOverdue(t.dueDate),
         );
       } else if (filter === "pending_approval") {
         filteredTasks = filteredTasks.filter(
-          (t: Task) =>
-            t.status === "COMPLETED" && t.approvalStatus === "PENDING",
+          (t: Task) => t.approvalStatus === "PENDING",
         );
       } else if (filter !== "all" && filter !== "recently_deleted") {
-        const statusMap: Record<string, string> = {
+        const statusMap: Record<string, string | string[]> = {
           pending: "CREATED",
           created: "CREATED",
           in_progress: "IN_PROGRESS",
-          completed: "COMPLETED",
+          completed: ["COMPLETED", "DONE"],
         };
         filteredTasks = filteredTasks.filter(
-          (t: Task) => t.status === statusMap[filter],
+          (t: Task) => {
+            const matchingStatuses = statusMap[filter];
+            return Array.isArray(matchingStatuses)
+              ? matchingStatuses.includes(t.status)
+              : t.status === matchingStatuses;
+          },
         );
       }
 
@@ -1926,7 +1933,7 @@ const DashboardPage = () => {
     new URLSearchParams(location.search).get("focus") === "members";
 
   const isOverdue = (task: Task) => {
-    if (!task.dueDate || task.status === "COMPLETED") return false;
+    if (!task.dueDate || isTaskCompleted(task.status)) return false;
     return isDueDateOverdue(task.dueDate);
   };
 
@@ -3909,7 +3916,7 @@ const DashboardPage = () => {
         )}
 
         {!isDeletedView &&
-          selectedTask.status !== "COMPLETED" &&
+          !isTaskCompleted(selectedTask.status) &&
           (user?.id === selectedTask.assignee?.id ||
             user?.id === selectedTask.supporter?.id) && (
             <div className="task-work-submission">
@@ -5795,7 +5802,7 @@ const DashboardPage = () => {
                           >
                             Edit
                           </button>
-                          {task.status !== "COMPLETED" && (
+                          {!isTaskCompleted(task.status) && (
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();

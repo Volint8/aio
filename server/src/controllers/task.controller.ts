@@ -5,6 +5,7 @@ import { normalizeOrgName } from '../utils/org.utils';
 import { getAccessibleTeamIds, getMembershipTeamIds, getMembershipWithTeams, uniqueIds } from '../utils/membership.utils';
 
 const prisma = new PrismaClient();
+const completedTaskStatuses = ['COMPLETED', 'DONE'];
 
 const getPrimaryTeamId = (membership: any) => {
     const teamIds = getMembershipTeamIds(membership);
@@ -1484,11 +1485,11 @@ export const getStats = async (req: Request, res: Response) => {
         const [pending, ongoing, completed, overdue, onHold, myTasks] = await Promise.all([
             prisma.task.count({ where: { ...where, status: 'CREATED' } }),
             prisma.task.count({ where: { ...where, status: 'IN_PROGRESS' } }),
-            prisma.task.count({ where: { ...where, status: 'COMPLETED' } }),
+            prisma.task.count({ where: { ...where, status: { in: completedTaskStatuses } } }),
             prisma.task.count({
                 where: {
                     ...where,
-                    status: { notIn: ['COMPLETED', 'ON_HOLD'] },
+                    status: { notIn: [...completedTaskStatuses, 'ON_HOLD'] },
                     dueDate: { lt: overdueCutoff }
                 }
             }),
@@ -1670,13 +1671,13 @@ export const getMemberStats = async (req: Request, res: Response) => {
             const [pending, ongoing, completed, overdue, okrLinkedTasks] = await Promise.all([
                 prisma.task.count({ where: { organizationId: organizationId as string, assigneeId: m.userId, status: 'CREATED', deletedAt: null } }),
                 prisma.task.count({ where: { organizationId: organizationId as string, assigneeId: m.userId, status: 'IN_PROGRESS', deletedAt: null } }),
-                prisma.task.count({ where: { organizationId: organizationId as string, assigneeId: m.userId, status: 'COMPLETED', deletedAt: null } }),
+                prisma.task.count({ where: { organizationId: organizationId as string, assigneeId: m.userId, status: { in: completedTaskStatuses }, deletedAt: null } }),
                 prisma.task.count({
                     where: {
                         organizationId: organizationId as string,
                         assigneeId: m.userId,
                         deletedAt: null,
-                        status: { notIn: ['COMPLETED', 'ON_HOLD'] },
+                        status: { notIn: [...completedTaskStatuses, 'ON_HOLD'] },
                         dueDate: { lt: overdueCutoff }
                     }
                 }),
@@ -1775,7 +1776,7 @@ export const getTeamDistribution = async (req: Request, res: Response) => {
             const [created, inProgress, completed] = await Promise.all([
                 prisma.task.count({ where: { organizationId: organizationId as string, deletedAt: null, status: 'CREATED', taskTeams: { some: { teamId: team.id } } } }),
                 prisma.task.count({ where: { organizationId: organizationId as string, deletedAt: null, status: 'IN_PROGRESS', taskTeams: { some: { teamId: team.id } } } }),
-                prisma.task.count({ where: { organizationId: organizationId as string, deletedAt: null, status: 'COMPLETED', taskTeams: { some: { teamId: team.id } } } })
+                prisma.task.count({ where: { organizationId: organizationId as string, deletedAt: null, status: { in: completedTaskStatuses }, taskTeams: { some: { teamId: team.id } } } })
             ]);
 
             const people = await Promise.all(team.members.map(async (member) => {
@@ -1783,7 +1784,7 @@ export const getTeamDistribution = async (req: Request, res: Response) => {
                 const [mCreated, mInProgress, mCompleted] = await Promise.all([
                     prisma.task.count({ where: { organizationId: organizationId as string, deletedAt: null, assigneeId: orgMember.userId, status: 'CREATED' } }),
                     prisma.task.count({ where: { organizationId: organizationId as string, deletedAt: null, assigneeId: orgMember.userId, status: 'IN_PROGRESS' } }),
-                    prisma.task.count({ where: { organizationId: organizationId as string, deletedAt: null, assigneeId: orgMember.userId, status: 'COMPLETED' } })
+                    prisma.task.count({ where: { organizationId: organizationId as string, deletedAt: null, assigneeId: orgMember.userId, status: { in: completedTaskStatuses } } })
                 ]);
 
                 return {
