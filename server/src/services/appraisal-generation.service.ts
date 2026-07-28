@@ -962,7 +962,8 @@ const drawTemplatePageFrame = (doc: PDFKit.PDFDocument, pageNumber: number, foot
   doc.save();
   doc.lineWidth(2).strokeColor('#2F73B5').moveTo(52, 30).lineTo(width - 52, 30).stroke();
 
-  // Temporarily disable the bottom margin for writing the footer text to prevent triggering autoPageBreak.
+  // Disable the bottom margin while writing the footer so PDFKit's autoPageBreak
+  // does not push the footer onto a new page (footer text sits inside the bottom margin).
   const oldBottomMargin = doc.page.margins.bottom;
   doc.page.margins.bottom = 0;
 

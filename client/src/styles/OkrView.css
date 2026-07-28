@@ -175,6 +175,16 @@
     background: #E2E8F0;
 }
 
+.btn-okr-close {
+    background: #ECFDF5;
+    color: #047857;
+    border-color: #A7F3D0;
+}
+
+.btn-okr-close:hover {
+    background: #D1FAE5;
+}
+
 .btn-okr-delete {
     background: #FEF2F2;
     color: #DC2626;

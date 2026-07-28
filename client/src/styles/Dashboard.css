@@ -847,10 +847,17 @@
 
 .team-invite-form {
     display: grid;
-    grid-template-columns: 1fr 180px 140px;
+    grid-template-columns: minmax(0, 1fr) auto;
     gap: 10px;
-    align-items: center;
+    align-items: start;
     margin-bottom: 12px;
+}
+
+.team-invite-fields {
+    display: grid;
+    grid-template-columns: minmax(160px, 1fr) minmax(190px, 1.1fr) minmax(140px, 0.7fr) minmax(230px, 1.2fr) minmax(150px, 0.8fr);
+    gap: 12px;
+    min-width: 0;
 }
 
 .team-invite-form input,
@@ -865,6 +872,41 @@
 .team-invite-form .btn-primary {
     margin: 0;
     width: 100%;
+}
+
+.team-invite-fields .team-multi-select {
+    min-width: 0;
+    width: 100%;
+}
+
+.team-invite-fields .team-multi-select-values {
+    flex-wrap: nowrap;
+    overflow: hidden;
+}
+
+.team-invite-fields .team-multi-select-placeholder {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.team-invite-fields .team-multi-select-menu {
+    min-width: 260px;
+}
+
+.team-invite-fields .team-multi-select-option input {
+    flex: 0 0 16px;
+    width: 16px !important;
+    min-width: 16px;
+    height: 16px;
+    padding: 0;
+}
+
+.team-invite-fields .team-multi-select-option span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .team-invites-list {
@@ -1838,6 +1880,10 @@
     }
 
     .team-invite-form {
+        grid-template-columns: 1fr;
+    }
+
+    .team-invite-fields {
         grid-template-columns: 1fr;
     }
 
@@ -2960,4 +3006,3 @@
     visibility: visible;
     z-index: 1999;
 }
-

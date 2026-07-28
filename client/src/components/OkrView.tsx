@@ -58,6 +58,7 @@ interface OkrViewProps {
   onEditOkr?: (okr: Okr) => void;
   onDuplicateOkr?: (okr: Okr) => void;
   onDeleteOkr?: (okrId: string) => void;
+  onCloseOkr?: (okr: Okr) => void;
   onReviewKeyResult?: (
     okrId: string,
     keyResultId: string,
@@ -73,6 +74,7 @@ const OkrView: React.FC<OkrViewProps> = ({
   onEditOkr,
   onDuplicateOkr,
   onDeleteOkr,
+  onCloseOkr,
 }) => {
   const currentYear = new Date().getFullYear();
   const getKeyResultOwners = (kr: NonNullable<Okr["keyResults"]>[number]) => {
@@ -297,6 +299,14 @@ const OkrView: React.FC<OkrViewProps> = ({
 
                {userRole === "ADMIN" && (
                 <div className="okr-card-footer">
+                  {okr.status !== "COMPLETED" && (
+                    <button
+                      className="btn-okr-action btn-okr-close"
+                      onClick={() => onCloseOkr?.(okr)}
+                    >
+                      Close
+                    </button>
+                  )}
                   <button
                     className="btn-okr-action btn-okr-edit"
                     onClick={() => onEditOkr?.(okr)}

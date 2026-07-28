@@ -2313,6 +2313,25 @@ const DashboardPage = () => {
     }
   };
 
+  const handleCloseOkr = async (okr: Okr) => {
+    if (
+      !window.confirm(
+        `Close the OKR "${okr.title}"? This will mark it as completed.`,
+      )
+    ) {
+      return;
+    }
+
+    try {
+      await api.patch(`/orgs/${orgId}/okrs/${okr.id}`, {
+        status: "COMPLETED",
+      });
+      await fetchData();
+    } catch (error: any) {
+      showError("Error", error.response?.data?.error || "Failed to close OKR");
+    }
+  };
+
   const handleCreateAppraisal = async (e: React.FormEvent) => {
     e.preventDefault();
     if (generatingAppraisal) return;
@@ -4265,6 +4284,7 @@ const DashboardPage = () => {
             onEditOkr={handleOpenEditOkr as any}
             onDuplicateOkr={handleDuplicateOkr as any}
             onDeleteOkr={handleDeleteOkr}
+            onCloseOkr={handleCloseOkr as any}
           />
         )}
 
