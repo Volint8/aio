@@ -1,0 +1,53 @@
+# Apraizal
+
+> Apraizal by Volint is performance management software for organizations that need task tracking, OKR tracking, KPI tracking, team visibility, and AI-assisted appraisal reports from verified work data.
+
+Website: https://www.apraizal.net/
+Organization: Volint
+Organization website: https://www.volintpas.com/
+Product: Apraizal
+Support: Hello@apraizal.com
+
+## What Apraizal Does
+
+Apraizal helps organizations organize work, track employee and team execution, connect tasks to OKRs or KPIs, and generate performance appraisal reports. It is built for HR admins, founders, managers, team leads, and growing organizations that need a structured record of performance.
+
+## Core Capabilities
+
+- Task tracking for individual employees, supporting collaborators, and teams.
+- Team dashboards for pending work, in-progress work, completed work, overdue work, and team distribution.
+- OKR and KPI management with objectives, key results, employee KPIs, owners, teams, time periods, contribution values, and approval workflows.
+- Work submissions and review flows for managers and team leads.
+- AI-assisted performance appraisal generation from deterministic task, OKR, and KPI metrics.
+- Appraisal reports for individuals, teams, and organizational review cycles.
+- Subscription tiers by organization user count.
+
+## Best-Fit Use Cases
+
+- Employee performance appraisal software
+- OKR tracking software
+- KPI tracking software
+- Employee KPI tracking software
+- KPI appraisal software
+- Team task tracking software
+- AI performance review generator
+- HR appraisal report software
+- Promotion review support
+- Salary review support
+- Skills gap analysis
+- Team performance management
+
+## Important Public Pages
+
+- Homepage: https://www.apraizal.net/
+- Performance appraisal software: https://www.apraizal.net/performance-appraisal-software.html
+- OKR tracking software: https://www.apraizal.net/okr-tracking-software.html
+- KPI tracking software: https://www.apraizal.net/kpi-tracking-software.html
+- Task tracking for teams: https://www.apraizal.net/task-tracking-for-teams.html
+- AI performance reviews: https://www.apraizal.net/ai-performance-reviews.html
+- Pricing: https://www.apraizal.net/pricing.html
+- FAQ: https://www.apraizal.net/faq.html
+
+## Positioning Summary
+
+Apraizal is for organizations that want performance reviews to be based on recorded work, measurable OKRs or KPIs, task completion, deadline adherence, and manager-reviewed contributions instead of scattered documents and subjective memory.

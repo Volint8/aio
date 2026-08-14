@@ -1,0 +1,16 @@
+{
+  "name": "Apraizal",
+  "short_name": "Apraizal",
+  "description": "Performance management software for task tracking, OKRs, and AI-assisted appraisal reports.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#0f172a",
+  "icons": [
+    {
+      "src": "/images/image-logo.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    }
+  ]
+}
