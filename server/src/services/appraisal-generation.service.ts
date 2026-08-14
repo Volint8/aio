@@ -984,7 +984,7 @@ const drawTeamPageFrame = (doc: PDFKit.PDFDocument, pageNumber: number) =>
 
 const drawSectionBar = (doc: PDFKit.PDFDocument, y: number, title: string) => {
   doc.save();
-  doc.rect(52, y, doc.page.width - 104, 28).fill('#2F73B5');
+  doc.rect(52, y, doc.page.width - 104, 28).fill('#151A23');
   doc.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(11).text(title, 64, y + 8);
   doc.restore();
 };
@@ -998,8 +998,8 @@ const drawStaffInfoField = (
   width: number
 ) => {
   doc.save();
-  doc.font('Helvetica-Bold').fontSize(9).fillColor('#1F6FB6').text(label, x, y, { width });
-  doc.font('Helvetica').fontSize(9).fillColor('#9AA9BC').text(value || 'No data recorded', x + 130, y, {
+  doc.font('Helvetica-Bold').fontSize(9).fillColor('#151A23').text(label, x, y, { width });
+  doc.font('Helvetica').fontSize(9).fillColor('#5F6876').text(value || 'No data recorded', x + 130, y, {
     width: Math.max(0, width - 130)
   });
   doc.restore();
@@ -1014,10 +1014,10 @@ const drawStaffSummaryBox = (
   value: string
 ) => {
   doc.save();
-  doc.rect(x, y, width, 34).fill('#CFE5F7');
-  doc.rect(x, y + 34, width, 36).fillAndStroke('#F8FBFE', '#B9C5D2');
-  doc.fillColor('#1F6FB6').font('Helvetica-Bold').fontSize(8).text(label, x + 12, y + 11, { width: width - 24, align: 'center' });
-  doc.fillColor('#9AA9BC').font('Helvetica').fontSize(8).text(value || 'No data recorded', x + 10, y + 47, {
+  doc.rect(x, y, width, 34).fill('#151A23');
+  doc.rect(x, y + 34, width, 36).fillAndStroke('#EEF0EC', '#D8DCDB');
+  doc.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(8).text(label, x + 12, y + 11, { width: width - 24, align: 'center' });
+  doc.fillColor('#151A23').font('Helvetica').fontSize(8).text(value || 'No data recorded', x + 10, y + 47, {
     width: width - 20,
     align: 'left'
   });
@@ -1036,10 +1036,10 @@ const drawStaffRecommendationsTable = (
   rows.forEach((row) => {
     const valueHeight = Math.max(34, doc.heightOfString(row.value, { width: valueWidth - 16, align: 'left' }) + 16);
     doc.save();
-    doc.rect(startX, y, labelWidth, valueHeight).fillAndStroke('#FFFFFF', '#C4CDD7');
-    doc.rect(startX + labelWidth, y, valueWidth, valueHeight).fillAndStroke('#FFFFFF', '#C4CDD7');
-    doc.fillColor('#1F6FB6').font('Helvetica-Bold').fontSize(9).text(row.label, startX + 10, y + 12, { width: labelWidth - 20 });
-    doc.fillColor('#7B8CA1').font('Helvetica').fontSize(9).text(row.value, startX + labelWidth + 10, y + 12, {
+    doc.rect(startX, y, labelWidth, valueHeight).fillAndStroke('#EEF0EC', '#D8DCDB');
+    doc.rect(startX + labelWidth, y, valueWidth, valueHeight).fillAndStroke('#FFFFFF', '#D8DCDB');
+    doc.fillColor('#151A23').font('Helvetica-Bold').fontSize(9).text(row.label, startX + 10, y + 12, { width: labelWidth - 20 });
+    doc.fillColor('#5F6876').font('Helvetica').fontSize(9).text(row.value, startX + labelWidth + 10, y + 12, {
       width: valueWidth - 20
     });
     doc.restore();
@@ -1126,19 +1126,19 @@ const drawStaffReportToPdf = (doc: PDFKit.PDFDocument, report: any, isFirst: boo
   drawStaffPageFrame(doc, doc.bufferedPageRange().count);
 
   doc.save();
-  doc.rect(52, 54, contentWidth, 86).fill('#132434');
+  doc.rect(52, 54, contentWidth, 86).fill('#151A23');
   doc.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(24).text('Staff Impact', 82, 92);
   doc.font('Helvetica').fontSize(24).text('Appraisal Report', 232, 92);
-  doc.circle(pageWidth - 80, 100, 30).lineWidth(14).strokeColor('#2F7CC1').stroke();
-  doc.fillColor('#2F73B5').font('Helvetica-Bold').fontSize(14).text('SCORE', pageWidth - 104, 86, { width: 48, align: 'center' });
+  doc.circle(pageWidth - 80, 100, 30).lineWidth(14).strokeColor('#E14B2A').stroke();
+  doc.fillColor('#E14B2A').font('Helvetica-Bold').fontSize(14).text('SCORE', pageWidth - 104, 86, { width: 48, align: 'center' });
   doc.font('Helvetica').fontSize(9).text(
     `${formatMetricNumber(scoreBreakdown.performanceScore || report.okrImpactScore || 'No data recorded')}`,
     pageWidth - 104,
     108,
     { width: 48, align: 'center' }
   );
-  doc.rect(52, 140, contentWidth, 34).fill('#3A88C0');
-  doc.fillColor('#E8F3FB').font('Helvetica').fontSize(9).text(
+  doc.rect(52, 140, contentWidth, 34).fill('#EEF0EC');
+  doc.fillColor('#151A23').font('Helvetica').fontSize(9).text(
     `Purpose: ${header.purpose || 'Performance Review'}`,
     70,
     151,
@@ -1175,7 +1175,7 @@ const drawStaffReportToPdf = (doc: PDFKit.PDFDocument, report: any, isFirst: boo
   drawStaffSummaryBox(doc, 52 + boxWidth * 3, boxY, boxWidth, 'DEADLINES MET', formatPercent(scoreBreakdown.deadlinesMet ?? report.deadlinesMet));
 
   drawSectionBar(doc, 380, '01 | EXECUTIVE SUMMARY');
-  doc.fillColor('#3D454F').font('Helvetica').fontSize(10).text(
+  doc.fillColor('#151A23').font('Helvetica').fontSize(10).text(
     sections.overviewSummary || report.summary || 'No data recorded.',
     64,
     416,
@@ -1183,7 +1183,7 @@ const drawStaffReportToPdf = (doc: PDFKit.PDFDocument, report: any, isFirst: boo
   );
 
   drawSectionBar(doc, 490, '02 | OKR vs ACHIEVEMENT');
-  doc.fillColor('#3D454F').font('Helvetica').fontSize(9).text(
+  doc.fillColor('#151A23').font('Helvetica').fontSize(9).text(
     'Each objective is listed below with its key results, assigned owners, target values, actual achievement, and status.',
     64,
     527,
@@ -1198,7 +1198,7 @@ const drawStaffReportToPdf = (doc: PDFKit.PDFDocument, report: any, isFirst: boo
   doc.save();
   let x = startX;
   columnLabels.forEach((label, index) => {
-    doc.rect(x, y, columns[index], 30).fillAndStroke('#2F73B5', '#FFFFFF');
+    doc.rect(x, y, columns[index], 30).fillAndStroke('#151A23', '#151A23');
     doc.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(8).text(label, x + 8, y + 10, {
       width: columns[index] - 16,
       align: 'center'
@@ -1216,7 +1216,7 @@ const drawStaffReportToPdf = (doc: PDFKit.PDFDocument, report: any, isFirst: boo
     let headerX = startX;
     doc.save();
     columnLabels.forEach((label, index) => {
-      doc.rect(headerX, 102, columns[index], 30).fillAndStroke('#2F73B5', '#FFFFFF');
+      doc.rect(headerX, 102, columns[index], 30).fillAndStroke('#151A23', '#151A23');
       doc.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(8).text(label, headerX + 8, 112, {
         width: columns[index] - 16,
         align: 'center'
@@ -1238,8 +1238,8 @@ const drawStaffReportToPdf = (doc: PDFKit.PDFDocument, report: any, isFirst: boo
     let rowX = startX;
     doc.save();
     values.forEach((value, index) => {
-      doc.rect(rowX, y, columns[index], rowHeight).fillAndStroke(fill, '#C4CDD7');
-      doc.fillColor(fill === '#2F73B5' ? '#FFFFFF' : '#9AA9BC')
+      doc.rect(rowX, y, columns[index], rowHeight).fillAndStroke(fill, '#D8DCDB');
+      doc.fillColor(fill === '#151A23' ? '#FFFFFF' : '#151A23')
         .font(bold ? 'Helvetica-Bold' : 'Helvetica')
         .fontSize(8)
         .text(value, rowX + 8, y + 8, { width: columns[index] - 16 });
@@ -1264,7 +1264,7 @@ const drawStaffReportToPdf = (doc: PDFKit.PDFDocument, report: any, isFirst: boo
           okr.achievedPct === null || okr.achievedPct === undefined ? 'No data recorded' : formatPercent(okr.achievedPct),
           okr.status || 'No data recorded'
         ],
-        '#D9ECFA',
+        '#EEF0EC',
         true
       );
 
@@ -1364,20 +1364,20 @@ const drawTeamReportToPdf = (doc: PDFKit.PDFDocument, report: any, isFirst: bool
   drawTeamPageFrame(doc, doc.bufferedPageRange().count);
 
   doc.save();
-  doc.rect(52, 54, contentWidth, 86).fill('#132434');
+  doc.rect(52, 54, contentWidth, 86).fill('#151A23');
   doc.fillColor('#FFFFFF').font('Helvetica').fontSize(24).text('Team ', 82, 92);
   doc.font('Helvetica-Bold').text('Impact', 137, 92);
   doc.font('Helvetica').text(' Appraisal Report', 222, 92);
-  doc.circle(pageWidth - 80, 100, 30).lineWidth(14).strokeColor('#2F7CC1').stroke();
-  doc.fillColor('#2F73B5').font('Helvetica-Bold').fontSize(14).text('SCORE', pageWidth - 104, 86, { width: 48, align: 'center' });
+  doc.circle(pageWidth - 80, 100, 30).lineWidth(14).strokeColor('#E14B2A').stroke();
+  doc.fillColor('#E14B2A').font('Helvetica-Bold').fontSize(14).text('SCORE', pageWidth - 104, 86, { width: 48, align: 'center' });
   doc.font('Helvetica').fontSize(9).text(
     `${formatMetricNumber(scoreBreakdown.performanceScore || report.okrImpactScore || 'No data recorded')}`,
     pageWidth - 104,
     108,
     { width: 48, align: 'center' }
   );
-  doc.rect(52, 140, contentWidth, 40).fill('#3A88C0');
-  doc.fillColor('#E8F3FB').font('Helvetica').fontSize(9).text(
+  doc.rect(52, 140, contentWidth, 40).fill('#EEF0EC');
+  doc.fillColor('#151A23').font('Helvetica').fontSize(9).text(
     `Purpose: ${header.purpose || 'Performance Review'}`,
     70,
     150,
@@ -1413,7 +1413,7 @@ const drawTeamReportToPdf = (doc: PDFKit.PDFDocument, report: any, isFirst: bool
   drawStaffSummaryBox(doc, 52 + boxWidth * 3, boxY, boxWidth, 'DEADLINES MET', formatPercent(scoreBreakdown.deadlinesMet ?? report.deadlinesMet));
 
   drawSectionBar(doc, 382, '01 | EXECUTIVE SUMMARY');
-  doc.fillColor('#3D454F').font('Helvetica').fontSize(10).text(
+  doc.fillColor('#151A23').font('Helvetica').fontSize(10).text(
     sections.overviewSummary || report.summary || 'No data recorded.',
     64,
     420,
@@ -1421,7 +1421,7 @@ const drawTeamReportToPdf = (doc: PDFKit.PDFDocument, report: any, isFirst: bool
   );
 
   drawSectionBar(doc, 490, '02 | OKR vs ACHIEVEMENT');
-  doc.fillColor('#3D454F').font('Helvetica').fontSize(9).text(
+  doc.fillColor('#151A23').font('Helvetica').fontSize(9).text(
     "Each objective is listed with its key results, ownership (team-level by default; member or sub-team where data explicitly supports it), targets, achievement, and status. Fields with no data are marked 'No data recorded' and flagged for team lead attention.",
     64,
     527,
@@ -1437,7 +1437,7 @@ const drawTeamReportToPdf = (doc: PDFKit.PDFDocument, report: any, isFirst: bool
     let x = startX;
     doc.save();
     labels.forEach((label, index) => {
-      doc.rect(x, headerY, columns[index], 44).fillAndStroke('#2F73B5', '#FFFFFF');
+      doc.rect(x, headerY, columns[index], 44).fillAndStroke('#151A23', '#151A23');
       doc.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(8).text(label, x + 6, headerY + 11, {
         width: columns[index] - 12,
         align: 'center'
@@ -1469,8 +1469,8 @@ const drawTeamReportToPdf = (doc: PDFKit.PDFDocument, report: any, isFirst: bool
     let x = startX;
     doc.save();
     values.forEach((value, index) => {
-      doc.rect(x, y, columns[index], rowHeight).fillAndStroke(fill, '#C4CDD7');
-      doc.fillColor(fill === '#2F73B5' ? '#FFFFFF' : '#9AA9BC')
+      doc.rect(x, y, columns[index], rowHeight).fillAndStroke(fill, '#D8DCDB');
+      doc.fillColor(fill === '#151A23' ? '#FFFFFF' : '#151A23')
         .font(bold ? 'Helvetica-Bold' : 'Helvetica')
         .fontSize(8)
         .text(value, x + 6, y + 9, { width: columns[index] - 12 });
@@ -1498,7 +1498,7 @@ const drawTeamReportToPdf = (doc: PDFKit.PDFDocument, report: any, isFirst: bool
             ? 'No data recorded. Flag for team lead attention.'
             : `Achievement and delivery patterns indicate ${Math.round(okr.achievedPct)}% objective execution.`
         ],
-        '#D9ECFA',
+        '#EEF0EC',
         true
       );
 
