@@ -20,6 +20,84 @@ const isDueDateOverdue = (dueDateValue: string | null | undefined) => {
 const isTaskCompleted = (status: string | null | undefined) =>
   status === "COMPLETED" || status === "DONE";
 
+type SelectOption = {
+  value: string;
+  label: string;
+};
+
+interface TrackerSelectProps {
+  label: string;
+  value: string;
+  options: SelectOption[];
+  onChange: (value: string) => void;
+}
+
+const TrackerSelect: React.FC<TrackerSelectProps> = ({
+  label,
+  value,
+  options,
+  onChange,
+}) => {
+  const [isOpen, setIsOpen] = React.useState(false);
+  const selectRef = React.useRef<HTMLDivElement | null>(null);
+  const selectedOption = options.find((option) => option.value === value);
+
+  React.useEffect(() => {
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!selectRef.current?.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, []);
+
+  return (
+    <div className="tracker-select" ref={selectRef}>
+      <button
+        type="button"
+        className={`tracker-select-trigger ${isOpen ? "open" : ""}`}
+        onClick={() => setIsOpen((current) => !current)}
+        aria-haspopup="listbox"
+        aria-expanded={isOpen}
+      >
+        <span className="tracker-select-label">{label}</span>
+        <span className="tracker-select-value">
+          {selectedOption?.label || "Select"}
+        </span>
+        <span className="tracker-select-caret" aria-hidden="true">
+          v
+        </span>
+      </button>
+      {isOpen && (
+        <div className="tracker-select-menu" role="listbox">
+          {options.map((option) => (
+            <button
+              type="button"
+              key={option.value}
+              className={`tracker-select-option ${option.value === value ? "selected" : ""}`}
+              onClick={() => {
+                onChange(option.value);
+                setIsOpen(false);
+              }}
+              role="option"
+              aria-selected={option.value === value}
+            >
+              <span>{option.label}</span>
+              {option.value === value && (
+                <span className="tracker-select-check" aria-hidden="true">
+                  ✓
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 interface Task {
   id: string;
   title: string;
@@ -168,9 +246,19 @@ const TaskTrackerView: React.FC<TaskTrackerViewProps> = ({
     return filter === key;
   };
 
+  const [searchTerm, setSearchTerm] = React.useState("");
+
   // Use useMemo to optimize filtering performance
   const filteredTasks = React.useMemo(() => {
     return tasks.filter((task) => {
+      // Search term filter
+      if (searchTerm.trim() !== "") {
+        const query = searchTerm.toLowerCase();
+        const titleMatch = task.title.toLowerCase().includes(query);
+        const ownerMatch = (task.assignee?.name || task.assignee?.email || "").toLowerCase().includes(query);
+        if (!titleMatch && !ownerMatch) return false;
+      }
+
       // Completed/Done tasks should only show up under the "completed" filter
       if (filter === "completed") {
         if (task.status !== "COMPLETED" && task.status !== "DONE") return false;
@@ -210,7 +298,7 @@ const TaskTrackerView: React.FC<TaskTrackerViewProps> = ({
 
       return true;
     });
-  }, [tasks, filter, priorityFilter, assigneeFilter, userId]);
+  }, [tasks, filter, priorityFilter, assigneeFilter, userId, searchTerm]);
 
   const getInitials = (name: string) => {
     return name
@@ -247,26 +335,64 @@ const TaskTrackerView: React.FC<TaskTrackerViewProps> = ({
 
   const closeMenu = () => setOpenMenuTaskId(null);
 
+  // Compute instrument summary stats
+  const totalCount = tasks.length;
+  const completedCount = tasks.filter((t) => isTaskCompleted(t.status)).length;
+  const inProgressCount = tasks.filter((t) => t.status === "IN_PROGRESS" || t.status === "IN_REVIEW").length;
+  const overdueCount = tasks.filter((t) => !isTaskCompleted(t.status) && isDueDateOverdue(t.dueDate)).length;
+  const summaryStats = [
+    { label: "Total Tasks", value: totalCount, tone: "ink" },
+    { label: "In Progress", value: inProgressCount, tone: "vermilion" },
+    { label: "Verified Completed", value: completedCount, tone: "ledger" },
+    {
+      label: "Overdue Items",
+      value: overdueCount,
+      tone: overdueCount > 0 ? "danger" : "muted",
+    },
+  ];
+  const priorityOptions = [
+    { value: "all", label: "All Priorities" },
+    { value: "LOW", label: "Low Priority" },
+    { value: "MEDIUM", label: "Medium Priority" },
+    { value: "HIGH", label: "High Priority" },
+  ];
+  const assigneeOptions = [
+    { value: "all", label: "All Owners" },
+    ...assignableUsers.map((u) => ({
+      value: u.userId,
+      label: u.name || u.email,
+    })),
+  ];
+
   return (
     <div className="tracker-view">
+      <div className="tracker-stats-summary">
+        {summaryStats.map((stat) => (
+          <div className="tracker-stat-card" key={stat.label}>
+            <div className="tracker-stat-label">{stat.label}</div>
+            <div className={`tracker-stat-value ${stat.tone}`}>{stat.value}</div>
+          </div>
+        ))}
+      </div>
+
       <div className="tracker-view-header">
         <h1>Task Tracker</h1>
         <div className="tracker-view-actions">
           <DebouncedButton
-            className="btn-outline-blue"
+            className="btn-secondary"
             onClick={onSendAlert}
             debounceMs={800}
           >
             Send Alert
           </DebouncedButton>
           <DebouncedButton
-            className="btn-primary-green"
+            className="btn-vermilion"
             onClick={onCreateTask}
             debounceMs={800}
           >
             <svg
-              width="18"
-              height="18"
+              width="16"
+              height="16"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
@@ -294,73 +420,42 @@ const TaskTrackerView: React.FC<TaskTrackerViewProps> = ({
         ))}
       </div>
 
-      <div
-        className="tracker-filters"
-        style={{
-          display: "flex",
-          gap: "12px",
-          marginBottom: "16px",
-          flexWrap: "wrap",
-        }}
-      >
-        <select
+      <div className="tracker-filters">
+        <div className="tracker-search">
+          <input
+            type="text"
+            placeholder="Search task title or owner..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+        </div>
+
+        <TrackerSelect
+          label="Priority"
           value={priorityFilter}
-          onChange={(e) => setPriorityFilter(e.target.value)}
-          className="tracker-filter-select"
-          style={{
-            padding: "8px 12px",
-            borderRadius: "8px",
-            border: "1px solid var(--border-color)",
-            background: "#fff",
-            fontSize: "0.9em",
-            minWidth: "140px",
-          }}
-        >
-          <option value="all">All Priorities</option>
-          <option value="LOW">Low</option>
-          <option value="MEDIUM">Medium</option>
-          <option value="HIGH">High</option>
-        </select>
+          options={priorityOptions}
+          onChange={setPriorityFilter}
+        />
 
         {!hideOwnerFilter && (
-          <select
+          <TrackerSelect
+            label="Owner"
             value={assigneeFilter}
-            onChange={(e) => setAssigneeFilter(e.target.value)}
-            className="tracker-filter-select"
-            style={{
-              padding: "8px 12px",
-              borderRadius: "8px",
-              border: "1px solid var(--border-color)",
-              background: "#fff",
-              fontSize: "0.9em",
-              minWidth: "160px",
-            }}
-          >
-            <option value="all">All Owners</option>
-            {assignableUsers.map((u) => (
-              <option key={u.userId} value={u.userId}>
-                {u.name || u.email}
-              </option>
-            ))}
-          </select>
+            options={assigneeOptions}
+            onChange={setAssigneeFilter}
+          />
         )}
 
         {(priorityFilter !== "all" ||
-          (!hideOwnerFilter && assigneeFilter !== "all")) && (
+          (!hideOwnerFilter && assigneeFilter !== "all") ||
+          searchTerm.trim() !== "") && (
           <button
             onClick={() => {
               setPriorityFilter("all");
               setAssigneeFilter("all");
+              setSearchTerm("");
             }}
             className="btn-secondary"
-            style={{
-              padding: "8px 16px",
-              borderRadius: "8px",
-              border: "1px solid var(--border-color)",
-              background: "#fff",
-              fontSize: "0.9em",
-              cursor: "pointer",
-            }}
           >
             Clear Filters
           </button>
@@ -479,11 +574,17 @@ const TaskTrackerView: React.FC<TaskTrackerViewProps> = ({
                     </div>
                   </td>
                   <td>
-                    <span
-                      className={`status-pill ${task.status === "CREATED" ? "not-started" : task.status === "IN_PROGRESS" ? "in_progress" : task.status === "IN_REVIEW" ? "in_review" : task.status === "ON_HOLD" ? "on_hold" : isTaskCompleted(task.status) ? "completed" : task.status.toLowerCase()}`}
-                    >
-                      {getStatusLabel(task.status, task.dueDate)}
-                    </span>
+                    {isTaskCompleted(task.status) ? (
+                      <span className="stamp-badge stamp-badge-sm stamp-badge-ledger">
+                        ✓ VERIFIED
+                      </span>
+                    ) : (
+                      <span
+                        className={`status-pill ${task.status === "CREATED" ? "not-started" : task.status === "IN_PROGRESS" ? "in_progress" : task.status === "IN_REVIEW" ? "in_review" : task.status === "ON_HOLD" ? "on_hold" : task.status.toLowerCase()}`}
+                      >
+                        {getStatusLabel(task.status, task.dueDate)}
+                      </span>
+                    )}
                   </td>
                   <td>
                     <div className="priority-indicator">
@@ -501,7 +602,7 @@ const TaskTrackerView: React.FC<TaskTrackerViewProps> = ({
                         })
                       : "-"}
                   </td>
-                  <td>
+                  <td className="task-actions-cell">
                     <div
                       className="task-actions"
                       onClick={(e) => {
@@ -510,29 +611,16 @@ const TaskTrackerView: React.FC<TaskTrackerViewProps> = ({
                           openMenuTaskId === task.id ? null : task.id,
                         );
                       }}
-                      style={{ position: "relative" }}
                     >
                       <button
                         aria-label="Actions"
                         className="btn-icon"
-                        style={{ padding: 6, borderRadius: 6 }}
                       >
                         ⋯
                       </button>
                       {openMenuTaskId === task.id && (
                         <div
                           className="task-actions-menu"
-                          style={{
-                            position: "absolute",
-                            right: 0,
-                            top: 28,
-                            background: "#fff",
-                            border: "1px solid var(--border-color)",
-                            borderRadius: 6,
-                            boxShadow: "0 6px 18px rgba(0,0,0,0.08)",
-                            zIndex: 40,
-                            minWidth: 160,
-                          }}
                           onMouseLeave={closeMenu}
                         >
                           <button
@@ -569,12 +657,7 @@ const TaskTrackerView: React.FC<TaskTrackerViewProps> = ({
                                 Delete
                               </button>
                             )}
-                          <div
-                            style={{
-                              borderTop: "1px solid var(--border-color)",
-                              marginTop: 6,
-                            }}
-                          />
+                          <div className="task-actions-divider" />
                           <button
                             className="task-action-item"
                             onClick={(e) => {
@@ -614,12 +697,7 @@ const TaskTrackerView: React.FC<TaskTrackerViewProps> = ({
                             (userRole === "ADMIN" ||
                               userRole === "TEAM_LEAD") && (
                               <>
-                                <div
-                                  style={{
-                                    borderTop: "1px solid var(--border-color)",
-                                    marginTop: 6,
-                                  }}
-                                />
+                                <div className="task-actions-divider" />
                                 <button
                                   className="task-action-item"
                                   onClick={(e) => {

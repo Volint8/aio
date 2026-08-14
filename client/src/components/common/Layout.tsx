@@ -304,14 +304,26 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       <aside className={`sidebar ${sidebarOpen ? "open" : ""}`}>
         <div
           className="sidebar-header"
-          style={{ borderBottom: "none", padding: "40px 24px 20px" }}
+          style={{ padding: "24px 20px 16px", borderBottom: "1px solid rgba(216, 219, 211, 0.12)" }}
         >
-          <div className="sidebar-logo">
-            <img
-              src="/images/image.png"
-              alt="Apraizal Logo"
-              style={{ height: "36px" }}
-            />
+          <div className="sidebar-logo" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+              <img
+                src="/images/image-logo.png"
+                alt="Apraizal Logo"
+                style={{ height: "28px", width: "28px", objectFit: "contain" }}
+                onError={(e) => {
+                  // Fallback if image not found
+                  (e.target as HTMLElement).style.display = 'none';
+                }}
+              />
+              <span style={{ fontFamily: "var(--font-heading)", fontSize: "1.3em", fontWeight: 800, letterSpacing: "-0.02em", color: "#FFFFFF" }}>
+                Apraizal<span style={{ color: "var(--color-vermilion)" }}>.</span>
+              </span>
+            </div>
+            <span className="stamp-badge-sm" style={{ borderColor: "var(--color-vermilion)", color: "var(--color-vermilion)", transform: "rotate(-4deg)" }}>
+              REC
+            </span>
           </div>
         </div>
 
@@ -451,27 +463,15 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
               <button
                 className="notification-bell"
                 onClick={() => setShowNotifications(!showNotifications)}
-                style={{
-                  background: "#f1f5f9",
-                  border: "none",
-                  borderRadius: "50%",
-                  width: "40px",
-                  height: "40px",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  cursor: "pointer",
-                  position: "relative",
-                  color: "#64748b",
-                }}
+                title="Notifications"
               >
                 <svg
-                  width="22"
-                  height="22"
+                  width="20"
+                  height="20"
                   viewBox="0 0 24 24"
                   fill="none"
                   stroke="currentColor"
-                  strokeWidth="2"
+                  strokeWidth="2.2"
                   strokeLinecap="round"
                   strokeLinejoin="round"
                 >
@@ -479,20 +479,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                   <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
                 </svg>
                 {notificationCount > 0 && (
-                  <span
-                    className="unread-badge"
-                    style={{
-                      position: "absolute",
-                      top: "-2px",
-                      right: "-2px",
-                      background: "#ef4444",
-                      color: "white",
-                      fontSize: "10px",
-                      padding: "2px 5px",
-                      borderRadius: "10px",
-                      fontWeight: 700,
-                    }}
-                  >
+                  <span className="unread-badge">
                     {notificationCount}
                   </span>
                 )}
@@ -500,59 +487,19 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
               {/* Notifications Dropdown */}
               {showNotifications && (
-                <div
-                  className="notifications-menu"
-                  style={{
-                    position: "absolute",
-                    top: "50px",
-                    right: "0",
-                    width: "380px",
-                    maxHeight: "500px",
-                    background: "white",
-                    borderRadius: "12px",
-                    boxShadow: "0 10px 40px rgba(0,0,0,0.15)",
-                    border: "1px solid #e2e8f0",
-                    overflow: "hidden",
-                    zIndex: 1000,
-                  }}
-                >
-                  <div
-                    style={{
-                      padding: "16px 20px",
-                      borderBottom: "1px solid #e2e8f0",
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      gap: 12,
-                    }}
-                  >
+                <div className="notifications-menu">
+                  <div className="notifications-header">
                     <div>
-                      <h3
-                        style={{ margin: 0, fontSize: "1em", fontWeight: 600 }}
-                      >
+                      <h3 style={{ margin: 0, fontFamily: "var(--font-heading)", fontSize: "1.05em", fontWeight: 700, color: "var(--color-ink)" }}>
                         Notifications
                       </h3>
                       {notifications.length > 0 && (
-                        <span
-                          style={{
-                            display: "block",
-                            marginTop: 4,
-                            fontSize: "0.75em",
-                            color: "#64748b",
-                          }}
-                        >
-                          {notificationCount} unread · {notifications.length}{" "}
-                          total
+                        <span style={{ display: "block", marginTop: "3px", fontFamily: "var(--font-mono)", fontSize: "0.75em", color: "var(--color-slate)" }}>
+                          {notificationCount} unread · {notifications.length} total
                         </span>
                       )}
                     </div>
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 8,
-                      }}
-                    >
+                    <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
                       {notifications.length > 0 && (
                         <>
                           <button
@@ -562,6 +509,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                               notificationActionBusy ||
                               unreadNotifications.length === 0
                             }
+                            className="btn-text-action"
                             style={{
                               background: "transparent",
                               border: "none",
@@ -570,12 +518,13 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                                 unreadNotifications.length === 0
                                   ? "not-allowed"
                                   : "pointer",
+                              fontFamily: "var(--font-mono)",
                               fontSize: "0.75em",
                               fontWeight: 700,
                               color:
                                 unreadNotifications.length === 0
-                                  ? "#94a3b8"
-                                  : "#2563eb",
+                                  ? "var(--color-slate)"
+                                  : "var(--color-ink)",
                             }}
                           >
                             Mark all read
@@ -587,6 +536,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                               notificationActionBusy ||
                               readNotifications.length === 0
                             }
+                            className="btn-text-action"
                             style={{
                               background: "transparent",
                               border: "none",
@@ -595,12 +545,13 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                                 readNotifications.length === 0
                                   ? "not-allowed"
                                   : "pointer",
+                              fontFamily: "var(--font-mono)",
                               fontSize: "0.75em",
                               fontWeight: 700,
                               color:
                                 readNotifications.length === 0
-                                  ? "#94a3b8"
-                                  : "#dc2626",
+                                  ? "var(--color-slate)"
+                                  : "var(--color-vermilion)",
                             }}
                           >
                             Clear read
@@ -615,76 +566,49 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                           border: "none",
                           cursor: "pointer",
                           fontSize: "1.2em",
-                          color: "#64748b",
+                          color: "var(--color-ink)",
+                          padding: "2px",
+                          lineHeight: 1
                         }}
                       >
                         ✕
                       </button>
                     </div>
                   </div>
-                  <div
-                    style={{
-                      maxHeight: "400px",
-                      overflowY: "auto",
-                    }}
-                  >
+                  <div className="notifications-list">
                     {notifications.length === 0 ? (
-                      <div
-                        style={{
-                          padding: "40px 20px",
-                          textAlign: "center",
-                          color: "#94a3b8",
-                        }}
-                      >
+                      <div className="notification-empty">
                         No notifications
                       </div>
                     ) : (
                       notifications.map((notification) => (
                         <div
                           key={notification.id}
+                          className={`notification-item ${!notification.isRead ? "unread" : ""}`}
                           onClick={() =>
                             !notification.isRead &&
                             handleMarkAsRead(notification.id)
                           }
-                          style={{
-                            padding: "16px 20px",
-                            borderBottom: "1px solid #f1f5f9",
-                            cursor: notification.isRead ? "default" : "pointer",
-                            background: notification.isRead
-                              ? "white"
-                              : "#f8fafc",
-                            borderLeft: notification.isRead
-                              ? "3px solid transparent"
-                              : "3px solid #3b82f6",
-                          }}
                         >
-                          <p
-                            style={{
-                              margin: "0 0 8px 0",
-                              fontSize: "0.9em",
-                              color: "#0f172a",
-                              fontWeight: notification.isRead ? 400 : 600,
-                            }}
-                          >
+                          <p className="notification-message">
                             {notification.message}
                           </p>
-                          <div
-                            style={{
-                              display: "flex",
-                              justifyContent: "space-between",
-                              fontSize: "0.75em",
-                              color: "#64748b",
-                            }}
-                          >
-                            <span>
+                          <div className="notification-meta">
+                            <span className="notification-sender">
                               {notification.sender?.name ||
                                 notification.sender?.email ||
-                                "System"}
+                                "System Record"}
                             </span>
-                            <span>
-                              {new Date(
-                                notification.createdAt,
-                              ).toLocaleDateString()}
+                            <span className="notification-time">
+                              {(() => {
+                                const d = new Date(notification.createdAt);
+                                if (isNaN(d.getTime())) return "";
+                                const day = d.getDate();
+                                const month = d.toLocaleDateString("en-US", { month: "short" });
+                                const year = d.getFullYear();
+                                const timeStr = d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+                                return `${day} ${month} ${year} • ${timeStr}`;
+                              })()}
                             </span>
                           </div>
                         </div>

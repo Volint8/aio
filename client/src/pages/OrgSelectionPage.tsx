@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import api from "../services/api";
 import { useAuth } from "../context/useAuth";
 import ErrorDialog from "../components/ErrorDialog";
+import CustomSelect from "../components/common/CustomSelect";
 import "../styles/OrgSelection.css";
 
 interface Organization {
@@ -383,18 +384,17 @@ const OrgSelectionPage = () => {
                                   Started: {uiInitialRole}
                                 </span>
                               )}
-                            <select
+                            <CustomSelect
                               value={uiRole}
                               disabled={updatingMemberId === member.id}
-                              onChange={(e) =>
-                                handleRoleChange(member.id, e.target.value)
+                              onChange={(val) =>
+                                handleRoleChange(member.id, val)
                               }
-                            >
-                              <option value="MEMBER">MEMBER</option>
-                              {uiRole === "ADMIN" && (
-                                <option value="ADMIN">ADMIN</option>
-                              )}
-                            </select>
+                              options={[
+                                { value: "MEMBER", label: "MEMBER" },
+                                ...(uiRole === "ADMIN" ? [{ value: "ADMIN", label: "ADMIN" }] : []),
+                              ]}
+                            />
                           </div>
                         </>
                       );
@@ -417,12 +417,14 @@ const OrgSelectionPage = () => {
               </div>
               <div className="form-group">
                 <label>Role</label>
-                <select
+                <CustomSelect
                   value={inviteRole}
-                  onChange={(e) => setInviteRole(e.target.value)}
-                >
-                  <option value="MEMBER">MEMBER</option>
-                </select>
+                  onChange={(val) => setInviteRole(val)}
+                  options={[
+                    { value: "MEMBER", label: "MEMBER" },
+                    { value: "ADMIN", label: "ADMIN" },
+                  ]}
+                />
               </div>
               <div className="modal-actions">
                 <button

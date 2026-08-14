@@ -26,64 +26,106 @@ export const sendEmail = async (to: string, subject: string, html: string) => {
     }
 };
 
+const renderEmailWrapper = (title: string, contentHtml: string, clientBaseUrl: string) => {
+    return `
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>${title}</title>
+        </head>
+        <body style="margin: 0; padding: 0; background-color: #EEF0EC; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #151A23; -webkit-font-smoothing: antialiased;">
+            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color: #EEF0EC; padding: 40px 16px;">
+                <tr>
+                    <td align="center">
+                        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width: 560px; background-color: #FFFFFF; border: 1px solid #151A23; border-radius: 6px; box-shadow: 0 4px 20px rgba(21, 26, 35, 0.06); overflow: hidden;">
+                            <!-- Header -->
+                            <tr>
+                                <td style="padding: 24px 32px; border-bottom: 1px solid #EEF0EC; background-color: #FFFFFF;">
+                                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+                                        <tr>
+                                            <td align="left">
+                                                <img src="${clientBaseUrl}/images/image.png" alt="Apraizal" style="height: 34px; display: block;" />
+                                            </td>
+                                            <td align="right" style="font-family: 'Courier New', Courier, monospace; font-size: 10px; font-weight: 700; color: #E14B2A; letter-spacing: 0.08em; text-transform: uppercase; background-color: rgba(225,75,42,0.06); padding: 4px 8px; border: 1px solid rgba(225,75,42,0.25); border-radius: 3px;">
+                                                ✓ VERIFIED RECORD
+                                            </td>
+                                        </tr>
+                                    </table>
+                                </td>
+                            </tr>
+                            <!-- Body Content -->
+                            <tr>
+                                <td style="padding: 32px;">
+                                    ${contentHtml}
+                                </td>
+                            </tr>
+                            <!-- Footer -->
+                            <tr>
+                                <td style="padding: 20px 32px; background-color: #EEF0EC; border-top: 1px solid #151A23; text-align: center; font-family: 'Courier New', Courier, monospace; font-size: 11px; color: #5F6876;">
+                                    &copy; ${new Date().getFullYear()} Apraizal Performance Verification. All rights reserved.
+                                </td>
+                            </tr>
+                        </table>
+                    </td>
+                </tr>
+            </table>
+        </body>
+        </html>
+    `;
+};
+
 export const sendOtpEmail = async (to: string, otp: string) => {
     const subject = "Your Verification Code - Apraizal";
     const clientBaseUrl = (process.env.CLIENT_URL || 'http://localhost:5173').split(',')[0].replace(/\/$/, '');
-    const html = `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 10px;">
-            <div style="text-align: center; margin-bottom: 20px;">
-                <img src="${clientBaseUrl}/images/image.png" alt="Apraizal Logo" style="height: 40px;" />
-            </div>
-            <h2 style="color: #333; text-align: center;">Verify Your Email</h2>
-            <p style="color: #666; font-size: 16px;">Hello,</p>
-            <p style="color: #666; font-size: 16px;">Thank you for signing up with Apraizal. Please use the following One-Time Password (OTP) to verify your email address:</p>
-            <div style="background-color: #f4f4f4; padding: 15px; text-align: center; border-radius: 5px; margin: 20px 0;">
-                <span style="font-size: 24px; font-weight: bold; letter-spacing: 5px; color: #333;">${otp}</span>
-            </div>
-            <p style="text-align: center; margin: 24px 0;">
-                <a href="${clientBaseUrl}/confirm-otp?email=${encodeURIComponent(to)}" style="display:inline-block;padding:12px 18px;background:#2563eb;color:#fff;text-decoration:none;border-radius:6px;font-weight:bold;">
-                    Verify & Join
-                </a>
-            </p>
-            <p style="color: #666; font-size: 14px;">This code will expire in 15 minutes.</p>
-            <p style="color: #666; font-size: 14px;">If the button does not work, open: ${clientBaseUrl}/confirm-otp?email=${encodeURIComponent(to)}</p>
-            <p style="color: #666; font-size: 14px;">If you did not request this verification, please ignore this email.</p>
-            <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
-            <p style="text-align: center; color: #999; font-size: 12px;">&copy; ${new Date().getFullYear()} Apraizal. All rights reserved.</p>
+    
+    const bodyHtml = `
+        <h2 style="font-family: Georgia, serif; font-size: 22px; font-weight: 700; color: #151A23; margin: 0 0 16px 0; text-align: left;">Verify Your Email Address</h2>
+        <p style="color: #151A23; font-size: 15px; line-height: 1.5; margin: 0 0 16px 0;">Hello,</p>
+        <p style="color: #5F6876; font-size: 15px; line-height: 1.5; margin: 0 0 24px 0;">Thank you for signing up with Apraizal. Please use the verification code below to confirm your account:</p>
+        
+        <div style="background-color: #EEF0EC; border: 1px solid #151A23; border-radius: 4px; padding: 18px; text-align: center; margin: 0 0 24px 0;">
+            <span style="font-family: 'Courier New', Courier, monospace; font-size: 28px; font-weight: 700; letter-spacing: 6px; color: #151A23;">${otp}</span>
         </div>
+        
+        <div style="text-align: center; margin: 0 0 24px 0;">
+            <a href="${clientBaseUrl}/confirm-otp?email=${encodeURIComponent(to)}" style="display: inline-block; padding: 12px 24px; background-color: #151A23; color: #FFFFFF; text-decoration: none; border-radius: 4px; font-weight: 700; font-size: 14px; letter-spacing: 0.02em;">
+                Verify & Join
+            </a>
+        </div>
+        
+        <p style="color: #5F6876; font-size: 13px; margin: 0 0 8px 0;">This code will expire in 15 minutes.</p>
+        <p style="color: #5F6876; font-size: 13px; margin: 0;">If you did not request this verification, please ignore this message.</p>
     `;
 
-    return sendEmail(to, subject, html);
+    return sendEmail(to, subject, renderEmailWrapper(subject, bodyHtml, clientBaseUrl));
 };
 
 export const sendPasswordResetEmail = async (to: string, otp: string) => {
     const subject = "Password Reset Request - Apraizal";
     const clientBaseUrl = (process.env.CLIENT_URL || 'http://localhost:5173').split(',')[0].replace(/\/$/, '');
-    const html = `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 10px;">
-            <div style="text-align: center; margin-bottom: 20px;">
-                <img src="${clientBaseUrl}/images/image.png" alt="Apraizal Logo" style="height: 40px;" />
-            </div>
-            <h2 style="color: #333; text-align: center;">Password Reset Request</h2>
-            <p style="color: #666; font-size: 16px;">Hello,</p>
-            <p style="color: #666; font-size: 16px;">You requested to reset your password. Please use the following code to proceed:</p>
-            <div style="background-color: #f4f4f4; padding: 15px; text-align: center; border-radius: 5px; margin: 20px 0;">
-                <span style="font-size: 24px; font-weight: bold; letter-spacing: 5px; color: #333;">${otp}</span>
-            </div>
-            <p style="text-align: center; margin: 24px 0;">
-                <a href="${clientBaseUrl}/forgot-password?email=${encodeURIComponent(to)}" style="display:inline-block;padding:12px 18px;background:#2563eb;color:#fff;text-decoration:none;border-radius:6px;font-weight:bold;">
-                    Reset Password
-                </a>
-            </p>
-            <p style="color: #666; font-size: 14px;">This code will expire in 15 minutes.</p>
-            <p style="color: #666; font-size: 14px;">If the button does not work, open: ${clientBaseUrl}/forgot-password?email=${encodeURIComponent(to)}</p>
-            <p style="color: #666; font-size: 14px;">If you did not request this password reset, please ignore this email and your password will remain unchanged.</p>
-            <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
-            <p style="text-align: center; color: #999; font-size: 12px;">&copy; ${new Date().getFullYear()} Apraizal Platform. All rights reserved.</p>
+    
+    const bodyHtml = `
+        <h2 style="font-family: Georgia, serif; font-size: 22px; font-weight: 700; color: #151A23; margin: 0 0 16px 0; text-align: left;">Password Reset Request</h2>
+        <p style="color: #151A23; font-size: 15px; line-height: 1.5; margin: 0 0 16px 0;">Hello,</p>
+        <p style="color: #5F6876; font-size: 15px; line-height: 1.5; margin: 0 0 24px 0;">You requested to reset your password. Please use the following code to proceed:</p>
+        
+        <div style="background-color: #EEF0EC; border: 1px solid #151A23; border-radius: 4px; padding: 18px; text-align: center; margin: 0 0 24px 0;">
+            <span style="font-family: 'Courier New', Courier, monospace; font-size: 28px; font-weight: 700; letter-spacing: 6px; color: #151A23;">${otp}</span>
         </div>
+        
+        <div style="text-align: center; margin: 0 0 24px 0;">
+            <a href="${clientBaseUrl}/forgot-password?email=${encodeURIComponent(to)}" style="display: inline-block; padding: 12px 24px; background-color: #151A23; color: #FFFFFF; text-decoration: none; border-radius: 4px; font-weight: 700; font-size: 14px; letter-spacing: 0.02em;">
+                Reset Password
+            </a>
+        </div>
+        
+        <p style="color: #5F6876; font-size: 13px; margin: 0 0 8px 0;">This code will expire in 15 minutes.</p>
+        <p style="color: #5F6876; font-size: 13px; margin: 0;">If you did not request this password reset, your account remains secure and no action is needed.</p>
     `;
 
-    return sendEmail(to, subject, html);
+    return sendEmail(to, subject, renderEmailWrapper(subject, bodyHtml, clientBaseUrl));
 };
 
 export const sendProvisioningOnboardingEmail = async (params: {
@@ -101,41 +143,36 @@ export const sendProvisioningOnboardingEmail = async (params: {
         setupUrl,
     } = params;
 
-    const subject = "Your Apraizal account is ready";
-    const clientBaseUrl = (process.env.CLIENT_URL || 'http://localhost:5173').split(',')[0];
-    const fallbackSetupUrl = `${clientBaseUrl.replace(/\/$/, '')}/forgot-password?email=${encodeURIComponent(to)}&source=volint-provisioning`;
+    const subject = "Your Apraizal Account is Ready";
+    const clientBaseUrl = (process.env.CLIENT_URL || 'http://localhost:5173').split(',')[0].replace(/\/$/, '');
+    const fallbackSetupUrl = `${clientBaseUrl}/forgot-password?email=${encodeURIComponent(to)}&source=volint-provisioning`;
     const resolvedSetupUrl = setupUrl || fallbackSetupUrl;
     const displayName = recipientName || to;
 
-    const html = `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 10px;">
-            <div style="text-align: center; margin-bottom: 20px;">
-                <img src="${clientBaseUrl}/images/image.png" alt="Apraizal Logo" style="height: 40px;" />
-            </div>
-            <h2 style="color: #333; text-align: center;">Your account is ready</h2>
-            <p style="color: #666; font-size: 16px;">Hi ${displayName},</p>
-            <p style="color: #666; font-size: 16px;">
-                Your Apraizal account has been created through <strong>${organizationName}</strong> in Volint Suite.
-            </p>
-            <p style="color: #666; font-size: 16px;">
-                Use the reset code below to choose your password and complete onboarding.
-            </p>
-            <div style="background-color: #f4f4f4; padding: 15px; text-align: center; border-radius: 5px; margin: 20px 0;">
-                <span style="font-size: 24px; font-weight: bold; letter-spacing: 5px; color: #333;">${otp}</span>
-            </div>
-            <p style="text-align: center; margin: 24px 0;">
-                <a href="${resolvedSetupUrl}" style="display:inline-block;padding:12px 18px;background:#2563eb;color:#fff;text-decoration:none;border-radius:6px;">
-                    Set Your Password
-                </a>
-            </p>
-            <p style="color: #666; font-size: 14px;">This code expires in 15 minutes.</p>
-            <p style="color: #666; font-size: 14px;">If the button does not work, open: ${resolvedSetupUrl}</p>
-            <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
-            <p style="text-align: center; color: #999; font-size: 12px;">&copy; ${new Date().getFullYear()} Apraizal. All rights reserved.</p>
+    const bodyHtml = `
+        <h2 style="font-family: Georgia, serif; font-size: 22px; font-weight: 700; color: #151A23; margin: 0 0 16px 0;">Account Setup</h2>
+        <p style="color: #151A23; font-size: 15px; line-height: 1.5; margin: 0 0 16px 0;">Hi ${displayName},</p>
+        <p style="color: #5F6876; font-size: 15px; line-height: 1.5; margin: 0 0 20px 0;">
+            Your Apraizal account has been provisioned under <strong>${organizationName}</strong>.
+        </p>
+        <p style="color: #5F6876; font-size: 15px; line-height: 1.5; margin: 0 0 24px 0;">
+            Use the setup code below to complete your onboarding:
+        </p>
+        
+        <div style="background-color: #EEF0EC; border: 1px solid #151A23; border-radius: 4px; padding: 18px; text-align: center; margin: 0 0 24px 0;">
+            <span style="font-family: 'Courier New', Courier, monospace; font-size: 28px; font-weight: 700; letter-spacing: 6px; color: #151A23;">${otp}</span>
         </div>
+        
+        <div style="text-align: center; margin: 0 0 24px 0;">
+            <a href="${resolvedSetupUrl}" style="display: inline-block; padding: 12px 24px; background-color: #151A23; color: #FFFFFF; text-decoration: none; border-radius: 4px; font-weight: 700; font-size: 14px; letter-spacing: 0.02em;">
+                Set Password & Join
+            </a>
+        </div>
+        
+        <p style="color: #5F6876; font-size: 13px; margin: 0;">This code expires in 15 minutes.</p>
     `;
 
-    return sendEmail(to, subject, html);
+    return sendEmail(to, subject, renderEmailWrapper(subject, bodyHtml, clientBaseUrl));
 };
 
 export const sendTaskAssignmentEmail = async (params: {
@@ -161,36 +198,30 @@ export const sendTaskAssignmentEmail = async (params: {
     const dueDateText = dueDate ? dueDate.toLocaleDateString() : 'No due date';
     const priorityText = priority || 'LOW';
     const displayName = assigneeName || to;
-    const assignedBy = assignerName || 'A team member';
+    const assignedBy = assignerName || 'A team lead';
     const clientBaseUrl = (process.env.CLIENT_URL || 'http://localhost:5173').split(',')[0].replace(/\/$/, '');
 
-    const html = `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 10px;">
-            <div style="text-align: center; margin-bottom: 20px;">
-                <img src="${clientBaseUrl}/images/image.png" alt="Apraizal Logo" style="height: 40px;" />
-            </div>
-            <h2 style="color: #333; text-align: center;">You Have a New Task</h2>
-            <p style="color: #666; font-size: 16px;">Hi ${displayName},</p>
-            <p style="color: #666; font-size: 16px;">
-                ${assignedBy} assigned you a task in <strong>${organizationName}</strong>.
-            </p>
-            <div style="background-color: #f4f4f4; padding: 15px; border-radius: 5px; margin: 20px 0;">
-                <p style="margin: 0 0 8px 0;"><strong>Task:</strong> ${taskTitle}</p>
-                <p style="margin: 0 0 8px 0;"><strong>Priority:</strong> ${priorityText}</p>
-                <p style="margin: 0;"><strong>Due Date:</strong> ${dueDateText}</p>
-            </div>
-            <p style="text-align: center; margin: 24px 0;">
-                <a href="${clientBaseUrl}/dashboard" style="display:inline-block;padding:12px 18px;background:#2563eb;color:#fff;text-decoration:none;border-radius:6px;font-weight:bold;">
-                    View Task in Dashboard
-                </a>
-            </p>
-            <p style="color: #666; font-size: 14px; text-align: center;">If the button does not work, open: ${clientBaseUrl}/dashboard</p>
-            <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
-            <p style="text-align: center; color: #999; font-size: 12px;">&copy; ${new Date().getFullYear()} Apraizal. All rights reserved.</p>
+    const bodyHtml = `
+        <h2 style="font-family: Georgia, serif; font-size: 22px; font-weight: 700; color: #151A23; margin: 0 0 16px 0;">New Task Assignment</h2>
+        <p style="color: #151A23; font-size: 15px; line-height: 1.5; margin: 0 0 16px 0;">Hi ${displayName},</p>
+        <p style="color: #5F6876; font-size: 15px; line-height: 1.5; margin: 0 0 20px 0;">
+            ${assignedBy} assigned you a new performance record in <strong>${organizationName}</strong>.
+        </p>
+        
+        <div style="background-color: #EEF0EC; border: 1px solid #151A23; border-radius: 4px; padding: 20px; margin: 0 0 24px 0;">
+            <p style="margin: 0 0 10px 0; font-size: 15px; color: #151A23;"><strong>Task:</strong> ${taskTitle}</p>
+            <p style="margin: 0 0 10px 0; font-family: 'Courier New', Courier, monospace; font-size: 13px; color: #151A23;"><strong>PRIORITY:</strong> ${priorityText}</p>
+            <p style="margin: 0; font-family: 'Courier New', Courier, monospace; font-size: 13px; color: #E14B2A;"><strong>DUE DATE:</strong> ${dueDateText}</p>
+        </div>
+        
+        <div style="text-align: center; margin: 0 0 24px 0;">
+            <a href="${clientBaseUrl}/dashboard" style="display: inline-block; padding: 12px 24px; background-color: #151A23; color: #FFFFFF; text-decoration: none; border-radius: 4px; font-weight: 700; font-size: 14px; letter-spacing: 0.02em;">
+                Open Task Inspector
+            </a>
         </div>
     `;
 
-    return sendEmail(to, subject, html);
+    return sendEmail(to, subject, renderEmailWrapper(subject, bodyHtml, clientBaseUrl));
 };
 
 export const sendInviteEmail = async (params: {
@@ -207,30 +238,23 @@ export const sendInviteEmail = async (params: {
     const recipient = inviteeName || to;
     const clientBaseUrl = (process.env.CLIENT_URL || 'http://localhost:5173').split(',')[0].replace(/\/$/, '');
 
-    const html = `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 10px;">
-            <div style="text-align: center; margin-bottom: 20px;">
-                <img src="${clientBaseUrl}/images/image.png" alt="Apraizal Logo" style="height: 40px;" />
-            </div>
-            <h2 style="color: #333; text-align: center;">You're Invited</h2>
-            <p style="color: #666; font-size: 16px;">Hi ${recipient},</p>
-            <p style="color: #666; font-size: 16px;">
-                ${inviter} invited you to join <strong>${organizationName}</strong> as <strong>${role}</strong>.
-            </p>
-            <p style="color: #666; font-size: 16px;">Use the link below to accept this invite:</p>
-            <p style="text-align: center; margin: 24px 0;">
-                <a href="${inviteUrl}" style="display:inline-block;padding:12px 18px;background:#2563eb;color:#fff;text-decoration:none;border-radius:6px;font-weight:bold;">
-                    Accept Invite
-                </a>
-            </p>
-            <p style="color: #666; font-size: 14px;">If the button does not work, open: ${inviteUrl}</p>
-            <p style="color: #666; font-size: 14px;">This invite expires in 72 hours.</p>
-            <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
-            <p style="text-align: center; color: #999; font-size: 12px;">&copy; ${new Date().getFullYear()} Apraizal. All rights reserved.</p>
+    const bodyHtml = `
+        <h2 style="font-family: Georgia, serif; font-size: 22px; font-weight: 700; color: #151A23; margin: 0 0 16px 0;">Organization Invite</h2>
+        <p style="color: #151A23; font-size: 15px; line-height: 1.5; margin: 0 0 16px 0;">Hi ${recipient},</p>
+        <p style="color: #5F6876; font-size: 15px; line-height: 1.5; margin: 0 0 24px 0;">
+            ${inviter} invited you to join <strong>${organizationName}</strong> as <strong>${role}</strong> on Apraizal.
+        </p>
+        
+        <div style="text-align: center; margin: 0 0 24px 0;">
+            <a href="${inviteUrl}" style="display: inline-block; padding: 12px 24px; background-color: #151A23; color: #FFFFFF; text-decoration: none; border-radius: 4px; font-weight: 700; font-size: 14px; letter-spacing: 0.02em;">
+                Accept Invitation
+            </a>
         </div>
+        
+        <p style="color: #5F6876; font-size: 13px; margin: 0;">This invitation will expire in 72 hours.</p>
     `;
 
-    return sendEmail(to, subject, html);
+    return sendEmail(to, subject, renderEmailWrapper(subject, bodyHtml, clientBaseUrl));
 };
 
 export const sendTaskAlertEmail = async (params: {
@@ -241,36 +265,30 @@ export const sendTaskAlertEmail = async (params: {
     organizationName: string;
 }) => {
     const { to, taskTitle, taskDescription, creatorName, organizationName } = params;
-    const subject = `Task Alert: ${taskTitle}`;
+    const subject = `Task Review Alert: ${taskTitle}`;
     const fromUser = creatorName || 'A team member';
     const clientBaseUrl = (process.env.CLIENT_URL || 'http://localhost:5173').split(',')[0].replace(/\/$/, '');
 
-    const html = `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 10px;">
-            <div style="text-align: center; margin-bottom: 20px;">
-                <img src="${clientBaseUrl}/images/image.png" alt="Apraizal Logo" style="height: 40px;" />
-            </div>
-            <h2 style="color: #333; text-align: center;">Task Alert</h2>
-            <p style="color: #666; font-size: 16px;">Hi Team Lead,</p>
-            <p style="color: #666; font-size: 16px;">
-                ${fromUser} has created a new task in <strong>${organizationName}</strong> and requested your review.
-            </p>
-            <div style="background-color: #f4f4f4; padding: 15px; border-radius: 5px; margin: 20px 0;">
-                <p style="margin: 0 0 8px 0;"><strong>Task:</strong> ${taskTitle}</p>
-                ${taskDescription ? `<p style="margin: 0;"><strong>Description:</strong> ${taskDescription}</p>` : ''}
-            </div>
-            <p style="text-align: center; margin: 24px 0;">
-                <a href="${clientBaseUrl}/dashboard" style="display:inline-block;padding:12px 18px;background:#2563eb;color:#fff;text-decoration:none;border-radius:6px;font-weight:bold;">
-                    Review Task in Dashboard
-                </a>
-            </p>
-            <p style="color: #666; font-size: 14px; text-align: center;">If the button does not work, open: ${clientBaseUrl}/dashboard</p>
-            <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
-            <p style="text-align: center; color: #999; font-size: 12px;">&copy; ${new Date().getFullYear()} Apraizal. All rights reserved.</p>
+    const bodyHtml = `
+        <h2 style="font-family: Georgia, serif; font-size: 22px; font-weight: 700; color: #151A23; margin: 0 0 16px 0;">Task Review Request</h2>
+        <p style="color: #151A23; font-size: 15px; line-height: 1.5; margin: 0 0 16px 0;">Hi Team Lead,</p>
+        <p style="color: #5F6876; font-size: 15px; line-height: 1.5; margin: 0 0 20px 0;">
+            ${fromUser} has submitted a task in <strong>${organizationName}</strong> for review.
+        </p>
+        
+        <div style="background-color: #EEF0EC; border: 1px solid #151A23; border-radius: 4px; padding: 20px; margin: 0 0 24px 0;">
+            <p style="margin: 0 0 8px 0; font-size: 15px; color: #151A23;"><strong>Task:</strong> ${taskTitle}</p>
+            ${taskDescription ? `<p style="margin: 0; font-size: 14px; color: #5F6876;"><strong>Description:</strong> ${taskDescription}</p>` : ''}
+        </div>
+        
+        <div style="text-align: center; margin: 0 0 24px 0;">
+            <a href="${clientBaseUrl}/dashboard" style="display: inline-block; padding: 12px 24px; background-color: #151A23; color: #FFFFFF; text-decoration: none; border-radius: 4px; font-weight: 700; font-size: 14px; letter-spacing: 0.02em;">
+                Review Task Record
+            </a>
         </div>
     `;
 
-    return sendEmail(to, subject, html);
+    return sendEmail(to, subject, renderEmailWrapper(subject, bodyHtml, clientBaseUrl));
 };
 
 export const sendOkrNotificationEmail = async (params: {
@@ -312,33 +330,27 @@ export const sendOkrNotificationEmail = async (params: {
         year: 'numeric'
     });
 
-    const html = `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 10px;">
-            <div style="text-align: center; margin-bottom: 20px;">
-                <img src="${clientBaseUrl}/images/image.png" alt="Apraizal Logo" style="height: 40px;" />
-            </div>
-            <h2 style="color: #333; text-align: center;">New OKR Assigned</h2>
-            <p style="color: #666; font-size: 16px;">Hi ${displayName},</p>
-            <p style="color: #666; font-size: 16px;">
-                ${createdBy} has assigned a new OKR to <strong>${teamName}</strong> in <strong>${organizationName}</strong>.
-            </p>
-            <div style="background-color: #f4f4f4; padding: 15px; border-radius: 5px; margin: 20px 0;">
-                <p style="margin: 0 0 8px 0;"><strong>OKR:</strong> ${okrTitle}</p>
-                ${okrDescription ? `<p style="margin: 0 0 8px 0;"><strong>Description:</strong> ${okrDescription}</p>` : ''}
-                <p style="margin: 0 0 8px 0;"><strong>Period:</strong> ${startDate} - ${endDate}</p>
-            </div>
-            <p style="text-align: center; margin: 24px 0;">
-                <a href="${clientBaseUrl}/dashboard" style="display:inline-block;padding:12px 18px;background:#2563eb;color:#fff;text-decoration:none;border-radius:6px;font-weight:bold;">
-                    View OKR in Dashboard
-                </a>
-            </p>
-            <p style="color: #666; font-size: 14px; text-align: center;">If the button does not work, open: ${clientBaseUrl}/dashboard</p>
-            <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
-            <p style="text-align: center; color: #999; font-size: 12px;">&copy; ${new Date().getFullYear()} Apraizal. All rights reserved.</p>
+    const bodyHtml = `
+        <h2 style="font-family: Georgia, serif; font-size: 22px; font-weight: 700; color: #151A23; margin: 0 0 16px 0;">New OKR Ledger</h2>
+        <p style="color: #151A23; font-size: 15px; line-height: 1.5; margin: 0 0 16px 0;">Hi ${displayName},</p>
+        <p style="color: #5F6876; font-size: 15px; line-height: 1.5; margin: 0 0 20px 0;">
+            ${createdBy} assigned a new OKR to <strong>${teamName}</strong> in <strong>${organizationName}</strong>.
+        </p>
+        
+        <div style="background-color: #EEF0EC; border: 1px solid #151A23; border-radius: 4px; padding: 20px; margin: 0 0 24px 0;">
+            <p style="margin: 0 0 8px 0; font-size: 15px; color: #151A23;"><strong>Objective:</strong> ${okrTitle}</p>
+            ${okrDescription ? `<p style="margin: 0 0 8px 0; font-size: 14px; color: #5F6876;"><strong>Description:</strong> ${okrDescription}</p>` : ''}
+            <p style="margin: 0; font-family: 'Courier New', Courier, monospace; font-size: 13px; color: #151A23;"><strong>PERIOD:</strong> ${startDate} - ${endDate}</p>
+        </div>
+        
+        <div style="text-align: center; margin: 0 0 24px 0;">
+            <a href="${clientBaseUrl}/dashboard?section=okr" style="display: inline-block; padding: 12px 24px; background-color: #151A23; color: #FFFFFF; text-decoration: none; border-radius: 4px; font-weight: 700; font-size: 14px; letter-spacing: 0.02em;">
+                Open OKR Ledger
+            </a>
         </div>
     `;
 
-    return sendEmail(to, subject, html);
+    return sendEmail(to, subject, renderEmailWrapper(subject, bodyHtml, clientBaseUrl));
 };
 
 export const sendKeyResultNotificationEmail = async (params: {
@@ -362,7 +374,7 @@ export const sendKeyResultNotificationEmail = async (params: {
         periodEnd
     } = params;
 
-    const subject = `You've been assigned a key result: ${okrTitle}`;
+    const subject = `Key Result Assignment: ${okrTitle}`;
     const displayName = recipientName || to;
     const createdBy = creatorName || 'An administrator';
     const clientBaseUrl = (process.env.CLIENT_URL || 'http://localhost:5173').split(',')[0].replace(/\/$/, '');
@@ -378,30 +390,24 @@ export const sendKeyResultNotificationEmail = async (params: {
         year: 'numeric'
     });
 
-    const html = `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 10px;">
-            <div style="text-align: center; margin-bottom: 20px;">
-                <img src="${clientBaseUrl}/images/image.png" alt="Apraizal Logo" style="height: 40px;" />
-            </div>
-            <h2 style="color: #333; text-align: center;">New Key Result Assignment</h2>
-            <p style="color: #666; font-size: 16px;">Hi ${displayName},</p>
-            <p style="color: #666; font-size: 16px;">
-                ${createdBy} has assigned you a Key Result for the OKR <strong>${okrTitle}</strong> in <strong>${organizationName}</strong>.
-            </p>
-            <div style="background-color: #f4f4f4; padding: 15px; border-radius: 5px; margin: 20px 0;">
-                <p style="margin: 0 0 8px 0;"><strong>Key Result:</strong> ${keyResultTitle}</p>
-                <p style="margin: 0 0 8px 0;"><strong>OKR Period:</strong> ${startDate} - ${endDate}</p>
-            </div>
-            <p style="text-align: center; margin: 24px 0;">
-                <a href="${clientBaseUrl}/dashboard" style="display:inline-block;padding:12px 18px;background:#2563eb;color:#fff;text-decoration:none;border-radius:6px;font-weight:bold;">
-                    View Key Result in Dashboard
-                </a>
-            </p>
-            <p style="color: #666; font-size: 14px; text-align: center;">If the button does not work, open: ${clientBaseUrl}/dashboard</p>
-            <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
-            <p style="text-align: center; color: #999; font-size: 12px;">&copy; ${new Date().getFullYear()} Apraizal. All rights reserved.</p>
+    const bodyHtml = `
+        <h2 style="font-family: Georgia, serif; font-size: 22px; font-weight: 700; color: #151A23; margin: 0 0 16px 0;">Key Result Assignment</h2>
+        <p style="color: #151A23; font-size: 15px; line-height: 1.5; margin: 0 0 16px 0;">Hi ${displayName},</p>
+        <p style="color: #5F6876; font-size: 15px; line-height: 1.5; margin: 0 0 20px 0;">
+            ${createdBy} assigned you a Key Result under <strong>${okrTitle}</strong> in <strong>${organizationName}</strong>.
+        </p>
+        
+        <div style="background-color: #EEF0EC; border: 1px solid #151A23; border-radius: 4px; padding: 20px; margin: 0 0 24px 0;">
+            <p style="margin: 0 0 8px 0; font-size: 15px; color: #151A23;"><strong>Key Result:</strong> ${keyResultTitle}</p>
+            <p style="margin: 0; font-family: 'Courier New', Courier, monospace; font-size: 13px; color: #151A23;"><strong>OKR PERIOD:</strong> ${startDate} - ${endDate}</p>
+        </div>
+        
+        <div style="text-align: center; margin: 0 0 24px 0;">
+            <a href="${clientBaseUrl}/dashboard?section=okr" style="display: inline-block; padding: 12px 24px; background-color: #151A23; color: #FFFFFF; text-decoration: none; border-radius: 4px; font-weight: 700; font-size: 14px; letter-spacing: 0.02em;">
+                Open OKR Ledger
+            </a>
         </div>
     `;
 
-    return sendEmail(to, subject, html);
+    return sendEmail(to, subject, renderEmailWrapper(subject, bodyHtml, clientBaseUrl));
 };

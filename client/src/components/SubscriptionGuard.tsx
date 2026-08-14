@@ -32,41 +32,43 @@ export const SubscriptionGuard: React.FC<SubscriptionGuardProps> = ({
           top: "50%",
           left: "50%",
           transform: "translate(-50%, -50%)",
-          background: "white",
+          background: "#FFFFFF",
           padding: "24px",
-          borderRadius: "12px",
-          boxShadow: "0 8px 32px rgba(0,0,0,0.2)",
+          borderRadius: "var(--radius-lg)",
+          border: "1px solid var(--color-line)",
+          boxShadow: "0 12px 32px rgba(21, 26, 35, 0.12)",
           textAlign: "center",
           zIndex: 100,
           minWidth: "300px",
         }}
       >
         <svg
-          width="48"
-          height="48"
+          width="40"
+          height="40"
           viewBox="0 0 24 24"
           fill="none"
-          stroke="#dc2626"
+          stroke="var(--color-vermilion)"
           strokeWidth="2"
           strokeLinecap="round"
           strokeLinejoin="round"
-          style={{ marginBottom: "16px" }}
+          style={{ marginBottom: "12px" }}
         >
           <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
           <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
         </svg>
         <div
           style={{
-            fontSize: "16px",
-            fontWeight: 600,
-            color: "#111827",
-            marginBottom: "8px",
+            fontFamily: "var(--font-heading)",
+            fontSize: "1.1em",
+            fontWeight: 700,
+            color: "var(--color-ink)",
+            marginBottom: "6px",
           }}
         >
           Feature Locked
         </div>
         <div
-          style={{ fontSize: "14px", color: "#6b7280", marginBottom: "16px" }}
+          style={{ fontFamily: "var(--font-body)", fontSize: "0.88em", color: "var(--color-slate)", marginBottom: "16px" }}
         >
           {disabledMessage ||
             "Upgrade your subscription to access this feature"}

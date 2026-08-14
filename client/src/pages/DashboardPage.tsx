@@ -12,6 +12,7 @@ import SubscriptionPage from "./SubscriptionPage";
 import ErrorDialog from "../components/ErrorDialog";
 import DebouncedButton from "../components/common/DebouncedButton";
 import { PasswordInput } from "../components/common/PasswordInput";
+import CustomSelect from "../components/common/CustomSelect";
 import * as XLSX from "xlsx";
 import "../styles/Dashboard.css";
 
@@ -203,7 +204,7 @@ const TeamMultiDropdown = ({
           {selectedTeams.length > 0 ? (
             selectedTeams.map((team) => (
               <span className="team-selection-chip" key={team.id}>
-                {team.name}
+                <span className="team-selection-label">{team.name}</span>
                 <span
                   role="button"
                   tabIndex={0}
@@ -712,6 +713,69 @@ const isDueDateOverdue = (dueDateValue: string | null | undefined) => {
 const isTaskCompleted = (status: string | null | undefined) =>
   status === "COMPLETED" || status === "DONE";
 
+const formatStatusLabel = (status: string | null | undefined): string => {
+  if (!status) return "Unknown";
+  switch (status) {
+    case "CREATED":
+    case "TODO":
+      return "To Do";
+    case "IN_PROGRESS":
+      return "In Progress";
+    case "IN_REVIEW":
+      return "In Review";
+    case "ON_HOLD":
+      return "On Hold";
+    case "COMPLETED":
+    case "DONE":
+      return "Done";
+    case "CANCELLED":
+      return "Cancelled";
+    case "NOT_YET_OPEN":
+      return "Not yet Open";
+    case "OPEN":
+      return "Open";
+    case "PENDING":
+      return "Pending";
+    case "REVIEWED":
+      return "Reviewed";
+    case "APPROVED":
+      return "Approved";
+    case "REJECTED":
+      return "Rejected";
+    default:
+      return status.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
+  }
+};
+
+const formatActivityDescription = (description: string): string => {
+  if (!description) return "";
+  return description
+    .replace(/\bIN_PROGRESS\b/g, "In Progress")
+    .replace(/\bIN_REVIEW\b/g, "In Review")
+    .replace(/\bON_HOLD\b/g, "On Hold")
+    .replace(/\bCREATED\b/g, "To Do")
+    .replace(/\bTODO\b/g, "To Do")
+    .replace(/\bCOMPLETED\b/g, "Done")
+    .replace(/\bDONE\b/g, "Done")
+    .replace(/\bCANCELLED\b/g, "Cancelled")
+    .replace(/\bNOT_YET_OPEN\b/g, "Not yet Open")
+    .replace(/\bNOT_SUBMITTED\b/g, "Not Submitted")
+    .replace(/\bAPPROVED\b/g, "Approved")
+    .replace(/\bREJECTED\b/g, "Rejected")
+    .replace(/\bPENDING\b/g, "Pending");
+};
+
+const formatDateTimeWithoutSeconds = (dateInput: string | Date | number | null | undefined): string => {
+  if (!dateInput) return "";
+  const d = new Date(dateInput);
+  if (isNaN(d.getTime())) return "";
+  const day = d.getDate();
+  const month = d.toLocaleDateString("en-US", { month: "short" });
+  const year = d.getFullYear();
+  const timeStr = d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+  return `${day} ${month} ${year} • ${timeStr}`;
+};
+
 const DashboardPage = () => {
   const location = useLocation();
   const { user } = useAuth();
@@ -746,7 +810,22 @@ const DashboardPage = () => {
   const [assigneeFilterId, setAssigneeFilterId] = useState<string | null>(null);
   const [ownerFilter, setOwnerFilter] = useState<string>("all");
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [isExpandedFullScreen, setIsExpandedFullScreen] = useState(false);
   const [isEditingDescription, setIsEditingDescription] = useState(false);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        if (isExpandedFullScreen) {
+          setIsExpandedFullScreen(false);
+        } else if (selectedTaskId) {
+          setSelectedTaskId(null);
+        }
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isExpandedFullScreen, selectedTaskId]);
   const [editingDescriptionText, setEditingDescriptionText] = useState("");
   const [menuOpenTaskId, setMenuOpenTaskId] = useState<string | null>(null);
   const [expandedCommentThreads, setExpandedCommentThreads] = useState<
@@ -2554,9 +2633,9 @@ const DashboardPage = () => {
   // Bulk invite handlers
   const handleDownloadSampleSheet = () => {
     const data = [
-      { Email: "john.doe@company.com", Team: "Growth", Role: "TEAM_LEAD" },
-      { Email: "jane.smith@company.com", Team: "Operations", Role: "MEMBER" },
-      { Email: "bob.wilson@company.com", Team: "Growth", Role: "MEMBER" },
+      { Email: "john.doe@company.com", Team: "Growth", Role: "Team Lead" },
+      { Email: "jane.smith@company.com", Team: "Operations", Role: "Member" },
+      { Email: "bob.wilson@company.com", Team: "Growth", Role: "Member" },
     ];
 
     const ws = XLSX.utils.json_to_sheet(data);
@@ -2577,7 +2656,7 @@ const DashboardPage = () => {
       [""],
       ["Required Columns:"],
       ["- Email: Work email address (required)"],
-      ["- Role: TEAM_LEAD or MEMBER (required)"],
+      ["- Role: Team Lead or Member (required)"],
       [""],
       ["Optional Columns:"],
       ["- Team: Team name (will be created automatically if it doesn't exist)"],
@@ -2586,7 +2665,7 @@ const DashboardPage = () => {
       ["- Maximum file size: 5MB"],
       ["- Supported formats: .xlsx, .xls, .csv"],
       ["- Teams will be created automatically from the upload"],
-      ["- Team leads are identified by TEAM_LEAD role"],
+      ["- Team leads are identified by the Team Lead role"],
       ["- Invites expire after 72 hours"],
     ];
     const wsInstructions = XLSX.utils.aoa_to_sheet(instructions);
@@ -3381,75 +3460,196 @@ const DashboardPage = () => {
     }
   };
 
+  const renderActivityIcon = (action: string) => {
+    switch (action) {
+      case "TASK_CREATED":
+        return (
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-vermilion)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="10" />
+            <line x1="12" y1="8" x2="12" y2="16" />
+            <line x1="8" y1="12" x2="16" y2="12" />
+          </svg>
+        );
+      case "COMMENT_ADDED":
+        return (
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-ink)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+          </svg>
+        );
+      case "COMMENT_DELETED":
+        return (
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-slate)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="3 6 5 6 21 6" />
+            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+          </svg>
+        );
+      case "STATUS_CHANGED":
+        return (
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-ledger)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="18" y1="20" x2="18" y2="10" />
+            <line x1="12" y1="20" x2="12" y2="4" />
+            <line x1="6" y1="20" x2="6" y2="14" />
+          </svg>
+        );
+      case "ASSIGNEE_CHANGED":
+      case "SUPPORTER_CHANGED":
+        return (
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-ink)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+            <circle cx="12" cy="7" r="4" />
+          </svg>
+        );
+      case "SUBMISSION_CREATED":
+      case "SUBMISSION_REVIEWED":
+        return (
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-ledger)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+            <polyline points="14 2 14 8 20 8" />
+            <path d="M9 15l2 2 4-4" />
+          </svg>
+        );
+      case "ATTACHMENT_ADDED":
+      case "ATTACHMENT_DELETED":
+        return (
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-ink)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+          </svg>
+        );
+      default:
+        return (
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-ink)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+          </svg>
+        );
+    }
+  };
+
   const renderTaskDetailPanelInner = () => {
+    const isCompleted = selectedTask?.status === "COMPLETED" || selectedTask?.status === "DONE";
+    const isApproved = selectedTask?.approvalStatus === "APPROVED";
+
     return selectedTask ? (
       <div className="task-detail-content" key={selectedTask.id}>
-        <div className="task-detail-header">
-          <div className="task-detail-header-top">
-            <button
-              type="button"
-              className="btn-icon-close"
-              onClick={() => setSelectedTaskId(null)}
-              title="Close"
-            >
-              ×
-            </button>
-            <div className="task-badges">
-              <span
-                className={`priority-badge ${selectedTask.priority?.toLowerCase() || ""}`}
-              >
-                {selectedTask.priority}
+        <div className="task-detail-header" style={{ paddingBottom: "16px", borderBottom: "1px solid var(--color-line)" }}>
+          <div className="task-detail-header-top" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "12px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+              <span className={`status-pill ${selectedTask.priority?.toLowerCase() || ""}`}>
+                {selectedTask.priority} PRIORITY
               </span>
-              {selectedTask.approvalStatus &&
-                selectedTask.approvalStatus !== "NOT_SUBMITTED" && (
-                  <span
-                    className="priority-badge"
-                    style={{
-                      background:
-                        selectedTask.approvalStatus === "APPROVED"
-                          ? "#dcfce7"
-                          : selectedTask.approvalStatus === "REJECTED"
-                            ? "#fee2e2"
-                            : "#fef3c7",
-                      color:
-                        selectedTask.approvalStatus === "APPROVED"
-                          ? "#166534"
-                          : selectedTask.approvalStatus === "REJECTED"
-                            ? "#b91c1c"
-                            : "#92400e",
-                      borderColor:
-                        selectedTask.approvalStatus === "APPROVED"
-                          ? "#86efac"
-                          : selectedTask.approvalStatus === "REJECTED"
-                            ? "#fecaca"
-                            : "#fde68a",
-                    }}
-                    title="Approval status"
-                  >
-                    {selectedTask.approvalStatus === "PENDING"
-                      ? "Awaiting approval"
-                      : selectedTask.approvalStatus}
-                  </span>
+              {selectedTask.approvalStatus && selectedTask.approvalStatus !== "NOT_SUBMITTED" && (
+                <span
+                  className={`status-pill ${
+                    selectedTask.approvalStatus === "APPROVED"
+                      ? "done"
+                      : selectedTask.approvalStatus === "REJECTED"
+                        ? "cancelled"
+                        : "in_progress"
+                  }`}
+                  title="Approval status"
+                >
+                  {selectedTask.approvalStatus === "PENDING"
+                    ? "AWAITING APPROVAL"
+                    : selectedTask.approvalStatus}
+                </span>
+              )}
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+              <button
+                type="button"
+                className="btn-icon-expand"
+                onClick={() => setIsExpandedFullScreen((prev) => !prev)}
+                title={isExpandedFullScreen ? "Exit Full Screen (Esc)" : "Expand to Full Screen"}
+                style={{
+                  width: "32px",
+                  height: "32px",
+                  borderRadius: "var(--radius-sm)",
+                  border: "1px solid var(--color-line)",
+                  background: "#FFFFFF",
+                  color: "var(--color-ink)",
+                  fontSize: "0.9em",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  cursor: "pointer",
+                  transition: "all 0.15s ease"
+                }}
+              >
+                {isExpandedFullScreen ? (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="4 14 10 14 10 20" />
+                    <polyline points="20 10 14 10 14 4" />
+                    <line x1="14" y1="10" x2="21" y2="3" />
+                    <line x1="10" y1="14" x2="3" y2="21" />
+                  </svg>
+                ) : (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="15 3 21 3 21 9" />
+                    <polyline points="9 21 3 21 3 15" />
+                    <line x1="21" y1="3" x2="14" y2="10" />
+                    <line x1="3" y1="21" x2="10" y2="14" />
+                  </svg>
                 )}
+              </button>
+              <button
+                type="button"
+                className="btn-icon-close"
+                onClick={() => {
+                  setSelectedTaskId(null);
+                  setIsExpandedFullScreen(false);
+                }}
+                title="Close Panel"
+                style={{
+                  width: "32px",
+                  height: "32px",
+                  borderRadius: "var(--radius-sm)",
+                  border: "1px solid var(--color-line)",
+                  background: "#FFFFFF",
+                  color: "var(--color-ink)",
+                  fontSize: "1.2em",
+                  cursor: "pointer"
+                }}
+              >
+                ×
+              </button>
             </div>
           </div>
-          <h3>{selectedTask.title}</h3>
 
-          {/* Status Dropdown - Linear style */}
+          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "12px" }}>
+            <h3 style={{
+              fontFamily: "var(--font-heading)",
+              fontSize: "1.35em",
+              fontWeight: 700,
+              color: "var(--color-ink)",
+              margin: 0,
+              lineHeight: 1.3
+            }}>
+              {selectedTask.title}
+            </h3>
+            {(isCompleted || isApproved) && (
+              <span className="stamp-badge stamp-badge-ledger stamp-badge-sm" style={{ flexShrink: 0 }}>
+                ✓ VERIFIED RECORD
+              </span>
+            )}
+          </div>
+
+          {/* Status Dropdown - Custom Select */}
           {!isDeletedView && (
-            <div className="task-status-selector" style={{ marginTop: "12px" }}>
+            <div className="task-status-selector" style={{ marginTop: "16px" }}>
               <label
                 style={{
-                  fontSize: "0.75em",
-                  fontWeight: 600,
-                  color: "#64748b",
-                  marginBottom: "4px",
+                  fontSize: "0.72em",
+                  fontWeight: 700,
+                  textTransform: "uppercase",
+                  color: "var(--color-slate)",
+                  letterSpacing: "0.08em",
+                  marginBottom: "6px",
                   display: "block",
                 }}
               >
-                Status
+                Record Status
               </label>
-              <select
+              <CustomSelect
                 value={
                   selectedTask.status === "CREATED"
                     ? "TODO"
@@ -3457,66 +3657,32 @@ const DashboardPage = () => {
                       ? "DONE"
                       : selectedTask.status
                 }
-                onChange={(e) =>
-                  handleUpdateTaskStatus(selectedTask.id, e.target.value)
+                onChange={(val) =>
+                  handleUpdateTaskStatus(selectedTask.id, val)
                 }
-                style={{
-                  width: "100%",
-                  padding: "8px 12px",
-                  borderRadius: "6px",
-                  border: "1px solid #e2e8f0",
-                  fontSize: "0.9em",
-                  fontWeight: 600,
-                  cursor: "pointer",
-                  background:
-                    selectedTask.status === "CREATED" ||
-                    selectedTask.status === "TODO"
-                      ? "#f1f5f9"
-                      : selectedTask.status === "IN_PROGRESS"
-                        ? "#dbeafe"
-                        : selectedTask.status === "IN_REVIEW"
-                          ? "#fef3c7"
-                          : selectedTask.status === "ON_HOLD"
-                            ? "#fef9c3"
-                            : selectedTask.status === "DONE" ||
-                                selectedTask.status === "COMPLETED"
-                              ? "#dcfce7"
-                              : "#fee2e2",
-                  color:
-                    selectedTask.status === "CREATED" ||
-                    selectedTask.status === "TODO"
-                      ? "#475569"
-                      : selectedTask.status === "IN_PROGRESS"
-                        ? "#1d4ed8"
-                        : selectedTask.status === "IN_REVIEW"
-                          ? "#b45309"
-                          : selectedTask.status === "ON_HOLD"
-                            ? "#854d0e"
-                            : selectedTask.status === "DONE" ||
-                                selectedTask.status === "COMPLETED"
-                              ? "#166534"
-                              : "#b91c1c",
-                }}
-              >
-                <option value="TODO">To Do</option>
-                <option value="IN_PROGRESS">In Progress</option>
-                <option value="IN_REVIEW">In Review</option>
-                <option value="DONE">Done</option>
-                <option value="ON_HOLD">On Hold</option>
-                <option value="CANCELLED">Cancelled</option>
-              </select>
+                options={[
+                  { value: "TODO", label: "To Do" },
+                  { value: "IN_PROGRESS", label: "In Progress" },
+                  { value: "IN_REVIEW", label: "In Review" },
+                  { value: "DONE", label: "Done" },
+                  { value: "ON_HOLD", label: "On Hold" },
+                  { value: "CANCELLED", label: "Cancelled" },
+                ]}
+              />
             </div>
           )}
         </div>
 
+        {/* Task Description Section */}
         <div
           className="task-description-section"
           style={{
             marginTop: "16px",
-            padding: "12px",
-            background: "#f8fafc",
-            borderRadius: "8px",
-            border: "1px solid #e2e8f0",
+            padding: "16px",
+            background: "var(--color-fog)",
+            borderRadius: "var(--radius-sm)",
+            border: "1px solid var(--color-line)",
+            borderLeft: "3px solid var(--color-ink)",
             cursor: isEditingDescription ? "default" : "pointer",
           }}
           onClick={() => {
@@ -3530,18 +3696,20 @@ const DashboardPage = () => {
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
             <label
               style={{
-                fontSize: "0.75em",
-                fontWeight: 600,
-                color: "#64748b",
+                fontSize: "0.72em",
+                fontWeight: 700,
+                textTransform: "uppercase",
+                color: "var(--color-slate)",
+                letterSpacing: "0.08em",
                 margin: 0,
                 display: "block",
               }}
             >
-              Description
+              Description & Notes
             </label>
             {!isEditingDescription && (
-              <span style={{ fontSize: "0.75em", color: "var(--primary-color)", fontWeight: 500 }}>
-                Click to edit
+              <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.72em", color: "var(--color-vermilion)", fontWeight: 700, textTransform: "uppercase" }}>
+                [EDIT DESCRIPTION]
               </span>
             )}
           </div>
@@ -3553,13 +3721,15 @@ const DashboardPage = () => {
                 rows={4}
                 style={{
                   width: "100%",
-                  padding: "8px",
-                  borderRadius: "6px",
-                  border: "1px solid var(--border-color)",
-                  fontFamily: "inherit",
+                  padding: "10px",
+                  borderRadius: "var(--radius-sm)",
+                  border: "1px solid var(--color-line)",
+                  fontFamily: "var(--font-body)",
                   fontSize: "0.9em",
+                  color: "var(--color-ink)",
+                  background: "#FFFFFF",
                   resize: "vertical",
-                  marginBottom: "8px",
+                  marginBottom: "10px",
                   display: "block",
                   boxSizing: "border-box",
                 }}
@@ -3570,30 +3740,16 @@ const DashboardPage = () => {
                 <button
                   type="button"
                   onClick={handleUpdateTaskDescription}
-                  style={{
-                    padding: "6px 12px",
-                    fontSize: "0.85em",
-                    background: "var(--primary-color)",
-                    color: "white",
-                    border: "none",
-                    borderRadius: "4px",
-                    cursor: "pointer"
-                  }}
+                  className="btn-primary"
+                  style={{ padding: "6px 14px", fontSize: "0.82em" }}
                 >
-                  Save
+                  Save Notes
                 </button>
                 <button
                   type="button"
                   onClick={() => setIsEditingDescription(false)}
-                  style={{
-                    padding: "6px 12px",
-                    fontSize: "0.85em",
-                    background: "#e2e8f0",
-                    color: "#334155",
-                    border: "none",
-                    borderRadius: "4px",
-                    cursor: "pointer"
-                  }}
+                  className="btn-secondary"
+                  style={{ padding: "6px 14px", fontSize: "0.82em" }}
                 >
                   Cancel
                 </button>
@@ -3604,36 +3760,40 @@ const DashboardPage = () => {
               style={{
                 margin: 0,
                 fontSize: "0.9em",
-                color: selectedTask.description ? "#0f172a" : "#64748b",
+                color: selectedTask.description ? "var(--color-ink)" : "var(--color-slate)",
+                fontFamily: "var(--font-body)",
                 lineHeight: "1.6",
                 whiteSpace: "pre-wrap",
               }}
             >
-              {selectedTask.description || "No description provided."}
+              {selectedTask.description || "No description recorded for this task."}
             </p>
           )}
         </div>
 
+        {/* Linked OKRs Section */}
         <div
-          className="task-description-section"
+          className="task-okr-section"
           style={{
-            marginTop: "12px",
-            padding: "12px",
-            background: "#f8fafc",
-            borderRadius: "8px",
-            border: "1px solid #e2e8f0",
+            marginTop: "16px",
+            padding: "16px",
+            background: "#FFFFFF",
+            borderRadius: "var(--radius-sm)",
+            border: "1px solid var(--color-line)",
           }}
         >
           <label
             style={{
-              fontSize: "0.75em",
-              fontWeight: 600,
-              color: "#64748b",
-              marginBottom: "8px",
+              fontSize: "0.72em",
+              fontWeight: 700,
+              textTransform: "uppercase",
+              color: "var(--color-slate)",
+              letterSpacing: "0.08em",
+              marginBottom: "10px",
               display: "block",
             }}
           >
-            Linked OKRs
+            OKR Alignment
           </label>
           {selectedTask.krImpacts && selectedTask.krImpacts.length > 0 ? (
             <div
@@ -3646,33 +3806,35 @@ const DashboardPage = () => {
                 <div
                   key={impact.id}
                   style={{
-                    padding: "10px",
-                    borderRadius: "6px",
-                    background: "#fff",
-                    border: "1px solid #e2e8f0",
+                    padding: "12px",
+                    borderRadius: "var(--radius-sm)",
+                    background: "var(--color-fog)",
+                    border: "1px solid var(--color-line)",
                   }}
                 >
                   <div
                     style={{
-                      fontSize: "0.85em",
-                      fontWeight: 700,
-                      color: "#0f172a",
+                      fontSize: "0.88em",
+                      fontWeight: 600,
+                      color: "var(--color-ink)",
+                      fontFamily: "var(--font-body)",
                       lineHeight: 1.4,
                     }}
                   >
                     {impact.okrKeyResult.isGeneral
-                      ? "General"
+                      ? "General Objective"
                       : impact.okrKeyResult.title}
                   </div>
                   <div
                     style={{
-                      marginTop: "3px",
+                      marginTop: "4px",
                       fontSize: "0.78em",
-                      color: "#64748b",
+                      fontFamily: "var(--font-mono)",
+                      color: "var(--color-slate)",
                       lineHeight: 1.4,
                     }}
                   >
-                    {impact.okrKeyResult.okr.title}
+                    Target: {impact.okrKeyResult.okr.title}
                   </div>
                 </div>
               ))}
@@ -3681,9 +3843,10 @@ const DashboardPage = () => {
             <p
               style={{
                 margin: 0,
-                fontSize: "0.9em",
-                color: "#64748b",
-                lineHeight: "1.6",
+                fontSize: "0.88em",
+                color: "var(--color-slate)",
+                fontFamily: "var(--font-body)",
+                lineHeight: "1.5",
               }}
             >
               No key result linked.
@@ -3691,102 +3854,90 @@ const DashboardPage = () => {
           )}
         </div>
 
-        <div className="task-meta">
-          <div className="meta-item">
-            <strong>Owner:</strong>{" "}
-            {selectedTask.assignee?.name ||
-              selectedTask.assignee?.email ||
-              "Unassigned"}
+        {/* Task Metadata Grid */}
+        <div className="task-meta-grid" style={{
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr",
+          gap: "10px",
+          marginTop: "16px",
+          padding: "16px",
+          background: "#FFFFFF",
+          border: "1px solid var(--color-line)",
+          borderRadius: "var(--radius-sm)"
+        }}>
+          <div>
+            <div style={{ fontSize: "0.7em", fontWeight: 700, textTransform: "uppercase", color: "var(--color-slate)", letterSpacing: "0.08em" }}>Owner</div>
+            <div style={{ fontFamily: "var(--font-mono)", fontSize: "0.85em", color: "var(--color-ink)", marginTop: "3px", fontWeight: 600 }}>
+              {selectedTask.assignee?.name || selectedTask.assignee?.email || "Unassigned"}
+            </div>
           </div>
-          {selectedTask.createdBy &&
-            selectedTask.createdBy.id !== selectedTask.assignee?.id && (
-              <div className="meta-item">
-                <strong>Assigned By:</strong>{" "}
+          <div>
+            <div style={{ fontSize: "0.7em", fontWeight: 700, textTransform: "uppercase", color: "var(--color-slate)", letterSpacing: "0.08em" }}>Supporter</div>
+            <div style={{ fontFamily: "var(--font-mono)", fontSize: "0.85em", color: "var(--color-ink)", marginTop: "3px", fontWeight: 600 }}>
+              {selectedTask.supporter?.name || selectedTask.supporter?.email || "None"}
+            </div>
+          </div>
+          {selectedTask.createdBy && selectedTask.createdBy.id !== selectedTask.assignee?.id && (
+            <div>
+              <div style={{ fontSize: "0.7em", fontWeight: 700, textTransform: "uppercase", color: "var(--color-slate)", letterSpacing: "0.08em" }}>Assigned By</div>
+              <div style={{ fontFamily: "var(--font-mono)", fontSize: "0.85em", color: "var(--color-ink)", marginTop: "3px" }}>
                 {selectedTask.createdBy.name || selectedTask.createdBy.email}
               </div>
-            )}
-          <div className="meta-item">
-            <strong>Supporter:</strong>{" "}
-            {selectedTask.supporter?.name ||
-              selectedTask.supporter?.email ||
-              "None"}
+            </div>
+          )}
+          <div>
+            <div style={{ fontSize: "0.7em", fontWeight: 700, textTransform: "uppercase", color: "var(--color-slate)", letterSpacing: "0.08em" }}>Due Date</div>
+            <div style={{ fontFamily: "var(--font-mono)", fontSize: "0.85em", color: selectedTask.dueDate ? "var(--color-vermilion)" : "var(--color-slate)", marginTop: "3px", fontWeight: 600 }}>
+              {selectedTask.dueDate ? selectedTask.dueDate.slice(0, 10) : "No Due Date Set"}
+            </div>
           </div>
-          <div className="meta-item">
-            <strong>Teams:</strong>{" "}
-            {(selectedTask.taskTeams || [])
-              .map((tt) => tt.team.name)
-              .join(", ") || "None"}
+          <div>
+            <div style={{ fontSize: "0.7em", fontWeight: 700, textTransform: "uppercase", color: "var(--color-slate)", letterSpacing: "0.08em" }}>Created Date</div>
+            <div style={{ fontFamily: "var(--font-mono)", fontSize: "0.85em", color: "var(--color-ink)", marginTop: "3px" }}>
+              {new Date(selectedTask.createdAt).toLocaleDateString()}
+            </div>
           </div>
         </div>
 
-        <div className="task-actions">
+        {/* Task Actions Bar */}
+        <div className="task-actions" style={{ marginTop: "16px", display: "flex", flexWrap: "wrap", gap: "8px" }}>
           {isDeletedView ? (
             <button
               onClick={() => handleRestoreTask(selectedTask.id)}
-              className="btn-action success"
+              className="btn-ledger"
+              style={{ width: "100%" }}
             >
-              Restore Task
+              Restore Task Record
             </button>
           ) : (
             <>
               <button
+                type="button"
                 onClick={() => handleOpenEditTask(selectedTask)}
-                className="btn-action secondary"
+                className="task-action-btn"
               >
-                <svg
-                  width="16"
-                  height="16"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  style={{
-                    marginRight: "6px",
-                    verticalAlign: "middle",
-                  }}
-                >
-                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" style={{ marginRight: "6px" }}>
+                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
                 </svg>
-                Edit Details
+                Edit Task
               </button>
 
               <button
+                type="button"
                 onClick={() => handleDuplicateTask(selectedTask)}
-                className="btn-action secondary"
+                className="task-action-btn"
               >
-                <svg
-                  width="16"
-                  height="16"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  style={{
-                    marginRight: "6px",
-                    verticalAlign: "middle",
-                  }}
-                >
-                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" style={{ marginRight: "6px" }}>
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
                 </svg>
-                Duplicate Task
+                Duplicate
               </button>
 
-              <label className="btn-action secondary upload-btn">
-                <svg
-                  width="16"
-                  height="16"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  style={{
-                    marginRight: "6px",
-                    verticalAlign: "middle",
-                  }}
-                >
-                  <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path>
+              <label className="task-action-btn upload-btn" style={{ cursor: "pointer" }}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" style={{ marginRight: "6px" }}>
+                  <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
                 </svg>
                 Attach File
                 <input
@@ -3814,9 +3965,10 @@ const DashboardPage = () => {
                   }}
                 />
               </label>
+
               <button
                 type="button"
-                className="btn-action secondary"
+                className="task-action-btn"
                 onClick={() => {
                   setNewLink({
                     taskId: selectedTask.id,
@@ -3826,37 +3978,28 @@ const DashboardPage = () => {
                   setShowAddLinkModal(true);
                 }}
               >
-                <svg
-                  width="16"
-                  height="16"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  style={{
-                    marginRight: "6px",
-                    verticalAlign: "middle",
-                  }}
-                >
-                  <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
-                  <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" style={{ marginRight: "6px" }}>
+                  <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+                  <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
                 </svg>
                 Attach Link
               </button>
+
               {canReviewTasks && selectedTask.approvalStatus === "PENDING" && (
                 <>
                   <button
                     type="button"
-                    className="btn-action success"
+                    className="btn-vermilion"
+                    style={{ flex: "1 1 100%" }}
                     onClick={() =>
                       handleApprovalAction(selectedTask.id, "APPROVE")
                     }
                   >
-                    Approve
+                    Approve Task Record
                   </button>
                   <button
                     type="button"
-                    className="btn-action danger"
+                    className="task-action-btn task-action-btn-danger"
                     onClick={() =>
                       handleApprovalAction(selectedTask.id, "REJECT")
                     }
@@ -3865,11 +4008,17 @@ const DashboardPage = () => {
                   </button>
                 </>
               )}
+
               {canDeleteTask(selectedTask) && (
                 <button
+                  type="button"
                   onClick={() => handleDeleteTask(selectedTask.id)}
-                  className="btn-action danger"
+                  className="task-action-btn task-action-btn-danger"
                 >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" style={{ marginRight: "6px" }}>
+                    <polyline points="3 6 5 6 21 6" />
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                  </svg>
                   Move to Recently Deleted
                 </button>
               )}
@@ -3944,16 +4093,16 @@ const DashboardPage = () => {
                     <span
                       className={`submission-status status-${sub.status?.toLowerCase() || ""}`}
                     >
-                      {sub.status}
+                      {formatStatusLabel(sub.status)}
                     </span>
                   </div>
                   <div className="submission-meta">
                     <span>
-                      Submitted: {new Date(sub.submittedAt).toLocaleString()}
+                      Submitted: {formatDateTimeWithoutSeconds(sub.submittedAt)}
                     </span>
                     {sub.reviewedAt && (
                       <span>
-                        Reviewed: {new Date(sub.reviewedAt).toLocaleString()}
+                        Reviewed: {formatDateTimeWithoutSeconds(sub.reviewedAt)}
                       </span>
                     )}
                   </div>
@@ -3992,34 +4141,55 @@ const DashboardPage = () => {
         )}
 
         {!isDeletedView && activityLogs.length > 0 && (
-          <div className="task-activity-timeline">
-            <h4>Activity Timeline</h4>
-            <div className="activity-list">
+          <div className="task-activity-timeline" style={{ marginTop: "20px" }}>
+            <h4 style={{
+              fontSize: "0.75em",
+              fontWeight: 700,
+              textTransform: "uppercase",
+              color: "var(--color-slate)",
+              letterSpacing: "0.08em",
+              marginBottom: "12px"
+            }}>
+              Activity Timeline
+            </h4>
+            <div className="activity-list" style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
               {activityLogs.map((log) => (
-                <div key={log.id} className="activity-item">
-                  <div className="activity-icon">
-                    {log.action === "TASK_CREATED" && "🚀"}
-                    {log.action === "COMMENT_ADDED" && "💬"}
-                    {log.action === "COMMENT_DELETED" && "🗑️"}
-                    {log.action === "STATUS_CHANGED" && "📊"}
-                    {log.action === "ASSIGNEE_CHANGED" && "👤"}
-                    {log.action === "SUPPORTER_CHANGED" && "🤝"}
-                    {log.action === "SUBMISSION_CREATED" && "📝"}
-                    {log.action === "SUBMISSION_REVIEWED" && "✅"}
-                    {log.action === "ATTACHMENT_ADDED" && "📎"}
-                    {log.action === "ATTACHMENT_DELETED" && "📎"}
-                    {log.action === "TASK_UPDATED" && "✏️"}
+                <div key={log.id} className="activity-item" style={{
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: "10px",
+                  padding: "10px 12px",
+                  background: "var(--color-fog)",
+                  borderRadius: "var(--radius-sm)",
+                  border: "1px solid var(--color-line)",
+                  borderLeft: "2px solid var(--color-line)"
+                }}>
+                  <div className="activity-icon" style={{
+                    width: "26px",
+                    height: "26px",
+                    borderRadius: "var(--radius-sm)",
+                    background: "#FFFFFF",
+                    border: "1px solid var(--color-line)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flexShrink: 0,
+                    marginTop: "2px"
+                  }}>
+                    {renderActivityIcon(log.action)}
                   </div>
-                  <div className="activity-content">
-                    <div className="activity-header">
-                      <span className="activity-user">
-                        {log.user?.name || "System"}
+                  <div className="activity-content" style={{ flex: 1, minWidth: 0 }}>
+                    <div className="activity-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "2px" }}>
+                      <span className="activity-user" style={{ fontSize: "0.82em", fontWeight: 700, color: "var(--color-ink)" }}>
+                        {log.user?.name || "System Record"}
                       </span>
-                      <span className="activity-time">
-                        {new Date(log.createdAt).toLocaleString()}
+                      <span className="activity-time" style={{ fontFamily: "var(--font-mono)", fontSize: "0.72em", color: "var(--color-slate)" }}>
+                        {formatDateTimeWithoutSeconds(log.createdAt)}
                       </span>
                     </div>
-                    <p className="activity-description">{log.description}</p>
+                    <p className="activity-description" style={{ margin: 0, fontSize: "0.82em", color: "var(--color-ink)", lineHeight: 1.4 }}>
+                      {formatActivityDescription(log.description)}
+                    </p>
                   </div>
                 </div>
               ))}
@@ -4027,27 +4197,51 @@ const DashboardPage = () => {
           </div>
         )}
 
-        <div className="task-comments">
-          <div className="task-comments-header">
-            <h4>Timeline & Comments</h4>
-            <span className="comments-count">
-              {selectedTask.comments?.length || 0} entries
+        <div className="task-comments" style={{ marginTop: "24px" }}>
+          <div className="task-comments-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+            <h4 style={{
+              fontSize: "0.75em",
+              fontWeight: 700,
+              textTransform: "uppercase",
+              color: "var(--color-slate)",
+              letterSpacing: "0.08em",
+              margin: 0
+            }}>
+              Timeline & Comments
+            </h4>
+            <span className="comments-count" style={{ fontFamily: "var(--font-mono)", fontSize: "0.75em", color: "var(--color-slate)" }}>
+              {selectedTask.comments?.length || 0} ENTRIES
             </span>
           </div>
-          <div className="comments-list">
+          <div className="comments-list" style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
             {(expandedCommentThreads[selectedTask.id]
               ? selectedTask.comments || []
               : (selectedTask.comments || []).slice(0, COMMENTS_PREVIEW_COUNT)
             ).map((comment: any) => (
-              <div key={comment.id} className="comment-item">
-                <div className="comment-header">
-                  <strong>{comment.user.name || comment.user.email}</strong>
-                  <div className="comment-meta">
-                    <span>{new Date(comment.createdAt).toLocaleString()}</span>
+              <div key={comment.id} className="comment-item" style={{
+                padding: "12px 14px",
+                background: "#FFFFFF",
+                borderRadius: "var(--radius-sm)",
+                border: "1px solid var(--color-line)"
+              }}>
+                <div className="comment-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
+                  <strong style={{ fontSize: "0.88em", color: "var(--color-ink)", fontWeight: 700 }}>
+                    {comment.user.name || comment.user.email}
+                  </strong>
+                  <div className="comment-meta" style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.72em", color: "var(--color-slate)" }}>
+                      {formatDateTimeWithoutSeconds(comment.createdAt)}
+                    </span>
                     {!isDeletedView &&
                       (user?.id === comment.userId || isAdmin) && (
                         <button
-                          className="btn-delete-small"
+                          className="btn-secondary"
+                          style={{
+                            padding: "2px 6px",
+                            fontSize: "0.7em",
+                            color: "var(--color-vermilion)",
+                            borderColor: "var(--color-line)",
+                          }}
                           onClick={async () => {
                             if (window.confirm("Delete this comment?")) {
                               await api.delete(`/tasks/comments/${comment.id}`);
@@ -4058,12 +4252,14 @@ const DashboardPage = () => {
                             }
                           }}
                         >
-                          Delete
+                          Remove
                         </button>
                       )}
                   </div>
                 </div>
-                <p className="comment-content">{comment.content}</p>
+                <p className="comment-content" style={{ margin: 0, fontSize: "0.88em", color: "var(--color-ink)", lineHeight: 1.5, fontFamily: "var(--font-body)", whiteSpace: "pre-wrap" }}>
+                  {comment.content}
+                </p>
               </div>
             ))}
           </div>
@@ -4071,6 +4267,17 @@ const DashboardPage = () => {
             <button
               type="button"
               className="btn-thread-toggle"
+              style={{
+                marginTop: "10px",
+                background: "transparent",
+                border: "none",
+                fontFamily: "var(--font-mono)",
+                fontSize: "0.78em",
+                color: "var(--color-vermilion)",
+                fontWeight: 700,
+                cursor: "pointer",
+                padding: 0
+              }}
               onClick={() =>
                 setExpandedCommentThreads((prev) => ({
                   ...prev,
@@ -4079,13 +4286,14 @@ const DashboardPage = () => {
               }
             >
               {expandedCommentThreads[selectedTask.id]
-                ? `Show recent ${COMMENTS_PREVIEW_COUNT}`
-                : `Show all ${selectedTask.comments?.length} comments`}
+                ? `SHOW RECENT ${COMMENTS_PREVIEW_COUNT}`
+                : `SHOW ALL ${selectedTask.comments?.length} COMMENTS`}
             </button>
           )}
           {!isDeletedView && (
             <form
               className="add-comment"
+              style={{ marginTop: "14px", display: "flex", flexDirection: "column", gap: "8px" }}
               onSubmit={async (e) => {
                 e.preventDefault();
                 await handleAddComment(selectedTask.id);
@@ -4094,7 +4302,19 @@ const DashboardPage = () => {
               <textarea
                 value={commentDrafts[selectedTask.id] || ""}
                 placeholder="Write a comment..."
-                rows={2}
+                rows={3}
+                style={{
+                  width: "100%",
+                  padding: "10px 12px",
+                  borderRadius: "var(--radius-sm)",
+                  border: "1px solid var(--color-line)",
+                  background: "#FFFFFF",
+                  color: "var(--color-ink)",
+                  fontFamily: "var(--font-body)",
+                  fontSize: "0.88em",
+                  resize: "vertical",
+                  boxSizing: "border-box"
+                }}
                 onChange={(e) =>
                   setCommentDrafts((prev) => ({
                     ...prev,
@@ -4104,7 +4324,8 @@ const DashboardPage = () => {
               />
               <button
                 type="submit"
-                className="btn-action success"
+                className="btn-primary"
+                style={{ alignSelf: "flex-end", padding: "6px 16px", fontSize: "0.82em" }}
                 disabled={
                   submittingCommentTaskId === selectedTask.id ||
                   !(commentDrafts[selectedTask.id] || "").trim()
@@ -4112,7 +4333,7 @@ const DashboardPage = () => {
               >
                 {submittingCommentTaskId === selectedTask.id
                   ? "Posting..."
-                  : "Post"}
+                  : "Post Comment"}
               </button>
             </form>
           )}
@@ -4342,9 +4563,7 @@ const DashboardPage = () => {
                   <small className="detail-label">Role</small>
                   <p>
                     {selectedMemberDetail.roleLabel
-                      ? selectedMemberDetail.roleLabel === "TEAM_LEAD"
-                        ? "TEAM LEAD"
-                        : formatRole(selectedMemberDetail.roleLabel)
+                      ? formatRole(selectedMemberDetail.roleLabel)
                       : "-"}
                   </p>
                 </div>
@@ -4455,54 +4674,23 @@ const DashboardPage = () => {
             {isAdmin && !focusMembers && (
               <>
                 <div className="team-invite-panel">
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      marginBottom: "16px",
-                    }}
-                  >
-                    <h3 style={{ margin: 0 }}>Invite Team Members</h3>
+                  <div className="team-panel-header">
+                    <h3>Invite Team Members</h3>
                     <button
                       type="button"
                       className="btn-secondary"
                       onClick={handleOpenBulkInviteModal}
-                      style={{ padding: "8px 16px", fontSize: "0.9em" }}
                       disabled={!isAdmin}
                     >
                       Bulk Invite
                     </button>
                   </div>
                   {teamError && (
-                    <div
-                      className="team-error"
-                      style={{
-                        padding: "12px 16px",
-                        background: "#FEF2F2",
-                        border: "1px solid #FECACA",
-                        borderRadius: "8px",
-                        color: "#991B1B",
-                        marginBottom: "16px",
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                      }}
-                    >
+                    <div className="team-error">
                       <span>{teamError}</span>
                       <button
                         type="button"
                         onClick={fetchData}
-                        style={{
-                          background: "none",
-                          border: "1px solid #991B1B",
-                          borderRadius: "4px",
-                          padding: "4px 12px",
-                          cursor: "pointer",
-                          fontSize: "0.85em",
-                          color: "#991B1B",
-                          fontWeight: 600,
-                        }}
                       >
                         Refresh Data
                       </button>
@@ -4528,14 +4716,15 @@ const DashboardPage = () => {
                         required
                         disabled={!isAdmin || inviting}
                       />
-                      <select
+                      <CustomSelect
                         value={inviteRole}
-                        onChange={(e) => setInviteRole(e.target.value)}
+                        onChange={(val) => setInviteRole(val)}
                         disabled={!isAdmin || inviting}
-                      >
-                        <option value="MEMBER">Member</option>
-                        <option value="TEAM_LEAD">Team Lead</option>
-                      </select>
+                        options={[
+                          { value: "MEMBER", label: "Member" },
+                          { value: "TEAM_LEAD", label: "Team Lead" },
+                        ]}
+                      />
                       <TeamMultiDropdown
                         teams={teams}
                         value={inviteTeamIds}
@@ -4689,37 +4878,25 @@ const DashboardPage = () => {
               <h3>{isAdmin ? "All Members" : "Team Members"}</h3>
 
               <div
-                style={{
-                  display: "flex",
-                  gap: "12px",
-                  marginBottom: "16px",
-                  flexWrap: "wrap",
-                }}
+                className="team-members-toolbar"
               >
-                <select
+                <CustomSelect
                   value={ownerFilter}
-                  onChange={(e) => setOwnerFilter(e.target.value)}
-                  style={{
-                    padding: "8px 12px",
-                    borderRadius: "8px",
-                    border: "1px solid var(--border-color)",
-                    background: "#fff",
-                    fontSize: "0.9em",
-                    minWidth: "160px",
-                  }}
-                >
-                  <option value="all">All Owners</option>
-                  {(organization?.members || [])
-                    .filter(
-                      (member) =>
-                        member.role !== "ADMIN" && member.userId !== user?.id,
-                    )
-                    .map((member) => (
-                      <option key={member.userId} value={member.userId}>
-                        {member.user.name || member.user.email}
-                      </option>
-                    ))}
-                </select>
+                  onChange={(val) => setOwnerFilter(val)}
+                  style={{ minWidth: "160px" }}
+                  options={[
+                    { value: "all", label: "All Owners" },
+                    ...(organization?.members || [])
+                      .filter(
+                        (member) =>
+                          member.role !== "ADMIN" && member.userId !== user?.id,
+                      )
+                      .map((member) => ({
+                        value: member.userId,
+                        label: member.user.name || member.user.email,
+                      }))
+                  ]}
+                />
 
                 {ownerFilter !== "all" && (
                   <button
@@ -4727,72 +4904,25 @@ const DashboardPage = () => {
                       setOwnerFilter("all");
                     }}
                     className="btn-secondary"
-                    style={{
-                      padding: "8px 16px",
-                      borderRadius: "8px",
-                      border: "1px solid var(--border-color)",
-                      background: "#fff",
-                      fontSize: "0.9em",
-                      cursor: "pointer",
-                    }}
                   >
                     Clear Filters
                   </button>
                 )}
               </div>
 
-              <div
-                className="members-table-container"
-                style={{ overflowX: "auto" }}
-              >
+              <div className="members-table-container">
                 <table
                   className="members-table"
-                  style={{
-                    width: "100%",
-                    borderCollapse: "collapse",
-                    fontSize: "0.9em",
-                  }}
                 >
                   <thead>
-                    <tr
-                      style={{
-                        textAlign: "left",
-                        borderBottom: "2px solid var(--border-color)",
-                      }}
-                    >
-                      <th style={{ padding: "12px 16px", fontWeight: 600 }}>
-                        Name
-                      </th>
-                      <th style={{ padding: "12px 16px", fontWeight: 600 }}>
-                        Email
-                      </th>
-                      <th style={{ padding: "12px 16px", fontWeight: 600 }}>
-                        Job Title
-                      </th>
-                      <th style={{ padding: "12px 16px", fontWeight: 600 }}>
-                        Team
-                      </th>
-                      <th style={{ padding: "12px 16px", fontWeight: 600 }}>
-                        Role
-                      </th>
-                      <th
-                        style={{
-                          padding: "12px 16px",
-                          fontWeight: 600,
-                          textAlign: "center",
-                        }}
-                      >
-                        Remove
-                      </th>
-                      <th
-                        style={{
-                          padding: "12px 16px",
-                          fontWeight: 600,
-                          textAlign: "center",
-                        }}
-                      >
-                        View
-                      </th>
+                    <tr>
+                      <th>Name</th>
+                      <th>Email</th>
+                      <th>Job Title</th>
+                      <th>Team</th>
+                      <th>Role</th>
+                      <th className="team-table-action-col">Remove</th>
+                      <th className="team-table-action-col">View</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -4801,17 +4931,6 @@ const DashboardPage = () => {
                         <tr
                           key={row.member.id}
                           className="member-table-row"
-                          style={{
-                            borderBottom: "1px solid var(--border-color)",
-                            transition: "background 0.2s",
-                          }}
-                          onMouseEnter={(e) =>
-                            (e.currentTarget.style.background =
-                              "var(--hover-bg)")
-                          }
-                          onMouseLeave={(e) =>
-                            (e.currentTarget.style.background = "transparent")
-                          }
                         >
                           <td style={{ padding: "12px 16px" }}>
                             <div
@@ -4898,7 +5017,7 @@ const DashboardPage = () => {
                             }}
                           >
                             <button
-                              className="btn-action"
+                              className="btn-secondary"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 handleOpenMemberDetail(row);
@@ -5013,22 +5132,14 @@ const DashboardPage = () => {
                     >
                       Role
                     </label>
-                    <select
-                      id="reactivate-role"
+                    <CustomSelect
                       value={reactivateRole}
-                      onChange={(e) => setReactivateRole(e.target.value)}
-                      style={{
-                        padding: "8px 12px",
-                        border: "1px solid var(--border-color, #e2e8f0)",
-                        borderRadius: "6px",
-                        fontSize: "0.9em",
-                        background: "var(--input-bg, #fff)",
-                        color: "var(--text-primary)",
-                      }}
-                    >
-                      <option value="MEMBER">Member</option>
-                      <option value="TEAM_LEAD">Team Lead</option>
-                    </select>
+                      onChange={(val) => setReactivateRole(val)}
+                      options={[
+                        { value: "MEMBER", label: "Member" },
+                        { value: "TEAM_LEAD", label: "Team Lead" },
+                      ]}
+                    />
                   </div>
                   <button
                     type="submit"
@@ -5109,23 +5220,28 @@ const DashboardPage = () => {
                           marginBottom: "8px",
                         }}
                       >
-                        <h3 style={{ margin: 0, fontSize: "1.2em" }}>
+                        <h3 style={{ margin: 0, fontFamily: "var(--font-heading)", fontSize: "1.3em", fontWeight: 800 }}>
                           {appraisal.subjectName ||
                             appraisal.reportSections?.header?.name ||
                             appraisal.subjectUser?.name ||
                             appraisal.subjectUser?.email ||
                             "Appraisal Subject"}
                         </h3>
+                        <span className="stamp-badge stamp-badge-sm">
+                          OFFICIAL RECORD
+                        </span>
                         {(appraisal.reportSections?.header?.team ||
                           appraisal.subjectUser?.team ||
                           appraisal.subjectType === "TEAM") && (
                           <span
                             style={{
-                              background: "#E0F2FE",
-                              color: "#0369A1",
-                              padding: "4px 12px",
-                              borderRadius: "100px",
-                              fontSize: "0.75em",
+                              background: "var(--color-fog)",
+                              color: "var(--color-ink)",
+                              border: "1px solid var(--color-line)",
+                              padding: "2px 8px",
+                              borderRadius: "4px",
+                              fontFamily: "var(--font-mono)",
+                              fontSize: "0.72em",
                               fontWeight: 700,
                               textTransform: "uppercase",
                             }}
@@ -5611,18 +5727,18 @@ const DashboardPage = () => {
                       Recently Deleted
                     </button>
                   )}
-                  <select
-                    className="tracker-select-filter"
+                  <CustomSelect
                     value={taskClientFilter}
-                    onChange={(e) => setTaskClientFilter(e.target.value)}
-                  >
-                    <option value="all">All Clients</option>
-                    {clients.map((client) => (
-                      <option key={client.id} value={client.id}>
-                        {client.name}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(val) => setTaskClientFilter(val)}
+                    style={{ minWidth: "150px" }}
+                    options={[
+                      { value: "all", label: "All Clients" },
+                      ...clients.map((client) => ({
+                        value: client.id,
+                        label: client.name,
+                      }))
+                    ]}
+                  />
                 </div>
               </div>
 
@@ -5652,7 +5768,7 @@ const DashboardPage = () => {
                             <span
                               className={`status-badge ${task.status?.toLowerCase() || ""}`}
                             >
-                              {task.status.replace("_", " ")}
+                              {formatStatusLabel(task.status)}
                             </span>
                             {isOverdue(task) && (
                               <span
@@ -5688,9 +5804,7 @@ const DashboardPage = () => {
                                   }}
                                   title="Approval status"
                                 >
-                                  {task.approvalStatus === "PENDING"
-                                    ? "Awaiting approval"
-                                    : task.approvalStatus}
+                                  {formatStatusLabel(task.approvalStatus)}
                                 </span>
                               )}
                           </div>
@@ -5713,6 +5827,12 @@ const DashboardPage = () => {
                             </>
                           ) : (
                             <>
+                              <div className="meta-item">
+                                <strong>Due Date:</strong>{" "}
+                                {task.dueDate
+                                  ? new Date(task.dueDate).toLocaleDateString()
+                                  : "No Due Date"}
+                              </div>
                               <div className="meta-item">
                                 <strong>Owner:</strong>{" "}
                                 {task.assignee?.name ||
@@ -5856,11 +5976,14 @@ const DashboardPage = () => {
                 </div>
 
                 <div
-                  className={`task-detail-backdrop ${selectedTaskId ? "active" : ""}`}
-                  onClick={() => setSelectedTaskId(null)}
+                  className={`task-detail-backdrop ${selectedTaskId ? "active" : ""} ${isExpandedFullScreen ? "full-screen-backdrop" : ""}`}
+                  onClick={() => {
+                    setSelectedTaskId(null);
+                    setIsExpandedFullScreen(false);
+                  }}
                 />
                 <aside
-                  className={`task-detail-panel ${selectedTask ? "open" : ""}`}
+                  className={`task-detail-panel ${selectedTask ? "open" : ""} ${isExpandedFullScreen ? "full-screen" : ""}`}
                 >
                   {renderTaskDetailPanelInner()}
                 </aside>
@@ -5890,15 +6013,14 @@ const DashboardPage = () => {
               </div>
               <div className="form-group">
                 <label>Visibility</label>
-                <select
+                <CustomSelect
                   value={clientFormVisibility}
-                  onChange={(e) => setClientFormVisibility(e.target.value)}
-                >
-                  <option value="ORG_WIDE">
-                    Organization-wide (All members)
-                  </option>
-                  <option value="CREATOR_ONLY">Only me (Creator)</option>
-                </select>
+                  onChange={(val) => setClientFormVisibility(val)}
+                  options={[
+                    { value: "ORG_WIDE", label: "Organization-wide (All members)" },
+                    { value: "CREATOR_ONLY", label: "Only me (Creator)" },
+                  ]}
+                />
               </div>
               <div className="modal-notice">
                 <small>
@@ -5940,15 +6062,14 @@ const DashboardPage = () => {
               </div>
               <div className="form-group">
                 <label>Visibility</label>
-                <select
+                <CustomSelect
                   value={clientFormVisibility}
-                  onChange={(e) => setClientFormVisibility(e.target.value)}
-                >
-                  <option value="ORG_WIDE">
-                    Organization-wide (All members)
-                  </option>
-                  <option value="CREATOR_ONLY">Only me (Creator)</option>
-                </select>
+                  onChange={(val) => setClientFormVisibility(val)}
+                  options={[
+                    { value: "ORG_WIDE", label: "Organization-wide (All members)" },
+                    { value: "CREATOR_ONLY", label: "Only me (Creator)" },
+                  ]}
+                />
               </div>
               <div className="modal-actions">
                 <button
@@ -5976,181 +6097,183 @@ const DashboardPage = () => {
             className="modal large no-scroll"
             onClick={(e) => e.stopPropagation()}
           >
-            <h2>Create New Task</h2>
-            <form onSubmit={handleCreateTask}>
-              <div className="form-group">
-                <label>Title *</label>
-                <input
-                  type="text"
-                  value={newTask.title}
-                  onChange={(e) =>
-                    setNewTask({ ...newTask, title: e.target.value })
-                  }
-                  required
-                  autoFocus
-                />
+            <div className="modal-record-header">
+              <div>
+                <h2>Create New Task</h2>
+                <p>Capture ownership, timeline, priority, and OKR impact.</p>
               </div>
-              <div className="form-group">
-                <label>Description</label>
-                <textarea
-                  value={newTask.description}
-                  onChange={(e) =>
-                    setNewTask({ ...newTask, description: e.target.value })
-                  }
-                  rows={4}
-                />
-              </div>
-              {/* Task create form */}
-              <div className="form-row">
+              <span className="stamp-badge stamp-badge-sm">TASK ENTRY</span>
+            </div>
+            <form onSubmit={handleCreateTask} className="record-dialog-form">
+              <div className="dialog-section">
+                <div className="dialog-section-title">Task Brief</div>
                 <div className="form-group">
-                  <label>Priority</label>
-                  <select
-                    value={newTask.priority}
-                    onChange={(e) =>
-                      setNewTask({ ...newTask, priority: e.target.value })
-                    }
-                  >
-                    <option value="LOW">Low</option>
-                    <option value="MEDIUM">Medium</option>
-                    <option value="HIGH">High</option>
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label>Due Date</label>
+                  <label>Title *</label>
                   <input
-                    type="date"
-                    value={newTask.dueDate}
+                    type="text"
+                    value={newTask.title}
                     onChange={(e) =>
-                      setNewTask({ ...newTask, dueDate: e.target.value })
+                      setNewTask({ ...newTask, title: e.target.value })
                     }
+                    required
+                    autoFocus
                   />
                 </div>
                 <div className="form-group">
-                  <label>Status</label>
-                  <select
-                    value={newTask.status}
+                  <label>Description</label>
+                  <textarea
+                    value={newTask.description}
                     onChange={(e) =>
-                      setNewTask({ ...newTask, status: e.target.value })
+                      setNewTask({ ...newTask, description: e.target.value })
                     }
-                  >
-                    <option value="TODO">To Do</option>
-                    <option value="IN_PROGRESS">In Progress</option>
-                    <option value="IN_REVIEW">In Review</option>
-                    <option value="DONE">Done</option>
-                    <option value="ON_HOLD">On Hold</option>
-                    <option value="CANCELLED">Cancelled</option>
-                  </select>
+                    rows={4}
+                  />
                 </div>
               </div>
-              {organization?.members && (
-                <div className="form-group">
-                  <label>Primary Assignee *</label>
-                  <select
-                    value={newTask.assigneeId}
-                    onChange={(e) => {
-                      const assigneeId = e.target.value;
-                      const isDelegated = assigneeId && assigneeId !== user?.id;
-                      setNewTask({
-                        ...newTask,
-                        assigneeId,
-                        supporterId:
-                          newTask.supporterId === assigneeId
-                            ? ""
-                            : newTask.supporterId,
-                        alertTeamLead: isDelegated
-                          ? true
-                          : newTask.alertTeamLead,
-                        okrId: "",
-                        keyResultIds: [],
-                      });
-                      if (assigneeId) {
-                        void loadLinkableOkrs(assigneeId);
-                      }
-                    }}
-                    required
-                  >
-                    <option value="">Select assignee</option>
-                    {taskAssignableUsers.map((member) => (
-                      <option key={member.user.id} value={member.user.id}>
-                        {member.user.id === user?.id
-                          ? `Me (${member.user.name || member.user.email})`
-                          : member.user.name || member.user.email}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-              {organization?.members && (
-                <div className="form-group">
-                  <label>Supported By (Optional)</label>
-                  <select
-                    value={newTask.supporterId}
-                    onChange={(e) =>
-                      setNewTask({ ...newTask, supporterId: e.target.value })
-                    }
-                  >
-                    <option value="">Select supporter (optional)</option>
-                    {taskAssignableUsers
-                      .filter((member) => member.user.id !== newTask.assigneeId)
-                      .map((member) => (
-                        <option key={member.user.id} value={member.user.id}>
-                          {member.user.id === user?.id
-                            ? `Me (${member.user.name || member.user.email})`
-                            : member.user.name || member.user.email}
-                        </option>
-                      ))}
-                  </select>
-                </div>
-              )}
-              {!isTeamLead && (
-                <div className="form-group">
-                  <label
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 8,
-                      cursor: "pointer",
-                    }}
-                  >
+              <div className="dialog-section">
+                <div className="dialog-section-title">Status & Timeline</div>
+                <div className="form-row form-row-three">
+                  <div className="form-group">
+                    <label>Priority</label>
+                    <CustomSelect
+                      value={newTask.priority}
+                      onChange={(val) => setNewTask({ ...newTask, priority: val })}
+                      options={[
+                        { value: "LOW", label: "Low" },
+                        { value: "MEDIUM", label: "Medium" },
+                        { value: "HIGH", label: "High" },
+                      ]}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Due Date</label>
                     <input
-                      type="checkbox"
-                      checked={
-                        newTask.alertTeamLead ||
-                        (newTask.assigneeId &&
-                          newTask.assigneeId !== user?.id) ||
-                        false
-                      }
-                      disabled={
-                        newTask.assigneeId && newTask.assigneeId !== user?.id
-                          ? true
-                          : false
-                      }
+                      type="date"
+                      value={newTask.dueDate}
                       onChange={(e) =>
+                        setNewTask({ ...newTask, dueDate: e.target.value })
+                      }
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Status</label>
+                    <CustomSelect
+                      value={newTask.status}
+                      onChange={(val) => setNewTask({ ...newTask, status: val })}
+                      options={[
+                        { value: "TODO", label: "To Do" },
+                        { value: "IN_PROGRESS", label: "In Progress" },
+                        { value: "IN_REVIEW", label: "In Review" },
+                        { value: "DONE", label: "Done" },
+                        { value: "ON_HOLD", label: "On Hold" },
+                        { value: "CANCELLED", label: "Cancelled" },
+                      ]}
+                    />
+                  </div>
+                </div>
+              </div>
+              <div className="dialog-section">
+                <div className="dialog-section-title">Ownership</div>
+                {organization?.members && (
+                  <div className="form-group">
+                    <label>Primary Assignee *</label>
+                    <CustomSelect
+                      value={newTask.assigneeId}
+                      placeholder="Select assignee"
+                      onChange={(assigneeId) => {
+                        const isDelegated = assigneeId && assigneeId !== user?.id;
                         setNewTask({
                           ...newTask,
-                          alertTeamLead: e.target.checked,
-                        })
-                      }
-                      style={{ width: "auto", margin: 0 }}
+                          assigneeId,
+                          supporterId: newTask.supporterId === assigneeId ? "" : newTask.supporterId,
+                          alertTeamLead: isDelegated ? true : newTask.alertTeamLead,
+                          okrId: "",
+                          keyResultIds: [],
+                        });
+                        if (assigneeId) {
+                          void loadLinkableOkrs(assigneeId);
+                        }
+                      }}
+                      options={taskAssignableUsers.map((member) => ({
+                        value: member.user.id,
+                        label: member.user.id === user?.id
+                          ? `Me (${member.user.name || member.user.email})`
+                          : member.user.name || member.user.email,
+                      }))}
                     />
-                    <span>
-                      Alert Team Lead about this task
-                      {newTask.assigneeId && newTask.assigneeId !== user?.id
-                        ? " (Locked: Delegated task)"
-                        : ""}
-                    </span>
-                  </label>
-                  <small
-                    style={{
-                      color: "var(--text-muted)",
-                      display: "block",
-                      marginTop: 4,
-                    }}
-                  >
-                    Reviewers will be notified about this task.
-                  </small>
-                </div>
-              )}
+                  </div>
+                )}
+                {organization?.members && (
+                  <div className="form-group">
+                    <label>Supported By (Optional)</label>
+                    <CustomSelect
+                      value={newTask.supporterId}
+                      placeholder="Select supporter (optional)"
+                      onChange={(val) => setNewTask({ ...newTask, supporterId: val })}
+                      options={[
+                        { value: "", label: "None (Optional)" },
+                        ...taskAssignableUsers
+                          .filter((member) => member.user.id !== newTask.assigneeId)
+                          .map((member) => ({
+                            value: member.user.id,
+                            label: member.user.id === user?.id
+                              ? `Me (${member.user.name || member.user.email})`
+                              : member.user.name || member.user.email,
+                          }))
+                      ]}
+                    />
+                  </div>
+                )}
+                {!isTeamLead && (
+                  <div className="form-group">
+                    <label
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        cursor: "pointer",
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={
+                          newTask.alertTeamLead ||
+                          (newTask.assigneeId &&
+                            newTask.assigneeId !== user?.id) ||
+                          false
+                        }
+                        disabled={
+                          newTask.assigneeId && newTask.assigneeId !== user?.id
+                            ? true
+                            : false
+                        }
+                        onChange={(e) =>
+                          setNewTask({
+                            ...newTask,
+                            alertTeamLead: e.target.checked,
+                          })
+                        }
+                        style={{ width: "auto", margin: 0 }}
+                      />
+                      <span>
+                        Alert Team Lead about this task
+                        {newTask.assigneeId && newTask.assigneeId !== user?.id
+                          ? " (Locked: Delegated task)"
+                          : ""}
+                      </span>
+                    </label>
+                    <small
+                      style={{
+                        color: "var(--text-muted)",
+                        display: "block",
+                        marginTop: 4,
+                      }}
+                    >
+                      Reviewers will be notified about this task.
+                    </small>
+                  </div>
+                )}
+              </div>
               <div className="form-group">
                 <label
                   style={{
@@ -6169,6 +6292,8 @@ const DashboardPage = () => {
                   <span>Create more (keep this form open after saving)</span>
                 </label>
               </div>
+              <div className="dialog-section">
+                <div className="dialog-section-title">OKR Contribution</div>
               <div className="form-group">
                 <label>OKR Key Results</label>
                 <div className="task-kr-toolbar">
@@ -6258,6 +6383,7 @@ const DashboardPage = () => {
                     : "This task is marked as General and not attached to any OKR"}
                 </small>
               </div>
+              </div>
               <div className="modal-actions">
                 <button
                   type="button"
@@ -6318,16 +6444,17 @@ const DashboardPage = () => {
               <div className="form-row">
                 <div className="form-group">
                   <label>Priority</label>
-                  <select
+                  <CustomSelect
                     value={editTask.priority}
-                    onChange={(e) =>
-                      setEditTask({ ...editTask, priority: e.target.value })
+                    onChange={(val) =>
+                      setEditTask({ ...editTask, priority: val })
                     }
-                  >
-                    <option value="LOW">Low</option>
-                    <option value="MEDIUM">Medium</option>
-                    <option value="HIGH">High</option>
-                  </select>
+                    options={[
+                      { value: "LOW", label: "Low" },
+                      { value: "MEDIUM", label: "Medium" },
+                      { value: "HIGH", label: "High" },
+                    ]}
+                  />
                 </div>
                 <div className="form-group">
                   <label>Due Date</label>
@@ -6341,38 +6468,34 @@ const DashboardPage = () => {
                 </div>
                 <div className="form-group">
                   <label>Status</label>
-                  <select
+                  <CustomSelect
                     value={editTask.status}
-                    onChange={(e) =>
-                      setEditTask({ ...editTask, status: e.target.value })
+                    onChange={(val) =>
+                      setEditTask({ ...editTask, status: val })
                     }
-                  >
-                    <option value="TODO">To Do</option>
-                    <option value="IN_PROGRESS">In Progress</option>
-                    <option value="IN_REVIEW">In Review</option>
-                    <option value="DONE">Done</option>
-                    <option value="ON_HOLD">On Hold</option>
-                    <option value="CANCELLED">Cancelled</option>
-                  </select>
+                    options={[
+                      { value: "TODO", label: "To Do" },
+                      { value: "IN_PROGRESS", label: "In Progress" },
+                      { value: "IN_REVIEW", label: "In Review" },
+                      { value: "DONE", label: "Done" },
+                      { value: "ON_HOLD", label: "On Hold" },
+                      { value: "CANCELLED", label: "Cancelled" },
+                    ]}
+                  />
                 </div>
               </div>
               <div className="form-group">
                 <label>Primary Assignee *</label>
-                <select
+                <CustomSelect
                   value={editTask.assigneeId}
-                  onChange={(e) => {
-                    const assigneeId = e.target.value;
+                  placeholder="Select assignee"
+                  onChange={(assigneeId) => {
                     const isDelegated = assigneeId && assigneeId !== user?.id;
                     setEditTask({
                       ...editTask,
                       assigneeId,
-                      supporterId:
-                        editTask.supporterId === assigneeId
-                          ? ""
-                          : editTask.supporterId,
-                      alertTeamLead: isDelegated
-                        ? true
-                        : editTask.alertTeamLead,
+                      supporterId: editTask.supporterId === assigneeId ? "" : editTask.supporterId,
+                      alertTeamLead: isDelegated ? true : editTask.alertTeamLead,
                       okrId: "",
                       keyResultIds: [],
                     });
@@ -6380,17 +6503,13 @@ const DashboardPage = () => {
                       void loadLinkableOkrs(assigneeId);
                     }
                   }}
-                  required
-                >
-                  <option value="">Select assignee</option>
-                  {taskAssignableUsers.map((member) => (
-                    <option key={member.user.id} value={member.user.id}>
-                      {member.user.id === user?.id
-                        ? `Me (${member.user.name || member.user.email})`
-                        : member.user.name || member.user.email}
-                    </option>
-                  ))}
-                </select>
+                  options={taskAssignableUsers.map((member) => ({
+                    value: member.user.id,
+                    label: member.user.id === user?.id
+                      ? `Me (${member.user.name || member.user.email})`
+                      : member.user.name || member.user.email,
+                  }))}
+                />
               </div>
               <div className="form-group">
                 <label>OKR Key Results</label>
@@ -6515,23 +6634,24 @@ const DashboardPage = () => {
               </div>
               <div className="form-group">
                 <label>Supported By (Optional)</label>
-                <select
+                <CustomSelect
                   value={editTask.supporterId}
-                  onChange={(e) =>
-                    setEditTask({ ...editTask, supporterId: e.target.value })
+                  placeholder="Select supporter (optional)"
+                  onChange={(val) =>
+                    setEditTask({ ...editTask, supporterId: val })
                   }
-                >
-                  <option value="">Select supporter (optional)</option>
-                  {taskAssignableUsers
-                    .filter((member) => member.user.id !== editTask.assigneeId)
-                    .map((member) => (
-                      <option key={member.user.id} value={member.user.id}>
-                        {member.user.id === user?.id
+                  options={[
+                    { value: "", label: "None (Optional)" },
+                    ...taskAssignableUsers
+                      .filter((member) => member.user.id !== editTask.assigneeId)
+                      .map((member) => ({
+                        value: member.user.id,
+                        label: member.user.id === user?.id
                           ? `Me (${member.user.name || member.user.email})`
-                          : member.user.name || member.user.email}
-                      </option>
-                    ))}
-                </select>
+                          : member.user.name || member.user.email,
+                      }))
+                  ]}
+                />
               </div>
               {!isTeamLead && (
                 <div className="form-group">
@@ -6605,93 +6725,85 @@ const DashboardPage = () => {
           onClick={() => setShowSendAlertModal(false)}
         >
           <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <h2>Send Alert</h2>
-            <form onSubmit={handleSendAlert}>
-              <div className="form-group">
-                <label>Target Type</label>
-                <select
-                  value={alertForm.targetType}
-                  onChange={(e) =>
-                    setAlertForm({
-                      ...alertForm,
-                      targetType: e.target.value,
-                      targetId: "",
-                    })
-                  }
-                >
-                  {isTeamLead ? (
-                    <>
-                      <option value="ADMINS">Admin</option>
-                      <option value="TEAM" disabled={!currentOrgMember?.teamId}>
-                        My Team
-                      </option>
-                    </>
-                  ) : (
-                    <>
-                      <option value="INDIVIDUAL">
-                        {isMember ? "Admin or Team Lead" : "Individual Member"}
-                      </option>
-                      {!isMember && <option value="TEAM">Entire Team</option>}
-                    </>
-                  )}
-                </select>
+            <div className="modal-record-header">
+              <div>
+                <h2>Send Dispatch Alert</h2>
+                <p>Notify the right recipient with a clear follow-up signal.</p>
               </div>
-
-              {!isTeamLead && (
+              <span className="stamp-badge stamp-badge-sm">SIGNAL DISPATCH</span>
+            </div>
+            <form onSubmit={handleSendAlert} className="record-dialog-form">
+              <div className="dialog-section">
+                <div className="dialog-section-title">Routing</div>
                 <div className="form-group">
-                  <label>Recipient</label>
-                  <select
-                    value={alertForm.targetId}
-                    onChange={(e) =>
-                      setAlertForm({ ...alertForm, targetId: e.target.value })
+                  <label>Target Type</label>
+                  <CustomSelect
+                    value={alertForm.targetType}
+                    onChange={(val) =>
+                      setAlertForm({
+                        ...alertForm,
+                        targetType: val,
+                        targetId: "",
+                      })
                     }
-                    required
-                  >
-                    <option value="">Select Recipient</option>
-                    {alertForm.targetType === "INDIVIDUAL" &&
-                      alertRecipientUsers.map((u) => (
-                        <option key={u.userId} value={u.userId}>
-                          {u.user.name || u.user.email}
-                        </option>
-                      ))}
-                    {alertForm.targetType === "TEAM" &&
-                      alertRecipientTeams.map((t) => (
-                        <option key={t.teamId} value={t.teamId}>
-                          {t.teamName}
-                        </option>
-                      ))}
-                  </select>
+                    options={isTeamLead ? [
+                      { value: "ADMINS", label: "Admin" },
+                      { value: "TEAM", label: "My Team", disabled: !currentOrgMember?.teamId },
+                    ] : [
+                      { value: "INDIVIDUAL", label: isMember ? "Admin or Team Lead" : "Individual Member" },
+                      ...(!isMember ? [{ value: "TEAM", label: "Entire Team" }] : [])
+                    ]}
+                  />
                 </div>
-              )}
 
-              <div className="form-group">
-                <label>Alert Type</label>
-                <select
-                  value={alertForm.type}
-                  onChange={(e) =>
-                    setAlertForm({ ...alertForm, type: e.target.value })
-                  }
-                >
-                  <option value="DEADLINE_REMINDER">Deadline Reminder</option>
-                  <option value="PRIORITY_ALERT">
-                    Task Priority Notification
-                  </option>
-                  <option value="FEEDBACK">Feedback Message</option>
-                  <option value="OTHER">Other</option>
-                </select>
+                {!isTeamLead && (
+                  <div className="form-group">
+                    <label>Recipient</label>
+                    <CustomSelect
+                      value={alertForm.targetId}
+                      placeholder="Select Recipient"
+                      onChange={(val) =>
+                        setAlertForm({ ...alertForm, targetId: val })
+                      }
+                      options={alertForm.targetType === "INDIVIDUAL"
+                        ? alertRecipientUsers.map((u) => ({ value: u.userId, label: u.user.name || u.user.email }))
+                        : alertRecipientTeams.map((t) => ({ value: t.teamId, label: t.teamName }))}
+                    />
+                  </div>
+                )}
               </div>
 
-              <div className="form-group">
-                <label>Message</label>
-                <textarea
-                  rows={4}
-                  value={alertForm.message}
-                  onChange={(e) =>
-                    setAlertForm({ ...alertForm, message: e.target.value })
-                  }
-                  placeholder="Enter your alert message here..."
-                  required
-                />
+              <div className="dialog-section">
+                <div className="dialog-section-title">Message</div>
+                <div className="form-group">
+                  <label>Alert Type</label>
+                  <CustomSelect
+                    value={alertForm.type}
+                    onChange={(val) =>
+                      setAlertForm({ ...alertForm, type: val })
+                    }
+                    options={[
+                      { value: "DEADLINE_REMINDER", label: "Deadline Reminder" },
+                      { value: "PRIORITY_ALERT", label: "Task Priority Notification" },
+                      { value: "URGENT_SUPPORT", label: "Urgent Support" },
+                      { value: "MANAGER_CHECK_IN", label: "Manager Check-in" },
+                      { value: "CUSTOM", label: "Custom Message" },
+                    ]}
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>Message</label>
+                  <textarea
+                    rows={4}
+                    value={alertForm.message}
+                    onChange={(e) =>
+                      setAlertForm({ ...alertForm, message: e.target.value })
+                    }
+                    placeholder="Enter your alert message here..."
+                    required
+                  />
+                </div>
               </div>
 
               <div className="modal-actions">
@@ -6720,50 +6832,54 @@ const DashboardPage = () => {
             className="modal large no-scroll team-dialog"
             onClick={(e) => e.stopPropagation()}
           >
-            <h2>Create Team</h2>
-            <form onSubmit={handleCreateTeam} className="modal-form">
-              <div className="form-group">
-                <label>Team Name</label>
-                <input
-                  type="text"
-                  value={teamForm.name}
-                  onChange={(e) =>
-                    setTeamForm({ ...teamForm, name: e.target.value })
-                  }
-                  required
-                  autoFocus
-                />
+            <div className="modal-record-header">
+              <div>
+                <h2>Create Team Record</h2>
+                <p>Define team ownership and membership in one place.</p>
               </div>
-              <div className="form-group">
-                <label>Team Lead (Optional)</label>
-                <select
-                  value={teamForm.leadUserId}
-                  onChange={(e) => {
-                    const leadId = e.target.value;
-                    setTeamForm((prev) => ({
-                      ...prev,
-                      leadUserId: leadId,
-                      memberUserIds: prev.memberUserIds.includes(leadId)
-                        ? prev.memberUserIds
-                        : [...prev.memberUserIds, leadId],
-                    }));
-                  }}
-                  style={{ maxHeight: "200px", overflowY: "auto" }}
-                >
-                  <option value="">Select lead (optional)</option>
-                  {teamLeadUsers.length > 0 ? (
-                    teamLeadUsers.map((member) => (
-                      <option key={member.user.id} value={member.user.id}>
-                        {member.user.name || member.user.email}
-                      </option>
-                    ))
-                  ) : (
-                    <option disabled value="">
-                      No team leads available
-                    </option>
-                  )}
-                </select>
+              <span className="stamp-badge stamp-badge-sm">TEAM STRUCTURE</span>
+            </div>
+            <form onSubmit={handleCreateTeam} className="modal-form record-dialog-form">
+              <div className="dialog-section">
+                <div className="dialog-section-title">Team Details</div>
+                <div className="form-group">
+                  <label>Team Name</label>
+                  <input
+                    type="text"
+                    value={teamForm.name}
+                    onChange={(e) =>
+                      setTeamForm({ ...teamForm, name: e.target.value })
+                    }
+                    required
+                    autoFocus
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Team Lead (Optional)</label>
+                  <CustomSelect
+                    value={teamForm.leadUserId}
+                    placeholder="Select lead (optional)"
+                    onChange={(leadId) => {
+                      setTeamForm((prev) => ({
+                        ...prev,
+                        leadUserId: leadId,
+                        memberUserIds: prev.memberUserIds.includes(leadId)
+                          ? prev.memberUserIds
+                          : [...prev.memberUserIds, leadId],
+                      }));
+                    }}
+                    options={[
+                      { value: "", label: "None (Optional)" },
+                      ...teamLeadUsers.map((member) => ({
+                        value: member.user.id,
+                        label: member.user.name || member.user.email,
+                      }))
+                    ]}
+                  />
+                </div>
               </div>
+              <div className="dialog-section">
+                <div className="dialog-section-title">Members</div>
               <div className="form-group">
                 <label>Members</label>
                 <MemberMultiSelect
@@ -6792,6 +6908,7 @@ const DashboardPage = () => {
                     }))
                   }
                 />
+              </div>
               </div>
               <div className="modal-actions">
                 <button
@@ -6835,10 +6952,10 @@ const DashboardPage = () => {
               </div>
               <div className="form-group">
                 <label>Lead (Optional)</label>
-                <select
+                <CustomSelect
                   value={teamForm.leadUserId}
-                  onChange={(e) => {
-                    const leadId = e.target.value;
+                  placeholder="Select lead (optional)"
+                  onChange={(leadId) => {
                     setTeamForm((prev) => ({
                       ...prev,
                       leadUserId: leadId,
@@ -6847,20 +6964,14 @@ const DashboardPage = () => {
                         : [...prev.memberUserIds, leadId],
                     }));
                   }}
-                >
-                  <option value="">Select lead (optional)</option>
-                  {teamLeadUsers.length > 0 ? (
-                    teamLeadUsers.map((member) => (
-                      <option key={member.user.id} value={member.user.id}>
-                        {member.user.name || member.user.email}
-                      </option>
-                    ))
-                  ) : (
-                    <option disabled value="">
-                      No team leads available
-                    </option>
-                  )}
-                </select>
+                  options={[
+                    { value: "", label: "None (Optional)" },
+                    ...teamLeadUsers.map((member) => ({
+                      value: member.user.id,
+                      label: member.user.name || member.user.email,
+                    }))
+                  ]}
+                />
               </div>
               <div className="form-group">
                 <label>Members</label>
@@ -6922,30 +7033,41 @@ const DashboardPage = () => {
             className="modal large no-scroll okr-dialog"
             onClick={(e) => e.stopPropagation()}
           >
-            <h2>Create OKR</h2>
-            <form onSubmit={handleCreateOkr} className="modal-form">
-              <div className="form-group">
-                <label>Objective Title</label>
-                <input
-                  type="text"
-                  value={newOkr.title}
-                  onChange={(e) =>
-                    setNewOkr({ ...newOkr, title: e.target.value })
-                  }
-                  required
-                  autoFocus
-                />
+            <div className="modal-record-header">
+              <div>
+                <h2>Create OKR Ledger</h2>
+                <p>Set the objective, accountable team, support teams, and measurable results.</p>
               </div>
-              <div className="form-group">
-                <label>Description</label>
-                <textarea
-                  rows={3}
-                  value={newOkr.description}
-                  onChange={(e) =>
-                    setNewOkr({ ...newOkr, description: e.target.value })
-                  }
-                />
+              <span className="stamp-badge stamp-badge-sm">TARGET SETUP</span>
+            </div>
+            <form onSubmit={handleCreateOkr} className="modal-form record-dialog-form">
+              <div className="dialog-section">
+                <div className="dialog-section-title">Objective</div>
+                <div className="form-group">
+                  <label>Objective Title</label>
+                  <input
+                    type="text"
+                    value={newOkr.title}
+                    onChange={(e) =>
+                      setNewOkr({ ...newOkr, title: e.target.value })
+                    }
+                    required
+                    autoFocus
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Description</label>
+                  <textarea
+                    rows={3}
+                    value={newOkr.description}
+                    onChange={(e) =>
+                      setNewOkr({ ...newOkr, description: e.target.value })
+                    }
+                  />
+                </div>
               </div>
+              <div className="dialog-section">
+                <div className="dialog-section-title">Period & Status</div>
               <div className="form-row">
                 <div className="form-group">
                   <label>Period Start</label>
@@ -6979,24 +7101,28 @@ const DashboardPage = () => {
 
               <div className="form-group">
                 <label>Status</label>
-                <select
+                <CustomSelect
                   value={newOkr.status}
-                  onChange={(e) =>
-                    setNewOkr({ ...newOkr, status: e.target.value })
+                  onChange={(val) =>
+                    setNewOkr({ ...newOkr, status: val })
                   }
-                >
-                  <option value="NOT_YET_OPEN">Not yet Open</option>
-                  <option value="OPEN">Open</option>
-                  <option value="COMPLETED">Completed</option>
-                </select>
+                  options={[
+                    { value: "NOT_YET_OPEN", label: "Not yet Open" },
+                    { value: "OPEN", label: "Open" },
+                    { value: "COMPLETED", label: "Completed" },
+                  ]}
+                />
               </div>
+            </div>
 
+            <div className="dialog-section">
+              <div className="dialog-section-title">Team Coverage</div>
               <div className="form-group">
                 <label>Assigned To (Primary Team)</label>
-                <select
+                <CustomSelect
                   value={newOkr.assignedToTeamId}
-                  onChange={(e) => {
-                    const assignedToTeamId = e.target.value;
+                  placeholder="Select a team"
+                  onChange={(assignedToTeamId) => {
                     setNewOkr((prev) => ({
                       ...prev,
                       assignedToTeamId,
@@ -7005,14 +7131,14 @@ const DashboardPage = () => {
                       ),
                     }));
                   }}
-                >
-                  <option value="">Select a team</option>
-                  {teams.map((team) => (
-                    <option key={team.id} value={team.id}>
-                      {team.name}
-                    </option>
-                  ))}
-                </select>
+                  options={[
+                    { value: "", label: "None (Optional)" },
+                    ...teams.map((team) => ({
+                      value: team.id,
+                      label: team.name,
+                    }))
+                  ]}
+                />
               </div>
 
               <div className="form-group">
@@ -7043,8 +7169,10 @@ const DashboardPage = () => {
                   </p>
                 )}
               </div>
+              </div>
 
-              <h3 className="modal-subtitle">Key Results</h3>
+              <div className="dialog-section">
+                <div className="dialog-section-title">Key Results</div>
               {newOkr.keyResults.map((kr, index) => (
                 <div key={index} className="okr-kr-form-card">
                   <div className="form-group">
@@ -7095,8 +7223,8 @@ const DashboardPage = () => {
                       });
                     }}
                   >
-                    Remove KR
-                  </button>
+                  Remove KR
+                </button>
                 </div>
               ))}
               <button
@@ -7114,6 +7242,7 @@ const DashboardPage = () => {
               >
                 + Add Key Result
               </button>
+              </div>
 
               <div className="modal-actions">
                 <button
@@ -7206,24 +7335,25 @@ const DashboardPage = () => {
 
               <div className="form-group">
                 <label>Status</label>
-                <select
+                <CustomSelect
                   value={editOkrForm.status}
-                  onChange={(e) =>
-                    setEditOkrForm({ ...editOkrForm, status: e.target.value })
+                  onChange={(val) =>
+                    setEditOkrForm({ ...editOkrForm, status: val })
                   }
-                >
-                  <option value="NOT_YET_OPEN">Not yet Open</option>
-                  <option value="OPEN">Open</option>
-                  <option value="COMPLETED">Completed</option>
-                </select>
+                  options={[
+                    { value: "NOT_YET_OPEN", label: "Not yet Open" },
+                    { value: "OPEN", label: "Open" },
+                    { value: "COMPLETED", label: "Completed" },
+                  ]}
+                />
               </div>
 
               <div className="form-group">
                 <label>Assigned To (Primary Team)</label>
-                <select
+                <CustomSelect
                   value={editOkrForm.assignedToTeamId}
-                  onChange={(e) => {
-                    const assignedToTeamId = e.target.value;
+                  placeholder="Select a team"
+                  onChange={(assignedToTeamId) => {
                     setEditOkrForm((prev) => ({
                       ...prev,
                       assignedToTeamId,
@@ -7232,14 +7362,14 @@ const DashboardPage = () => {
                       ),
                     }));
                   }}
-                >
-                  <option value="">Select a team</option>
-                  {teams.map((team) => (
-                    <option key={team.id} value={team.id}>
-                      {team.name}
-                    </option>
-                  ))}
-                </select>
+                  options={[
+                    { value: "", label: "None (Optional)" },
+                    ...teams.map((team) => ({
+                      value: team.id,
+                      label: team.name,
+                    }))
+                  ]}
+                />
               </div>
 
               <div className="form-group">
@@ -7368,283 +7498,303 @@ const DashboardPage = () => {
             className="modal large appraisal-modal"
             onClick={(e) => e.stopPropagation()}
           >
-            <h2>Generate Appraisal</h2>
-            <form onSubmit={handleCreateAppraisal}>
-              <div className="form-group">
-                <label>Appraisal Scope</label>
-                <div className="segmented-control">
-                  {[
-                    ["INDIVIDUALS", "Individuals"],
-                    ["TEAMS", "Teams"],
-                    ["ORGANIZATION", "Entire Organization"],
-                  ].map(([value, label]) => (
-                    <button
-                      key={value}
-                      type="button"
-                      className={
-                        newAppraisal.scope === value ? "active" : undefined
-                      }
-                      onClick={() => {
-                        setNewAppraisal((prev) => ({
-                          ...prev,
-                          scope: value,
-                          subjectIds: [],
-                        }));
-                        setSelectedOkrIds([]);
-                        setAppraisalSelectionDirty(false);
-                      }}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
+            <div className="modal-record-header appraisal-record-header">
+              <div>
+                <h2>Generate Appraisal Record</h2>
+                <p>Choose who is being reviewed, the evidence window, and the report focus.</p>
               </div>
-
-              {newAppraisal.scope !== "ORGANIZATION" && (
-                <div className="form-group">
-                  <div className="appraisal-field-header">
-                    <label>
-                      {newAppraisal.scope === "TEAMS" ? "Teams" : "Individuals"}
-                    </label>
-                    <button
-                      type="button"
-                      className="link-button"
-                      onClick={() => {
-                        const allIds = appraisalSubjects.map(
-                          (subject) => subject.id,
-                        );
-                        const allSelected =
-                          newAppraisal.subjectIds.length === allIds.length;
-                        setNewAppraisal((prev) => ({
-                          ...prev,
-                          subjectIds: allSelected ? [] : allIds,
-                        }));
-                        setSelectedOkrIds([]);
-                        setAppraisalSelectionDirty(false);
-                      }}
-                    >
-                      {newAppraisal.subjectIds.length ===
-                      appraisalSubjects.length
-                        ? "Clear All"
-                        : "Select All"}
-                    </button>
-                  </div>
-                  <div className="appraisal-picker">
-                    {appraisalSubjects.map((subject) => (
-                      <label key={subject.id} className="appraisal-check-row">
-                        <input
-                          type="checkbox"
-                          checked={newAppraisal.subjectIds.includes(subject.id)}
-                          onChange={(e) => {
-                            const checked = e.target.checked;
+              <span className="stamp-badge stamp-badge-sm">REPORT SETUP</span>
+            </div>
+            <form onSubmit={handleCreateAppraisal} className="record-dialog-form appraisal-record-form">
+              <div className="appraisal-record-grid">
+                <section className="dialog-section appraisal-primary-section">
+                  <div className="dialog-section-title">Review Scope</div>
+                  <div className="form-group">
+                    <label>Appraisal Scope</label>
+                    <div className="segmented-control">
+                      {[
+                        ["INDIVIDUALS", "Individuals"],
+                        ["TEAMS", "Teams"],
+                        ["ORGANIZATION", "Entire Organization"],
+                      ].map(([value, label]) => (
+                        <button
+                          key={value}
+                          type="button"
+                          className={
+                            newAppraisal.scope === value ? "active" : undefined
+                          }
+                          onClick={() => {
                             setNewAppraisal((prev) => ({
                               ...prev,
-                              subjectIds: checked
-                                ? [...prev.subjectIds, subject.id]
-                                : prev.subjectIds.filter(
-                                    (id) => id !== subject.id,
-                                  ),
+                              scope: value,
+                              subjectIds: [],
                             }));
                             setSelectedOkrIds([]);
                             setAppraisalSelectionDirty(false);
                           }}
-                        />
-                        <span>
-                          <strong>{subject.label}</strong>
-                          {subject.meta && <small>{subject.meta}</small>}
-                        </span>
-                      </label>
-                    ))}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              )}
 
-              <div className="form-group">
-                <label>Output Format</label>
-                <div className="segmented-control">
-                  {[
-                    ["SINGLE_PDF", "Single File"],
-                    ["SEPARATE_PDFS", "Separate Files"],
-                  ].map(([value, label]) => (
-                    <button
-                      key={value}
-                      type="button"
-                      className={
-                        newAppraisal.outputFormat === value
-                          ? "active"
-                          : undefined
-                      }
-                      onClick={() =>
-                        setNewAppraisal((prev) => ({
-                          ...prev,
-                          outputFormat: value,
-                        }))
-                      }
-                      title="Single file combines all appraisals into one document. Separate files generate individual reports per selected entity."
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-                <p className="modal-helper-text">
-                  Single file combines all appraisals into one document.
-                  Separate files generate individual reports per selected
-                  entity.
-                </p>
-              </div>
+                  {newAppraisal.scope !== "ORGANIZATION" && (
+                    <div className="form-group">
+                      <div className="appraisal-field-header">
+                        <label>
+                          {newAppraisal.scope === "TEAMS" ? "Teams" : "Individuals"}
+                        </label>
+                        <button
+                          type="button"
+                          className="link-button"
+                          onClick={() => {
+                            const allIds = appraisalSubjects.map(
+                              (subject) => subject.id,
+                            );
+                            const allSelected =
+                              newAppraisal.subjectIds.length === allIds.length;
+                            setNewAppraisal((prev) => ({
+                              ...prev,
+                              subjectIds: allSelected ? [] : allIds,
+                            }));
+                            setSelectedOkrIds([]);
+                            setAppraisalSelectionDirty(false);
+                          }}
+                        >
+                          {newAppraisal.subjectIds.length ===
+                          appraisalSubjects.length
+                            ? "Clear All"
+                            : "Select All"}
+                        </button>
+                      </div>
+                      <div className="appraisal-picker">
+                        {appraisalSubjects.map((subject) => (
+                          <label key={subject.id} className="appraisal-check-row">
+                            <input
+                              type="checkbox"
+                              checked={newAppraisal.subjectIds.includes(subject.id)}
+                              onChange={(e) => {
+                                const checked = e.target.checked;
+                                setNewAppraisal((prev) => ({
+                                  ...prev,
+                                  subjectIds: checked
+                                    ? [...prev.subjectIds, subject.id]
+                                    : prev.subjectIds.filter(
+                                        (id) => id !== subject.id,
+                                      ),
+                                }));
+                                setSelectedOkrIds([]);
+                                setAppraisalSelectionDirty(false);
+                              }}
+                            />
+                            <span>
+                              <strong>{subject.label}</strong>
+                              {subject.meta && <small>{subject.meta}</small>}
+                            </span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </section>
 
-              <div className="form-row">
-                <div className="form-group">
-                  <label>Start Date</label>
-                  <input
-                    type="date"
-                    value={newAppraisal.periodStart}
-                    onChange={(e) => {
-                      setNewAppraisal((prev) => ({
-                        ...prev,
-                        periodStart: e.target.value,
-                      }));
-                      setSelectedOkrIds([]);
-                      setAppraisalSelectionDirty(false);
-                    }}
-                    required
-                  />
-                </div>
-                <div className="form-group">
-                  <label>End Date</label>
-                  <input
-                    type="date"
-                    value={newAppraisal.periodEnd}
-                    onChange={(e) => {
-                      setNewAppraisal((prev) => ({
-                        ...prev,
-                        periodEnd: e.target.value,
-                      }));
-                      setSelectedOkrIds([]);
-                      setAppraisalSelectionDirty(false);
-                    }}
-                    required
-                  />
-                </div>
-              </div>
+                <section className="dialog-section">
+                  <div className="dialog-section-title">Report Settings</div>
+                  <div className="form-group">
+                    <label>Output Format</label>
+                    <div className="segmented-control">
+                      {[
+                        ["SINGLE_PDF", "Single File"],
+                        ["SEPARATE_PDFS", "Separate Files"],
+                      ].map(([value, label]) => (
+                        <button
+                          key={value}
+                          type="button"
+                          className={
+                            newAppraisal.outputFormat === value
+                              ? "active"
+                              : undefined
+                          }
+                          onClick={() =>
+                            setNewAppraisal((prev) => ({
+                              ...prev,
+                              outputFormat: value,
+                            }))
+                          }
+                          title="Single file combines all appraisals into one document. Separate files generate individual reports per selected entity."
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="modal-helper-text">
+                      Single file combines all appraisals into one document.
+                      Separate files generate individual reports per selected
+                      entity.
+                    </p>
+                  </div>
 
-              <div className="form-group">
-                <label>Purpose of Appraisal</label>
-                <div className="appraisal-purpose-grid">
-                  {appraisalPurposeOptions.map((purpose) => (
-                    <label key={purpose} className="appraisal-check-row">
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label>Start Date</label>
                       <input
-                        type="checkbox"
-                        checked={newAppraisal.purposes.includes(purpose)}
+                        type="date"
+                        value={newAppraisal.periodStart}
                         onChange={(e) => {
-                          const checked = e.target.checked;
                           setNewAppraisal((prev) => ({
                             ...prev,
-                            purposes: checked
-                              ? [...prev.purposes, purpose]
-                              : prev.purposes.filter(
-                                  (item) => item !== purpose,
-                                ),
+                            periodStart: e.target.value,
                           }));
+                          setSelectedOkrIds([]);
+                          setAppraisalSelectionDirty(false);
                         }}
+                        required
                       />
-                      <span>{purpose}</span>
-                    </label>
-                  ))}
-                </div>
-                {newAppraisal.purposes.includes("Other") && (
-                  <input
-                    type="text"
-                    value={newAppraisal.otherPurpose}
-                    onChange={(e) =>
-                      setNewAppraisal((prev) => ({
-                        ...prev,
-                        otherPurpose: e.target.value,
-                      }))
-                    }
-                    placeholder="Specify appraisal purpose"
-                  />
-                )}
-              </div>
-
-              <div className="form-group">
-                <label>Custom Focus</label>
-                <textarea
-                  rows={3}
-                  value={newAppraisal.customFocus}
-                  onChange={(e) =>
-                    setNewAppraisal((prev) => ({
-                      ...prev,
-                      customFocus: e.target.value,
-                    }))
-                  }
-                  placeholder="What would you like this appraisal to focus on?"
-                />
-              </div>
-
-              <div className="form-group">
-                <div className="appraisal-field-header">
-                  <label>Relevant OKRs</label>
-                  {appraisalPreviewLoading && (
-                    <small className="modal-helper-text">
-                      Fetching OKRs...
-                    </small>
-                  )}
-                </div>
-                <div className="appraisal-picker okr-picker">
-                  {(appraisalPreview?.okrs || []).length > 0 ? (
-                    appraisalPreview?.okrs.map((okr) => (
-                      <label key={okr.id} className="appraisal-check-row">
-                        <input
-                          type="checkbox"
-                          checked={selectedOkrIds.includes(okr.id)}
-                          onChange={(e) => {
-                            const checked = e.target.checked;
-                            setAppraisalSelectionDirty(true);
-                            setSelectedOkrIds((prev) =>
-                              checked
-                                ? [...prev, okr.id]
-                                : prev.filter((id) => id !== okr.id),
-                            );
-                          }}
-                        />
-                        <span>
-                          <strong>{okr.title}</strong>
-                          <small>
-                            {new Date(okr.periodStart).toLocaleDateString()} -{" "}
-                            {new Date(okr.periodEnd).toLocaleDateString()} ·{" "}
-                            {okr.keyResultCount} KR
-                            {okr.keyResultCount === 1 ? "" : "s"}
-                          </small>
-                        </span>
-                      </label>
-                    ))
-                  ) : (
-                    <p className="modal-helper-text">
-                      Select scope, subjects, and date range to fetch matching
-                      OKRs.
-                    </p>
-                  )}
-                </div>
-              </div>
-
-              <div className="form-group">
-                <label>Auto Summary</label>
-                <div className="appraisal-summary-preview">
-                  {appraisalPreview?.setupSummary ||
-                    "The setup summary will appear once scope, subjects, and date range are selected."}
-                </div>
-              </div>
-
-              {appraisalPreview?.subjects &&
-                appraisalPreview.subjects.length > 0 && (
-                  <div className="modal-helper-text">
-                    {appraisalPreview.subjects.length} appraisal subject
-                    {appraisalPreview.subjects.length === 1 ? "" : "s"} ready
-                    for generation.
+                    </div>
+                    <div className="form-group">
+                      <label>End Date</label>
+                      <input
+                        type="date"
+                        value={newAppraisal.periodEnd}
+                        onChange={(e) => {
+                          setNewAppraisal((prev) => ({
+                            ...prev,
+                            periodEnd: e.target.value,
+                          }));
+                          setSelectedOkrIds([]);
+                          setAppraisalSelectionDirty(false);
+                        }}
+                        required
+                      />
+                    </div>
                   </div>
-                )}
-              <div className="modal-actions">
+                </section>
+
+                <section className="dialog-section">
+                  <div className="dialog-section-title">Focus</div>
+                  <div className="form-group">
+                    <label>Purpose of Appraisal</label>
+                    <div className="appraisal-purpose-grid">
+                      {appraisalPurposeOptions.map((purpose) => (
+                        <label key={purpose} className="appraisal-check-row">
+                          <input
+                            type="checkbox"
+                            checked={newAppraisal.purposes.includes(purpose)}
+                            onChange={(e) => {
+                              const checked = e.target.checked;
+                              setNewAppraisal((prev) => ({
+                                ...prev,
+                                purposes: checked
+                                  ? [...prev.purposes, purpose]
+                                  : prev.purposes.filter(
+                                      (item) => item !== purpose,
+                                    ),
+                              }));
+                            }}
+                          />
+                          <span>{purpose}</span>
+                        </label>
+                      ))}
+                    </div>
+                    {newAppraisal.purposes.includes("Other") && (
+                      <input
+                        type="text"
+                        value={newAppraisal.otherPurpose}
+                        onChange={(e) =>
+                          setNewAppraisal((prev) => ({
+                            ...prev,
+                            otherPurpose: e.target.value,
+                          }))
+                        }
+                        placeholder="Specify appraisal purpose"
+                      />
+                    )}
+                  </div>
+
+                  <div className="form-group">
+                    <label>Custom Focus</label>
+                    <textarea
+                      rows={3}
+                      value={newAppraisal.customFocus}
+                      onChange={(e) =>
+                        setNewAppraisal((prev) => ({
+                          ...prev,
+                          customFocus: e.target.value,
+                        }))
+                      }
+                      placeholder="What would you like this appraisal to focus on?"
+                    />
+                  </div>
+                </section>
+
+                <section className="dialog-section appraisal-evidence-section">
+                  <div className="dialog-section-title">Evidence & Summary</div>
+                  <div className="form-group">
+                    <div className="appraisal-field-header">
+                      <label>Relevant OKRs</label>
+                      {appraisalPreviewLoading && (
+                        <small className="modal-helper-text">
+                          Fetching OKRs...
+                        </small>
+                      )}
+                    </div>
+                    <div className="appraisal-picker okr-picker">
+                      {(appraisalPreview?.okrs || []).length > 0 ? (
+                        appraisalPreview?.okrs.map((okr) => (
+                          <label key={okr.id} className="appraisal-check-row">
+                            <input
+                              type="checkbox"
+                              checked={selectedOkrIds.includes(okr.id)}
+                              onChange={(e) => {
+                                const checked = e.target.checked;
+                                setAppraisalSelectionDirty(true);
+                                setSelectedOkrIds((prev) =>
+                                  checked
+                                    ? [...prev, okr.id]
+                                    : prev.filter((id) => id !== okr.id),
+                                );
+                              }}
+                            />
+                            <span>
+                              <strong>{okr.title}</strong>
+                              <small>
+                                {new Date(okr.periodStart).toLocaleDateString()} -{" "}
+                                {new Date(okr.periodEnd).toLocaleDateString()} ·{" "}
+                                {okr.keyResultCount} KR
+                                {okr.keyResultCount === 1 ? "" : "s"}
+                              </small>
+                            </span>
+                          </label>
+                        ))
+                      ) : (
+                        <p className="modal-helper-text">
+                          Select scope, subjects, and date range to fetch matching
+                          OKRs.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="form-group">
+                    <label>Auto Summary</label>
+                    <div className="appraisal-summary-preview">
+                      {appraisalPreview?.setupSummary ||
+                        "The setup summary will appear once scope, subjects, and date range are selected."}
+                    </div>
+                  </div>
+
+                  {appraisalPreview?.subjects &&
+                    appraisalPreview.subjects.length > 0 && (
+                      <div className="appraisal-ready-note">
+                        {appraisalPreview.subjects.length} appraisal subject
+                        {appraisalPreview.subjects.length === 1 ? "" : "s"} ready
+                        for generation.
+                      </div>
+                    )}
+                </section>
+              </div>
+              <div className="modal-actions appraisal-actions">
                 <button
                   type="button"
                   onClick={() => setShowCreateAppraisalModal(false)}
@@ -7779,7 +7929,7 @@ const DashboardPage = () => {
                       Upload a spreadsheet (.xlsx or .csv) to invite multiple
                       members at once. The file must contain{" "}
                       <strong>Email</strong>, <strong>Team</strong>, and{" "}
-                      <strong>Role</strong> (TEAM LEAD or MEMBER) columns. Teams
+                      <strong>Role</strong> (Team Lead or Member) columns. Teams
                       will be created automatically.
                     </p>
                     <button
@@ -8038,11 +8188,14 @@ const DashboardPage = () => {
       {currentSection !== "tracker" && (
         <>
           <div
-            className={`task-detail-backdrop ${selectedTaskId ? "active" : ""} drawer-backdrop`}
-            onClick={() => setSelectedTaskId(null)}
+            className={`task-detail-backdrop ${selectedTaskId ? "active" : ""} drawer-backdrop ${isExpandedFullScreen ? "full-screen-backdrop" : ""}`}
+            onClick={() => {
+              setSelectedTaskId(null);
+              setIsExpandedFullScreen(false);
+            }}
           />
           <aside
-            className={`task-detail-panel drawer ${selectedTask ? "open" : ""}`}
+            className={`task-detail-panel drawer ${selectedTask ? "open" : ""} ${isExpandedFullScreen ? "full-screen" : ""}`}
           >
             {renderTaskDetailPanelInner()}
           </aside>

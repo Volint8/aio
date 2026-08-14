@@ -1,7 +1,8 @@
 .org-selection-page {
     min-height: 100vh;
-    background-color: var(--bg-color);
+    background-color: var(--color-fog);
     padding: 40px 20px;
+    font-family: var(--font-body);
 }
 
 .org-selection-container {
@@ -13,74 +14,79 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 48px;
-    padding-bottom: 24px;
-    border-bottom: 1px solid var(--border-color);
+    margin-bottom: 40px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid var(--color-line);
 }
 
 .org-header h1 {
     margin: 0 0 4px 0;
-    color: var(--primary-color);
+    color: var(--color-ink);
+    font-family: var(--font-heading);
     font-size: 1.8em;
     font-weight: 700;
+    letter-spacing: -0.015em;
 }
 
 .welcome-text {
-    color: var(--text-muted);
+    color: var(--color-slate);
     margin: 0;
-    font-size: 0.95em;
+    font-size: 0.9em;
 }
 
 .org-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-    gap: 24px;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 20px;
 }
 
 .org-card {
-    background: var(--card-bg);
-    padding: 32px;
-    border-radius: var(--radius);
-    box-shadow: var(--shadow);
+    background: var(--color-card);
+    padding: 28px 24px;
+    border-radius: var(--radius-lg);
+    box-shadow: none;
     cursor: pointer;
-    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    transition: all 0.15s ease;
     display: flex;
     flex-direction: column;
     align-items: center;
-    border: 1px solid var(--border-color);
+    border: 1px solid var(--color-line);
 }
 
 .org-card:hover {
-    transform: translateY(-4px);
-    box-shadow: var(--shadow-lg);
-    border-color: var(--accent-color);
+    transform: translateY(-2px);
+    border-color: var(--color-ink);
+    box-shadow: 0 4px 16px rgba(21, 26, 35, 0.06);
 }
 
 .org-icon {
-    width: 64px;
-    height: 64px;
-    margin-bottom: 20px;
-    background-color: #F1F5F9;
-    color: var(--primary-color);
-    border-radius: 12px;
+    width: 56px;
+    height: 56px;
+    margin-bottom: 16px;
+    background-color: var(--color-fog);
+    border: 1px solid var(--color-line);
+    color: var(--color-ink);
+    border-radius: var(--radius);
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 1.5em;
-    font-weight: 700;
+    font-family: var(--font-heading);
+    font-size: 1.4em;
+    font-weight: 800;
 }
 
 .org-card h3 {
-    margin: 0 0 8px 0;
-    color: var(--text-main);
-    font-size: 1.25em;
+    margin: 0 0 6px 0;
+    color: var(--color-ink);
+    font-family: var(--font-heading);
+    font-size: 1.2em;
     font-weight: 700;
 }
 
 .org-card p {
-    color: var(--text-muted);
+    color: var(--color-slate);
     margin: 0 0 16px 0;
-    font-size: 0.875em;
+    font-size: 0.85em;
 }
 
 .btn-manage-team {

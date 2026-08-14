@@ -16,10 +16,37 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+const parseAllowedOrigins = (value?: string) => {
+    return new Set(
+        (value || '')
+            .split(',')
+            .map((origin) => origin.trim())
+            .filter(Boolean)
+    );
+};
+
+const allowedOrigins = parseAllowedOrigins(process.env.CLIENT_URL || 'http://localhost:5173');
+
+const isAllowedOrigin = (origin?: string | null) => {
+    if (!origin) {
+        return true;
+    }
+
+    if (allowedOrigins.has(origin)) {
+        return true;
+    }
+
+    try {
+        const url = new URL(origin);
+        return url.hostname === 'localhost' || url.hostname === '127.0.0.1' || url.hostname === '::1';
+    } catch {
+        return false;
+    }
+};
+
 app.use(cors({
     origin: (origin, callback) => {
-        const allowedOrigins = (process.env.CLIENT_URL || 'http://localhost:5173').split(',').map(o => o.trim());
-        if (!origin || allowedOrigins.includes(origin)) {
+        if (isAllowedOrigin(origin)) {
             callback(null, true);
         } else {
             callback(new Error('Not allowed by CORS'));
@@ -75,7 +102,13 @@ Sentry.setupExpressErrorHandler(app);
 const server = http.createServer(app);
 const io = new IOServer(server, {
     cors: {
-        origin: (process.env.CLIENT_URL || 'http://localhost:5173').split(',').map(o => o.trim()),
+        origin: (origin, callback) => {
+            if (isAllowedOrigin(origin)) {
+                callback(null, true);
+            } else {
+                callback(new Error('Not allowed by CORS'));
+            }
+        },
         methods: ['GET', 'POST'],
         credentials: true
     }

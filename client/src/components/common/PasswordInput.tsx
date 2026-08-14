@@ -25,7 +25,7 @@ export const PasswordInput: React.FC<PasswordInputProps> = (props) => {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          color: '#6b7280',
+          color: 'var(--color-slate)',
         }}
         aria-label={showPassword ? 'Hide password' : 'Show password'}
       >

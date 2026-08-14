@@ -929,10 +929,20 @@ export const updateTask = async (req: Request, res: Response) => {
             // Log activity for changes
             const activityEntries: Array<{ action: string; description: string; metadata?: any }> = [];
 
+            const formatStatusForLog = (s: string) => {
+                if (s === 'CREATED' || s === 'TODO') return 'To Do';
+                if (s === 'IN_PROGRESS') return 'In Progress';
+                if (s === 'IN_REVIEW') return 'In Review';
+                if (s === 'ON_HOLD') return 'On Hold';
+                if (s === 'COMPLETED' || s === 'DONE') return 'Done';
+                if (s === 'CANCELLED') return 'Cancelled';
+                return s.replace(/_/g, ' ');
+            };
+
             if (status && status !== task.status) {
                 activityEntries.push({
                     action: 'STATUS_CHANGED',
-                    description: `Status changed from ${task.status} to ${status}`,
+                    description: `Status changed from ${formatStatusForLog(task.status)} to ${formatStatusForLog(status)}`,
                     metadata: { oldStatus: task.status, newStatus: status }
                 });
             }

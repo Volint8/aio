@@ -66,6 +66,13 @@ interface OkrViewProps {
   ) => void;
 }
 
+const formatOkrStatusLabel = (status: string) => {
+  if (status === "NOT_YET_OPEN") return "Not yet Open";
+  if (status === "OPEN") return "Open";
+  if (status === "COMPLETED" || status === "DONE") return "Done";
+  return status.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
+};
+
 const OkrView: React.FC<OkrViewProps> = ({
   okrs,
   userRole,
@@ -95,41 +102,43 @@ const OkrView: React.FC<OkrViewProps> = ({
         <div className="okr-view-actions">
           {userRole === "ADMIN" && onCreateOkr && (
             <DebouncedButton
-              className="btn-primary-green"
+              className="btn-primary"
               onClick={onCreateOkr}
               debounceMs={800}
             >
               <svg
-                width="18"
-                height="18"
+                width="16"
+                height="16"
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
                 strokeWidth="2.5"
                 strokeLinecap="round"
                 strokeLinejoin="round"
+                style={{ marginRight: "6px" }}
               >
                 <line x1="12" y1="5" x2="12" y2="19"></line>
                 <line x1="5" y1="12" x2="19" y2="12"></line>
               </svg>
-              New OKR
+              New OKR Ledger
             </DebouncedButton>
           )}
           {userRole !== "ADMIN" && (
             <DebouncedButton
-              className="btn-primary-green"
+              className="btn-primary"
               onClick={onCreateTask}
               debounceMs={800}
             >
               <svg
-                width="18"
-                height="18"
+                width="16"
+                height="16"
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
                 strokeWidth="2.5"
                 strokeLinecap="round"
                 strokeLinejoin="round"
+                style={{ marginRight: "6px" }}
               >
                 <line x1="12" y1="5" x2="12" y2="19"></line>
                 <line x1="5" y1="12" x2="19" y2="12"></line>
@@ -145,11 +154,17 @@ const OkrView: React.FC<OkrViewProps> = ({
           <div key={okr.id} className="okr-card">
             <div className="okr-card-header">
               <h3 className="okr-card-title">{okr.title}</h3>
-              <span
-                className={`okr-status-pill ${okr.status?.toLowerCase() || ""}`}
-              >
-                {okr.status === "NOT_YET_OPEN" ? "Not yet Open" : okr.status}
-              </span>
+              {okr.status === "COMPLETED" ? (
+                <span className="stamp-badge stamp-badge-ledger">
+                  ✓ VERIFIED OKR
+                </span>
+              ) : (
+                <span
+                  className={`okr-status-pill ${okr.status?.toLowerCase() || ""}`}
+                >
+                  {formatOkrStatusLabel(okr.status)}
+                </span>
+              )}
             </div>
 
             {okr.description && (
@@ -159,19 +174,19 @@ const OkrView: React.FC<OkrViewProps> = ({
             <div className="okr-card-meta">
               <span className="okr-meta-item" style={{ whiteSpace: "nowrap" }}>
                 <strong>
-                  {okr.status === "NOT_YET_OPEN" ? "Not yet Open" : okr.status}
+                  {formatOkrStatusLabel(okr.status)}
                 </strong>
                 <span>
                   (
                   {new Date(okr.periodStart).toLocaleDateString(undefined, {
                     day: "numeric",
-                    month: "numeric",
+                    month: "short",
                     year: "numeric",
                   })}{" "}
                   -{" "}
                   {new Date(okr.periodEnd).toLocaleDateString(undefined, {
                     day: "numeric",
-                    month: "numeric",
+                    month: "short",
                     year: "numeric",
                   })}
                   )
@@ -180,7 +195,7 @@ const OkrView: React.FC<OkrViewProps> = ({
               {okr.objectiveTargetValue !== null &&
                 okr.objectiveTargetValue !== undefined && (
                   <span className="okr-meta-item">
-                    <strong>Objective Target</strong>
+                    <strong>Target:</strong>
                     <span>
                       {okr.objectiveTargetValue}
                       {okr.objectiveMetricUnit || ""}
@@ -195,53 +210,35 @@ const OkrView: React.FC<OkrViewProps> = ({
                 <div className="okr-kr-list">
                   {okr.keyResults.map((kr) => (
                     <div key={kr.id} className="okr-kr-item">
-                      <span>
-                        {kr.title}
-                        <small
-                          style={{
-                            display: "block",
-                            color: "#475569",
-                            fontWeight: 500,
-                          }}
-                        >
-                          {kr.ownerUsers && kr.ownerUsers.length > 1
-                            ? "Owners"
-                            : "Owner"}
-                          : {getKeyResultOwners(kr) || "General"}
-                        </small>
-                        {kr.contributionPct !== null &&
-                          kr.contributionPct !== undefined && (
-                            <small
-                              style={{
-                                display: "block",
-                                color: "#475569",
-                                fontWeight: 500,
-                              }}
-                            >
-                              Contribution: {Math.round(kr.contributionPct)}%
-                              {kr.contributionValue !== null &&
-                              kr.contributionValue !== undefined
-                                ? ` (${kr.contributionValue})`
-                                : ""}
-                            </small>
-                          )}
-                        {kr.targetValue !== null &&
-                          kr.targetValue !== undefined && (
-                            <small
-                              style={{
-                                display: "block",
-                                color: "#64748b",
-                                fontWeight: 500,
-                              }}
-                            >
-                              Target: {kr.targetValue}
-                              {kr.metricUnit || ""}{" "}
-                              {kr.metricName ? `(${kr.metricName})` : ""}
-                            </small>
-                          )}
-                        {/* approval status removed - approvals handled outside creation flow */}
-                      </span>
-                      <div />
+                      <div className="kr-content">
+                        <strong className="kr-title">{kr.title}</strong>
+                        <div className="kr-meta-row">
+                          <span className="kr-owner">
+                            {kr.ownerUsers && kr.ownerUsers.length > 1
+                              ? "Owners"
+                              : "Owner"}
+                            : {getKeyResultOwners(kr) || "General"}
+                          </span>
+                          {kr.contributionPct !== null &&
+                            kr.contributionPct !== undefined && (
+                              <span className="kr-contribution">
+                                Contribution: {Math.round(kr.contributionPct)}%
+                                {kr.contributionValue !== null &&
+                                kr.contributionValue !== undefined
+                                  ? ` (${kr.contributionValue})`
+                                  : ""}
+                              </span>
+                            )}
+                          {kr.targetValue !== null &&
+                            kr.targetValue !== undefined && (
+                              <span className="kr-target">
+                                Target: {kr.targetValue}
+                                {kr.metricUnit || ""}{" "}
+                                {kr.metricName ? `(${kr.metricName})` : ""}
+                              </span>
+                            )}
+                        </div>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -254,6 +251,8 @@ const OkrView: React.FC<OkrViewProps> = ({
                 justifyContent: "space-between",
                 alignItems: "center",
                 marginTop: "auto",
+                gap: "12px",
+                flexWrap: "wrap"
               }}
             >
               {okr.assignments &&
@@ -266,21 +265,14 @@ const OkrView: React.FC<OkrViewProps> = ({
                     .join(", ")}
                 </div>
               ) : (
-                <div
-                  className="okr-no-team"
-                  style={{
-                    fontSize: "0.85em",
-                    color: "#DC2626",
-                    fontWeight: 600,
-                  }}
-                >
+                <div className="okr-no-team">
                   <svg
-                    width="16"
-                    height="16"
+                    width="14"
+                    height="14"
                     viewBox="0 0 24 24"
                     fill="none"
                     stroke="currentColor"
-                    strokeWidth="2"
+                    strokeWidth="2.2"
                     strokeLinecap="round"
                     strokeLinejoin="round"
                     style={{
@@ -297,33 +289,31 @@ const OkrView: React.FC<OkrViewProps> = ({
                 </div>
               )}
 
-               {userRole === "ADMIN" && (
+              {userRole === "ADMIN" && (
                 <div className="okr-card-footer">
                   {okr.status !== "COMPLETED" && (
                     <button
-                      className="btn-okr-action btn-okr-close"
+                      className="task-action-btn"
                       onClick={() => onCloseOkr?.(okr)}
                     >
-                      Close
+                      Close OKR
                     </button>
                   )}
                   <button
-                    className="btn-okr-action btn-okr-edit"
+                    className="task-action-btn"
                     onClick={() => onEditOkr?.(okr)}
                   >
                     Edit
                   </button>
                   <button
-                    className="btn-okr-action btn-okr-edit"
+                    className="task-action-btn"
                     onClick={() => onDuplicateOkr?.(okr)}
-                    style={{ marginLeft: 8 }}
                   >
                     Duplicate
                   </button>
                   <button
-                    className="btn-okr-action btn-okr-delete"
+                    className="task-action-btn task-action-btn-danger"
                     onClick={() => onDeleteOkr?.(okr.id)}
-                    style={{ marginLeft: 8 }}
                   >
                     Delete
                   </button>

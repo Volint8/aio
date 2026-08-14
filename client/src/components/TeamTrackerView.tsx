@@ -3,6 +3,7 @@ import React from "react";
 import { useAuth } from "../context/useAuth";
 import "../styles/TrackerView.css";
 import DebouncedButton from "./common/DebouncedButton";
+import CustomSelect from "./common/CustomSelect";
 
 const parseDateOnly = (value: string) => {
   const [year, month, day] = value.slice(0, 10).split("-").map(Number);
@@ -338,24 +339,17 @@ const TeamTrackerView: React.FC<TeamTrackerViewProps> = ({
           flexWrap: "wrap",
         }}
       >
-        <select
+        <CustomSelect
           value={priorityFilter}
-          onChange={(e) => setPriorityFilter(e.target.value)}
-          className="tracker-filter-select"
-          style={{
-            padding: "8px 12px",
-            borderRadius: "8px",
-            border: "1px solid var(--border-color)",
-            background: "#fff",
-            fontSize: "0.9em",
-            minWidth: "140px",
-          }}
-        >
-          <option value="all">All Priorities</option>
-          <option value="LOW">Low</option>
-          <option value="MEDIUM">Medium</option>
-          <option value="HIGH">High</option>
-        </select>
+          onChange={(val) => setPriorityFilter(val)}
+          style={{ minWidth: "150px" }}
+          options={[
+            { value: "all", label: "All Priorities" },
+            { value: "LOW", label: "Low Priority" },
+            { value: "MEDIUM", label: "Medium Priority" },
+            { value: "HIGH", label: "High Priority" },
+          ]}
+        />
 
         {priorityFilter !== "all" && (
           <DebouncedButton

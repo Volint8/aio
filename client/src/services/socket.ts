@@ -5,7 +5,7 @@ let socket: Socket | null = null;
 export const connectSocket = (orgId?: string) => {
     if (socket) return socket;
     const token = localStorage.getItem('token');
-    const url = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+    const url = import.meta.env.VITE_API_URL || window.location.origin;
     socket = io(url, {
         auth: { token },
         transports: ['websocket'],
