@@ -27,8 +27,9 @@ const signAuthToken = (user: { id: string; email: string; role: string; orgRole?
   );
 };
 
+// No public fallback: an unset secret means SSO is off.
 const getSuiteSsoSecret = () => {
-  return process.env.VOLINT_SUITE_SSO_SECRET || process.env.JWT_SSO_SECRET || 'volint-suite-sso-secret';
+  return process.env.VOLINT_SUITE_SSO_SECRET || process.env.JWT_SSO_SECRET || '';
 };
 
 const getSuiteSsoIssuer = () => {

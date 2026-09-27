@@ -76,6 +76,7 @@ import paymentRoutes from './routes/payment.routes';
 import subscriptionRoutes from './routes/subscription.routes';
 import internalProvisioningRoutes from './routes/internal-provisioning.routes';
 import internalReportRoutes from './routes/internal-report.routes';
+import internalSuiteRoutes from './routes/internal-suite.routes';
 import { startTaskPurgeJob } from './jobs/taskPurge.job';
 import { startUserPurgeJob } from './jobs/userPurge.job';
 
@@ -94,6 +95,9 @@ app.use('/payments', paymentRoutes);
 app.use('/subscriptions', subscriptionRoutes);
 app.use('/internal/provisioning', internalProvisioningRoutes);
 app.use('/internal/reports', internalReportRoutes);
+// The Volint Suite reads summaries from {apiBaseUrl}/api/internal/suite/summary; both spellings are served.
+app.use('/internal/suite', internalSuiteRoutes);
+app.use('/api/internal/suite', internalSuiteRoutes);
 
 // Sentry error handler must be registered after all controllers and before any other error middleware
 Sentry.setupExpressErrorHandler(app);

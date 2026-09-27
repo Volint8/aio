@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/useAuth";
 
@@ -7,6 +7,8 @@ export default function SsoCallbackPage() {
   const navigate = useNavigate();
   const { completeSsoLogin } = useAuth();
   const [error, setError] = useState("");
+  // A sign-on token is for one exchange; React runs effects twice in development.
+  const exchangedToken = useRef<string | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -20,6 +22,9 @@ export default function SsoCallbackPage() {
         }
         return;
       }
+
+      if (exchangedToken.current === token) return;
+      exchangedToken.current = token;
 
       try {
         await completeSsoLogin(token);
