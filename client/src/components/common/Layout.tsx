@@ -41,24 +41,34 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   };
 
   useEffect(() => {
-    const orgId = localStorage.getItem("selectedOrgId");
-    if (location.pathname !== "/dashboard" || !orgId) {
-      return;
+    const syncOrgRole = () => {
+      const orgId = localStorage.getItem("selectedOrgId");
+      if (!orgId) return;
+
+      api
+        .get(`/orgs/${orgId}`)
+        .then((res) => {
+          const role = res.data?.userRole || "";
+          const orgName = res.data?.name || "";
+          setCurrentOrgRole(role);
+          setSelectedOrgName(orgName);
+          localStorage.setItem("selectedOrgName", orgName);
+        })
+        .catch(() => {
+          setCurrentOrgRole(localStorage.getItem("selectedOrgRole") || "");
+          setSelectedOrgName(localStorage.getItem("selectedOrgName") || "");
+        });
+    };
+
+    if (location.pathname === "/dashboard") {
+      syncOrgRole();
     }
 
-    api
-      .get(`/orgs/${orgId}`)
-      .then((res) => {
-        const role = res.data?.userRole || "";
-        const orgName = res.data?.name || "";
-        setCurrentOrgRole(role);
-        setSelectedOrgName(orgName);
-        localStorage.setItem("selectedOrgName", orgName);
-      })
-      .catch(() => {
-        setCurrentOrgRole(localStorage.getItem("selectedOrgRole") || "");
-        setSelectedOrgName(localStorage.getItem("selectedOrgName") || "");
-      });
+    // The dashboard can resolve/select an organization without the route changing
+    // (e.g. right after SSO login, before any org is selected yet) — listen for that
+    // directly instead of only reacting to navigation.
+    window.addEventListener("selectedOrgChanged", syncOrgRole);
+    return () => window.removeEventListener("selectedOrgChanged", syncOrgRole);
   }, [location.pathname]);
 
   // Fetch notifications

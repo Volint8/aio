@@ -1608,6 +1608,9 @@ const DashboardPage = () => {
             // Update state directly instead of reloading the page — this used to make the
             // SSO handoff feel like it hung on a blank reload before the dashboard appeared.
             setOrgIdState(firstOrg.id);
+            // The page reload used to also remount Layout (the sidebar), which is how it picked
+            // up the newly selected org's role. Tell it directly now that nothing reloads.
+            window.dispatchEvent(new Event("selectedOrgChanged"));
           } else {
             // No organizations available, show empty state
             sessionStorage.removeItem("orgReloadCount");
