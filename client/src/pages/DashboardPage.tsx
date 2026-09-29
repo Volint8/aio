@@ -884,7 +884,9 @@ const DashboardPage = () => {
     message: "",
   });
 
-  const orgId = localStorage.getItem("selectedOrgId");
+  const [orgId, setOrgIdState] = useState<string | null>(() => localStorage.getItem("selectedOrgId"));
+  // Bumped to force one retry of organization resolution without a full page reload.
+  const [orgResolveTick, setOrgResolveTick] = useState(0);
 
   const handleSendAlert = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1603,7 +1605,9 @@ const DashboardPage = () => {
             localStorage.setItem("selectedOrgId", firstOrg.id);
             localStorage.setItem("selectedOrgRole", firstOrg.userRole);
             sessionStorage.setItem("orgReloadCount", "1");
-            window.location.reload();
+            // Update state directly instead of reloading the page — this used to make the
+            // SSO handoff feel like it hung on a blank reload before the dashboard appeared.
+            setOrgIdState(firstOrg.id);
           } else {
             // No organizations available, show empty state
             sessionStorage.removeItem("orgReloadCount");
@@ -1621,8 +1625,8 @@ const DashboardPage = () => {
           localStorage.removeItem("selectedOrgName");
 
           if (reloadCount < 1) {
-            // Only reload once more
-            window.location.reload();
+            // Retry once more without a full page reload.
+            setOrgResolveTick((tick) => tick + 1);
           } else {
             // Stop reloading, show error dialog
             sessionStorage.removeItem("orgReloadCount");
@@ -1658,8 +1662,8 @@ const DashboardPage = () => {
         sessionStorage.setItem("orgReloadCount", String(reloadCount + 1));
 
         if (reloadCount < 1) {
-          // Only reload once more to trigger auto-selection
-          window.location.reload();
+          // Clearing orgId re-enters the auto-select branch above, without reloading the page.
+          setOrgIdState(null);
         } else {
           // Stop reloading to prevent infinite loop
           sessionStorage.removeItem("orgReloadCount");
@@ -1673,7 +1677,7 @@ const DashboardPage = () => {
           });
         }
       });
-  }, [orgId, filter, taskClientFilter, assigneeFilterId]);
+  }, [orgId, orgResolveTick, filter, taskClientFilter, assigneeFilterId]);
 
   const getInitials = (name: string) => {
     return name
