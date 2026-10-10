@@ -55,5 +55,3 @@ server/.eslintcache
 .dockerignore
 
 .qwen
-branch_structure.json
-temp_interactive_push.bat
