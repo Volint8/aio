@@ -9,7 +9,7 @@ services:
       - ./server/.env
     environment:
       - PORT=3000
-      - DATABASE_URL=postgresql://postgres:postgres@db:5432/allinone?schema=public
+      - DATABASE_URL=postgresql://postgres:${DB_PASSWORD}@db:5432/allinone?schema=public
     restart: always
     depends_on:
       - db
@@ -20,7 +20,7 @@ services:
     image: postgres:15-alpine
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
       POSTGRES_DB: allinone
     ports:
       - "127.0.0.1:5533:5432"
